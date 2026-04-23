@@ -2,7 +2,7 @@ services:
   - type: web
     name: slideatlas
     runtime: python
-    buildCommand: "apt-get install -y libopenslide0 && pip install -r requirements.txt"
+    buildCommand: "pip install -r requirements.txt"
     startCommand: "python server_render.py"
     envVars:
       - key: PYTHON_VERSION
