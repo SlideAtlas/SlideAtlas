@@ -9,9 +9,7 @@ import io
 app = Flask(__name__)
 
 # Google Drive 파일 ID (000005.dcm - 메인 WSI)
-DCM_FILE_ID = "1pjtScg1nRuOz2eVUnjYlqD1TE2kna9gT"
-DCM_PATH = "/tmp/000005.dcm"
-
+DCM_PATH = "/opt/render/project/src/000005.dcm"
 # 다운로드 상태
 download_status = {"done": False, "error": None, "progress": 0}
 slide = None
@@ -25,13 +23,7 @@ def download_and_init():
     global slide, dz, W, H, DZ_LEVELS, download_status
 
     try:
-        # gdown으로 다운로드
-        print("Google Drive에서 DCM 파일 다운로드 중...")
         
-        import urllib.request
-        url = f"https://drive.usercontent.google.com/download?id={DCM_FILE_ID}&export=download&confirm=t"
-        urllib.request.urlretrieve(url, DCM_PATH)
-        print("다운로드 완료!")
 
         # OpenSlide 초기화
         import openslide
