@@ -1,0 +1,195 @@
+import os
+
+# OpenSlide DLL 경로
+OPENSLIDE_BIN = r"E:\업무자료\보람바이오텍\아틀라스\openslide-bin-4.0.0.13-windows-x64\openslide-bin-4.0.0.13-windows-x64\bin"
+os.add_dll_directory(OPENSLIDE_BIN)
+
+from flask import Flask, send_file, Response
+import openslide
+from openslide import deepzoom
+from PIL import Image
+import io
+
+app = Flask(__name__)
+
+# DCM 파일 경로
+DCM_PATH = r"E:\업무자료\보람바이오텍\아틀라스\3DHISTECH-1\000005.dcm"
+
+print("OpenSlide로 DICOM WSI 로딩 중...")
+slide = openslide.OpenSlide(DCM_PATH)
+W, H = slide.dimensions
+print(f"✅ 로드 완료! {W} x {H}")
+
+TILE_SIZE = 256
+OVERLAP = 1
+
+dz = deepzoom.DeepZoomGenerator(slide, tile_size=TILE_SIZE, overlap=OVERLAP, limit_bounds=True)
+DZ_LEVELS = dz.level_count
+print(f"   DeepZoom 레벨: {DZ_LEVELS}")
+
+@app.route('/')
+def index():
+    html = f'''<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>SlideAtlas — 소장 H&E</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/openseadragon.min.js"></script>
+<style>
+* {{ margin:0; padding:0; box-sizing:border-box; }}
+body {{ background:#0d1219; font-family:"Segoe UI",sans-serif; overflow:hidden; }}
+#header {{
+  position:fixed; top:0; left:0; right:0; z-index:100;
+  background:rgba(15,31,61,0.97); border-bottom:1px solid rgba(255,255,255,0.08);
+  padding:0 24px; height:52px;
+  display:flex; align-items:center; justify-content:space-between;
+}}
+.logo {{ display:flex; flex-direction:column; line-height:1; }}
+.logo-slide {{ font-size:8px; letter-spacing:0.25em; color:#2A9D8F; }}
+.logo-atlas {{ font-size:18px; font-weight:700; color:white; }}
+#info {{ font-size:12px; color:rgba(255,255,255,0.45); font-family:monospace; }}
+#viewer {{ position:fixed; top:52px; left:0; right:0; bottom:0; }}
+#meta {{
+  position:fixed; top:68px; right:16px;
+  background:rgba(15,31,61,0.92); border:1px solid rgba(255,255,255,0.08);
+  border-radius:10px; padding:14px 16px; font-size:11px;
+  color:rgba(255,255,255,0.6); line-height:1.9; min-width:190px; z-index:50;
+}}
+.ml {{ color:rgba(255,255,255,0.3); font-size:9px; text-transform:uppercase; letter-spacing:0.1em; }}
+.mv {{ color:rgba(255,255,255,0.8); }}
+#toolbar {{
+  position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
+  background:rgba(15,31,61,0.95); border:1px solid rgba(255,255,255,0.12);
+  border-radius:12px; padding:10px 20px;
+  display:flex; align-items:center; gap:8px; z-index:50;
+}}
+.mb {{
+  background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15);
+  color:rgba(255,255,255,0.8); padding:6px 14px; border-radius:7px;
+  cursor:pointer; font-size:12px; font-family:monospace; transition:all 0.15s;
+}}
+.mb:hover {{ background:rgba(42,157,143,0.3); border-color:#2A9D8F; color:white; }}
+#md {{ font-family:monospace; font-size:15px; color:white; min-width:55px; text-align:center; font-weight:600; }}
+#scale {{
+  position:fixed; bottom:20px; left:20px;
+  background:rgba(0,0,0,0.7); color:white; padding:6px 14px;
+  border-radius:8px; font-family:monospace; font-size:12px;
+  border:1px solid rgba(255,255,255,0.1); z-index:50;
+}}
+</style>
+</head>
+<body>
+<div id="header">
+  <div class="logo">
+    <span class="logo-slide">slide</span>
+    <span class="logo-atlas">ATLAS</span>
+  </div>
+  <div id="info">소장 · Small Intestine, c.s. &nbsp;·&nbsp; H&amp;E &nbsp;·&nbsp; {W:,}×{H:,}px &nbsp;·&nbsp; WSI DICOM · 3DHISTECH</div>
+</div>
+
+<div id="viewer"></div>
+
+<div id="meta">
+  <div class="ml">조직명</div><div class="mv">소장 · Small Intestine</div>
+  <div class="ml">염색법</div><div class="mv">H&amp;E</div>
+  <div class="ml">해상도</div><div class="mv">0.121 μm/pixel (40×)</div>
+  <div class="ml">전체 크기</div><div class="mv">{W:,} × {H:,} px</div>
+  <div class="ml">장비</div><div class="mv">3DHISTECH Pannoramic 1000</div>
+</div>
+
+<div id="toolbar">
+  <button class="mb" onclick="zi()">−</button>
+  <div id="md">전체</div>
+  <button class="mb" onclick="zo()">+</button>
+  <span style="color:rgba(255,255,255,0.2);font-size:20px">|</span>
+  <button class="mb" onclick="fit()">전체</button>
+  <button class="mb" onclick="sm(1)">1×</button>
+  <button class="mb" onclick="sm(4)">4×</button>
+  <button class="mb" onclick="sm(10)">10×</button>
+  <button class="mb" onclick="sm(20)">20×</button>
+  <button class="mb" onclick="sm(40)">40×</button>
+</div>
+<div id="scale">— mm</div>
+
+<script>
+var viewer = OpenSeadragon({{
+  id: "viewer",
+  prefixUrl: "https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/images/",
+  tileSources: "/dzi.dzi",
+  showNavigationControl: false,
+  animationTime: 0.3,
+  blendTime: 0.1,
+  constrainDuringPan: false,
+  maxZoomPixelRatio: 2,
+  minZoomLevel: 0.001,
+  visibilityRatio: 0.05,
+  showNavigator: true,
+  navigatorPosition: "BOTTOM_RIGHT",
+  navigatorHeight: 120,
+  navigatorWidth: 160,
+  defaultZoomLevel: 0,
+}});
+
+viewer.addHandler('zoom', upd);
+viewer.addHandler('open', function() {{
+  viewer.viewport.goHome(true);
+  setTimeout(upd, 400);
+}});
+
+function upd() {{
+  try {{
+    var z = viewer.viewport.getZoom(true);
+    var mag = z * 40;
+    document.getElementById('md').textContent =
+      mag >= 1 ? (Math.round(mag*10)/10)+'×' : mag.toFixed(3)+'×';
+    var vw = viewer.viewport.getBounds().width;
+    var umW = vw * {W} * 0.121;
+    var sc = Math.round(umW / 5);
+    document.getElementById('scale').textContent =
+      sc >= 1000000 ? (sc/1000000).toFixed(1)+' m' :
+      sc >= 1000 ? (sc/1000).toFixed(2)+' mm' : sc+' μm';
+  }} catch(e) {{}}
+}}
+
+function fit() {{ viewer.viewport.goHome(false); setTimeout(upd,200); }}
+function zi() {{ viewer.viewport.zoomBy(1/1.8); setTimeout(upd,100); }}
+function zo() {{ viewer.viewport.zoomBy(1.8); setTimeout(upd,100); }}
+function sm(m) {{ viewer.viewport.zoomTo(m/40); setTimeout(upd,100); }}
+</script>
+</body>
+</html>'''
+    return html
+
+@app.route('/dzi.dzi')
+def dzi_descriptor():
+    w, h = dz.level_dimensions[-1]
+    xml = f'''<?xml version="1.0" encoding="UTF-8"?>
+<Image xmlns="http://schemas.microsoft.com/deepzoom/2008"
+  Format="jpeg"
+  Overlap="{OVERLAP}"
+  TileSize="{TILE_SIZE}">
+  <Size Width="{w}" Height="{h}"/>
+</Image>'''
+    return Response(xml, mimetype='application/xml')
+
+@app.route('/dzi_files/<int:level>/<int:col>_<int:row>.jpeg')
+@app.route('/dzi_files/<int:level>/<int:col>_<int:row>.jpg')
+def dzi_tile(level, col, row):
+    try:
+        tile = dz.get_tile(level, (col, row))
+        buf = io.BytesIO()
+        tile.save(buf, format='JPEG', quality=88)
+        buf.seek(0)
+        return send_file(buf, mimetype='image/jpeg')
+    except Exception as e:
+        print(f"타일 에러 {level}/{col}_{row}: {e}")
+        img = Image.new('RGB', (TILE_SIZE, TILE_SIZE), (255, 255, 255))
+        buf = io.BytesIO()
+        img.save(buf, 'JPEG')
+        buf.seek(0)
+        return send_file(buf, mimetype='image/jpeg')
+
+if __name__ == '__main__':
+    print(f"\n✅ SlideAtlas 로컬 서버 시작!")
+    print(f"   http://localhost:5000 을 브라우저에서 열어줘\n")
+    app.run(debug=False, port=5000, threaded=True)
