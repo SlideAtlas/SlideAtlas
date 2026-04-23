@@ -262,4 +262,5 @@ def dzi_tile(level, col, row):
 if __name__ == '__main__':
     print(f"\n✅ SlideAtlas 서버 시작!")
     print(f"   http://localhost:5000\n")
-    app.run(debug=False, port=5000, threaded=True)
+    port = int(os.environ.get("PORT", 5000))
+app.run(host="0.0.0.0", port=port, threaded=True)
