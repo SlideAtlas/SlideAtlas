@@ -9,7 +9,7 @@ import io
 app = Flask(__name__)
 
 # Google Drive 파일 ID (000005.dcm - 메인 WSI)
-DCM_PATH = "/opt/render/project/src/000005.dcm"
+DCM_PATH = "/opt/render/project/src/000001.dcm"
 # 다운로드 상태
 download_status = {"done": False, "error": None, "progress": 0}
 slide = None
