@@ -3,3 +3,4 @@ openslide-python==1.4.1
 Pillow==11.2.1
 gdown==5.2.0
 numpy==2.4.0
+openslide-bin
