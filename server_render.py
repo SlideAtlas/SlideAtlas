@@ -28,7 +28,7 @@ def download_and_init():
         # gdown으로 다운로드
         print("Google Drive에서 DCM 파일 다운로드 중...")
         import gdown
-        gdown.download(f"https://drive.google.com/uc?id={DCM_FILE_ID}", DCM_PATH, quiet=False)
+        gdown.download(f"https://drive.google.com/uc?id={DCM_FILE_ID}&confirm=t", DCM_PATH, quiet=False, fuzzy=True)
         print("다운로드 완료!")
 
         # OpenSlide 초기화
