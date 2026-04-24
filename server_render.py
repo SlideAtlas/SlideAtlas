@@ -275,86 +275,341 @@ small { color:rgba(255,255,255,0.25); font-size:12px; margin-top:8px; display:bl
 <head>
 <meta charset="UTF-8">
 <title>SlideAtlas — 소장 H&E</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/openseadragon.min.js"></script>
 <style>
-* {{ margin:0; padding:0; box-sizing:border-box; }}
-body {{ background:#0d1219; font-family:"Segoe UI",sans-serif; overflow:hidden; }}
-#header {{
-  position:fixed; top:0; left:0; right:0; z-index:100;
-  background:rgba(15,31,61,0.97); border-bottom:1px solid rgba(255,255,255,0.08);
-  padding:0 24px; height:52px;
-  display:flex; align-items:center; justify-content:space-between;
-}}
-.logo {{ display:flex; flex-direction:column; line-height:1; }}
-.logo-slide {{ font-size:8px; letter-spacing:0.25em; color:#2A9D8F; }}
-.logo-atlas {{ font-size:18px; font-weight:700; color:white; }}
-#info {{ font-size:12px; color:rgba(255,255,255,0.45); font-family:monospace; }}
-#back {{ color:#2A9D8F; font-size:12px; text-decoration:none; margin-right:16px; }}
-#viewer {{ position:fixed; top:52px; left:0; right:0; bottom:0; }}
-#meta {{
-  position:fixed; top:68px; right:16px;
-  background:rgba(15,31,61,0.92); border:1px solid rgba(255,255,255,0.08);
-  border-radius:10px; padding:14px 16px; font-size:11px;
-  color:rgba(255,255,255,0.6); line-height:1.9; min-width:190px; z-index:50;
-}}
-.ml {{ color:rgba(255,255,255,0.3); font-size:9px; text-transform:uppercase; letter-spacing:0.1em; }}
-.mv {{ color:rgba(255,255,255,0.8); }}
-#toolbar {{
-  position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
-  background:rgba(15,31,61,0.95); border:1px solid rgba(255,255,255,0.12);
-  border-radius:12px; padding:10px 20px;
-  display:flex; align-items:center; gap:8px; z-index:50;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
-}}
-.mb {{
-  background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15);
-  color:rgba(255,255,255,0.8); padding:6px 14px; border-radius:7px;
-  cursor:pointer; font-size:12px; font-family:monospace; transition:all 0.15s;
-}}
-.mb:hover {{ background:rgba(42,157,143,0.3); border-color:#2A9D8F; color:white; }}
-#md {{ font-family:monospace; font-size:15px; color:white; min-width:55px; text-align:center; font-weight:600; }}
-#scale {{
-  position:fixed; bottom:20px; left:20px;
-  background:rgba(0,0,0,0.7); color:white; padding:6px 14px;
-  border-radius:8px; font-family:monospace; font-size:12px;
-  border:1px solid rgba(255,255,255,0.1); z-index:50;
-}}
+@import url('https://cdn.jsdelivr.net/gh/sunn-us/SUIT/fonts/variable/woff2/SUIT-Variable.css');
+*{{margin:0;padding:0;box-sizing:border-box;}}
+body{{background:#0d1219;font-family:"SUIT Variable","SUIT",sans-serif;overflow:hidden;height:100vh;display:flex;flex-direction:column;}}
+
+/* HEADER */
+#header{{background:rgba(15,31,61,0.97);border-bottom:1px solid rgba(255,255,255,0.08);padding:0 20px;height:50px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;z-index:100;}}
+.logo{{display:flex;flex-direction:column;line-height:1;gap:1px;text-decoration:none;}}
+.logo-slide{{font-size:7px;letter-spacing:0.22em;color:#2A9D8F;font-family:"DM Mono",monospace;font-weight:500;}}
+.logo-atlas{{font-size:18px;font-weight:800;color:#fff;}}
+#hdr-center{{font-size:11px;color:rgba(255,255,255,0.4);font-family:"DM Mono",monospace;}}
+#hdr-right{{display:flex;align-items:center;gap:8px;}}
+.hdr-back{{color:#2A9D8F;font-size:12px;text-decoration:none;border:1px solid rgba(42,157,143,0.3);padding:4px 10px;border-radius:5px;}}
+.hdr-btn{{background:transparent;color:rgba(255,255,255,0.45);border:1px solid rgba(255,255,255,0.12);padding:4px 10px;border-radius:5px;font-size:12px;cursor:pointer;font-family:"SUIT Variable",sans-serif;}}
+
+/* MAIN SPLIT */
+#main{{display:grid;grid-template-columns:1fr 310px;flex:1;overflow:hidden;}}
+
+/* VIEWER */
+#viewer-wrap{{position:relative;overflow:hidden;background:#111824;}}
+#viewer{{position:absolute;inset:0;}}
+
+/* toolbar */
+#toolbar{{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);background:rgba(15,31,61,0.95);border:1px solid rgba(255,255,255,0.12);border-radius:10px;padding:8px 16px;display:flex;align-items:center;gap:6px;z-index:50;box-shadow:0 8px 32px rgba(0,0,0,0.4);}}
+.mb{{background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.8);padding:5px 12px;border-radius:6px;cursor:pointer;font-size:11px;font-family:"DM Mono",monospace;transition:all 0.15s;}}
+.mb:hover{{background:rgba(42,157,143,0.3);border-color:#2A9D8F;color:white;}}
+.mb.active{{background:#2A9D8F;border-color:#2A9D8F;color:#fff;}}
+#md{{font-family:"DM Mono",monospace;font-size:14px;color:white;min-width:48px;text-align:center;font-weight:500;}}
+#scale{{position:absolute;bottom:16px;left:16px;background:rgba(0,0,0,0.6);color:rgba(255,255,255,0.7);padding:5px 12px;border-radius:6px;font-family:"DM Mono",monospace;font-size:11px;border:1px solid rgba(255,255,255,0.08);z-index:50;}}
+
+/* AI PANEL */
+#ai-panel{{background:#111c2e;border-left:1px solid rgba(255,255,255,0.07);display:flex;flex-direction:column;overflow:hidden;}}
+
+.slide-meta{{padding:12px 16px;border-bottom:1px solid rgba(255,255,255,0.06);flex-shrink:0;}}
+.meta-title{{font-size:14px;font-weight:700;letter-spacing:-0.02em;color:#fff;margin-bottom:2px;}}
+.meta-sub{{font-size:10px;color:rgba(255,255,255,0.38);font-family:"DM Mono",monospace;}}
+.meta-badges{{display:flex;gap:5px;margin-top:8px;}}
+.mbadge{{font-size:9px;font-weight:600;padding:2px 8px;border-radius:3px;font-family:"DM Mono",monospace;}}
+.mbadge-he{{background:rgba(42,157,143,0.2);color:#2A9D8F;border:1px solid rgba(42,157,143,0.25);}}
+.mbadge-sys{{background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.45);border:1px solid rgba(255,255,255,0.08);}}
+.mbadge-mag{{background:rgba(233,196,106,0.15);color:#E9C46A;border:1px solid rgba(233,196,106,0.2);}}
+
+/* TABS */
+.tabs{{display:flex;border-bottom:1px solid rgba(255,255,255,0.07);flex-shrink:0;}}
+.tab{{flex:1;padding:10px 0;text-align:center;font-size:12px;font-weight:600;color:rgba(255,255,255,0.3);cursor:pointer;border-bottom:2px solid transparent;transition:all 0.2s;}}
+.tab.active{{color:#2A9D8F;border-bottom-color:#2A9D8F;}}
+.tab:hover:not(.active){{color:rgba(255,255,255,0.6);}}
+
+.tab-content{{flex:1;overflow:hidden;display:none;flex-direction:column;}}
+.tab-content.active{{display:flex;}}
+
+/* 탭1: 구조 가이드 */
+.guide-scroll{{flex:1;overflow-y:auto;padding:14px 16px;}}
+.guide-scroll::-webkit-scrollbar{{width:3px;}}
+.guide-scroll::-webkit-scrollbar-thumb{{background:rgba(255,255,255,0.1);border-radius:2px;}}
+.guide-mag-header{{display:flex;align-items:center;gap:7px;margin-bottom:12px;}}
+.guide-mag-dot{{width:7px;height:7px;border-radius:50%;background:#2A9D8F;animation:pulse 2s infinite;}}
+@keyframes pulse{{0%,100%{{opacity:1;}}50%{{opacity:0.4;}}}}
+.guide-mag-label{{font-size:10px;color:#2A9D8F;font-family:"DM Mono",monospace;font-weight:600;letter-spacing:0.05em;}}
+.ai-bubble{{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.07);border-radius:10px;border-top-left-radius:3px;padding:11px 13px;margin-bottom:10px;}}
+.ai-bubble-header{{display:flex;align-items:center;gap:6px;margin-bottom:7px;}}
+.ai-icon{{width:17px;height:17px;background:#2A9D8F;border-radius:4px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}}
+.ai-icon svg{{width:9px;height:9px;stroke:#fff;fill:none;stroke-width:2;}}
+.ai-label{{font-size:9px;color:#2A9D8F;font-weight:700;letter-spacing:0.06em;font-family:"DM Mono",monospace;}}
+.ai-text{{font-size:12px;color:rgba(255,255,255,0.7);line-height:1.65;word-break:keep-all;font-weight:300;}}
+.ai-text strong{{color:#fff;font-weight:600;}}
+.structure-list{{margin-top:8px;display:flex;flex-direction:column;gap:5px;}}
+.struct-item{{display:flex;align-items:flex-start;gap:7px;padding:7px 10px;background:rgba(255,255,255,0.03);border-radius:6px;border:1px solid rgba(255,255,255,0.05);}}
+.struct-dot{{width:6px;height:6px;border-radius:50%;background:#2A9D8F;flex-shrink:0;margin-top:4px;}}
+.struct-text{{font-size:11px;color:rgba(255,255,255,0.6);line-height:1.5;word-break:keep-all;}}
+.struct-text strong{{color:rgba(255,255,255,0.88);font-weight:600;}}
+.observe-box{{background:rgba(42,157,143,0.07);border:1px solid rgba(42,157,143,0.18);border-radius:7px;padding:10px 12px;margin-top:10px;}}
+.observe-label{{font-size:9px;color:#2A9D8F;font-weight:700;letter-spacing:0.1em;font-family:"DM Mono",monospace;margin-bottom:5px;}}
+.observe-text{{font-size:11px;color:rgba(255,255,255,0.55);line-height:1.6;word-break:keep-all;}}
+
+/* 탭2: 질문하기 */
+.chat-scroll{{flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:10px;}}
+.chat-scroll::-webkit-scrollbar{{width:3px;}}
+.chat-scroll::-webkit-scrollbar-thumb{{background:rgba(255,255,255,0.1);border-radius:2px;}}
+.msg-ai{{display:flex;gap:7px;align-items:flex-start;}}
+.msg-ai-icon{{width:22px;height:22px;background:#2A9D8F;border-radius:5px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}}
+.msg-ai-icon svg{{width:11px;height:11px;stroke:#fff;fill:none;stroke-width:2;}}
+.msg-ai-bubble{{background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.07);border-radius:10px;border-top-left-radius:3px;padding:9px 12px;font-size:12px;color:rgba(255,255,255,0.72);line-height:1.6;max-width:220px;word-break:keep-all;}}
+.msg-user{{display:flex;justify-content:flex-end;}}
+.msg-user-bubble{{background:rgba(42,157,143,0.18);border:1px solid rgba(42,157,143,0.22);border-radius:10px;border-bottom-right-radius:3px;padding:9px 12px;font-size:12px;color:rgba(255,255,255,0.82);line-height:1.6;max-width:220px;word-break:keep-all;}}
+.typing-indicator{{display:flex;gap:4px;align-items:center;padding:10px 12px;}}
+.typing-dot{{width:6px;height:6px;border-radius:50%;background:#2A9D8F;animation:typing 1.2s infinite;}}
+.typing-dot:nth-child(2){{animation-delay:0.2s;}}
+.typing-dot:nth-child(3){{animation-delay:0.4s;}}
+@keyframes typing{{0%,60%,100%{{opacity:0.3;transform:scale(0.8);}}30%{{opacity:1;transform:scale(1);}}}}
+.chat-input-area{{padding:10px 14px;border-top:1px solid rgba(255,255,255,0.06);flex-shrink:0;}}
+.ctx-tag{{display:flex;align-items:center;gap:5px;margin-bottom:7px;font-size:10px;color:rgba(255,255,255,0.28);font-family:"DM Mono",monospace;}}
+.ctx-dot{{width:5px;height:5px;border-radius:50%;background:#2A9D8F;}}
+.chat-input-row{{display:flex;gap:6px;}}
+.chat-input{{flex:1;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:7px;padding:8px 11px;font-size:12px;color:#fff;font-family:"SUIT Variable",sans-serif;outline:none;}}
+.chat-input::placeholder{{color:rgba(255,255,255,0.22);}}
+.chat-input:focus{{border-color:rgba(42,157,143,0.5);}}
+.chat-send{{background:#2A9D8F;border:none;width:32px;height:32px;border-radius:7px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;}}
+.chat-send:hover{{background:#238b7f;}}
+.chat-send svg{{width:13px;height:13px;stroke:#fff;fill:none;stroke-width:2;}}
+
+/* 탭3: 퀴즈 */
+.quiz-scroll{{flex:1;overflow-y:auto;padding:14px 16px;}}
+.quiz-scroll::-webkit-scrollbar{{width:3px;}}
+.quiz-scroll::-webkit-scrollbar-thumb{{background:rgba(255,255,255,0.1);border-radius:2px;}}
+.quiz-icon-wrap{{width:48px;height:48px;background:rgba(233,196,106,0.1);border:1px solid rgba(233,196,106,0.2);border-radius:12px;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;}}
+.quiz-icon-wrap svg{{width:22px;height:22px;stroke:#E9C46A;fill:none;stroke-width:1.5;}}
+.quiz-stats{{display:flex;gap:6px;margin:12px 0;}}
+.quiz-stat{{flex:1;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.07);border-radius:7px;padding:8px;text-align:center;}}
+.quiz-stat-num{{font-size:16px;font-weight:800;}}
+.quiz-stat-lbl{{font-size:9px;color:rgba(255,255,255,0.33);font-family:"DM Mono",monospace;margin-top:2px;}}
+.quiz-start-btn{{background:#E9C46A;color:#412402;border:none;padding:11px;border-radius:8px;font-size:13px;font-weight:700;font-family:"SUIT Variable",sans-serif;cursor:pointer;width:100%;}}
+.quiz-start-btn:hover{{background:#ddb95e;}}
+.quiz-progress{{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}}
+.qprog-label{{font-size:10px;color:rgba(255,255,255,0.33);font-family:"DM Mono",monospace;}}
+.qprog-bar{{height:3px;background:rgba(255,255,255,0.08);border-radius:2px;flex:1;margin:0 8px;}}
+.qprog-fill{{height:100%;background:#2A9D8F;border-radius:2px;transition:width 0.3s;}}
+.quiz-q{{font-size:13px;font-weight:600;color:#fff;line-height:1.55;margin-bottom:12px;word-break:keep-all;}}
+.quiz-options{{display:flex;flex-direction:column;gap:5px;}}
+.quiz-opt{{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:7px;padding:9px 12px;font-size:12px;color:rgba(255,255,255,0.65);cursor:pointer;transition:all 0.15s;display:flex;align-items:center;gap:9px;word-break:keep-all;}}
+.quiz-opt:hover{{border-color:rgba(42,157,143,0.5);color:#fff;background:rgba(42,157,143,0.06);}}
+.quiz-opt.correct{{border-color:#2A9D8F;background:rgba(42,157,143,0.12);color:#fff;pointer-events:none;}}
+.quiz-opt.wrong{{border-color:rgba(231,111,81,0.5);background:rgba(231,111,81,0.08);color:rgba(255,255,255,0.4);pointer-events:none;}}
+.opt-num{{width:20px;height:20px;border-radius:50%;border:1px solid rgba(255,255,255,0.18);display:flex;align-items:center;justify-content:center;font-size:10px;font-family:"DM Mono",monospace;flex-shrink:0;}}
+.quiz-explanation{{background:rgba(42,157,143,0.07);border:1px solid rgba(42,157,143,0.18);border-radius:7px;padding:10px 12px;margin-top:10px;font-size:11px;color:rgba(255,255,255,0.6);line-height:1.6;word-break:keep-all;display:none;}}
+.quiz-next-btn{{background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.7);padding:9px;border-radius:7px;font-size:12px;font-weight:600;font-family:"SUIT Variable",sans-serif;cursor:pointer;width:100%;margin-top:10px;display:none;}}
 </style>
 </head>
 <body>
+
 <div id="header">
-  <div style="display:flex;align-items:center;">
-    <a href="/" id="back">← 홈</a>
-    <div class="logo">
-      <span class="logo-slide">slide</span>
+  <div style="display:flex;align-items:center;gap:12px;">
+    <a href="/slides" class="hdr-back">← 목록</a>
+    <a href="/" class="logo">
+      <span class="logo-slide">SLIDE</span>
       <span class="logo-atlas">ATLAS</span>
+    </a>
+  </div>
+  <span id="hdr-center">소장 · Small Intestine &nbsp;/&nbsp; H&amp;E &nbsp;/&nbsp; <span id="hdr-mag">전체</span></span>
+  <div id="hdr-right">
+    <button class="hdr-btn" id="ai-toggle" onclick="togglePanel()">AI 패널 숨기기</button>
+  </div>
+</div>
+
+<div id="main">
+  <!-- 뷰어 -->
+  <div id="viewer-wrap">
+    <div id="viewer"></div>
+    <div id="scale">— mm</div>
+    <div id="toolbar">
+      <button class="mb" onclick="zi()">−</button>
+      <div id="md">전체</div>
+      <button class="mb" onclick="zo()">+</button>
+      <span style="color:rgba(255,255,255,0.15);font-size:18px;">|</span>
+      <button class="mb" onclick="fit()">전체</button>
+      <button class="mb" onclick="sm(1)">1×</button>
+      <button class="mb" onclick="sm(4)">4×</button>
+      <button class="mb" onclick="sm(10)">10×</button>
+      <button class="mb" onclick="sm(20)">20×</button>
+      <button class="mb" onclick="sm(40)">40×</button>
     </div>
   </div>
-  <div id="info">소장 · Small Intestine, c.s. &nbsp;·&nbsp; H&amp;E &nbsp;·&nbsp; {W:,}×{H:,}px &nbsp;·&nbsp; WSI DICOM · 3DHISTECH</div>
+
+  <!-- AI 패널 -->
+  <div id="ai-panel">
+    <div class="slide-meta">
+      <div class="meta-title">소장 · Small Intestine</div>
+      <div class="meta-sub">SA-HST-0001 · 소화기계 · 3DHISTECH</div>
+      <div class="meta-badges">
+        <span class="mbadge mbadge-he">H&amp;E</span>
+        <span class="mbadge mbadge-sys">소화기계</span>
+        <span class="mbadge mbadge-mag" id="mag-badge">전체</span>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <div class="tab active" onclick="switchTab(0)">구조 가이드</div>
+      <div class="tab" onclick="switchTab(1)">질문하기</div>
+      <div class="tab" onclick="switchTab(2)">퀴즈</div>
+    </div>
+
+    <!-- 탭1: 구조 가이드 -->
+    <div class="tab-content active" id="tab0">
+      <div class="guide-scroll" id="guide-content">
+        <div class="guide-mag-header">
+          <div class="guide-mag-dot"></div>
+          <span class="guide-mag-label" id="guide-mag-label">전체 배율 · 슬라이드 개요</span>
+        </div>
+        <div class="ai-bubble">
+          <div class="ai-bubble-header">
+            <div class="ai-icon"><svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 6v6l4 2"/></svg></div>
+            <span class="ai-label">ATLAS AI</span>
+          </div>
+          <p class="ai-text" id="guide-main-text">전체 슬라이드를 보고 있습니다. 소장(small intestine)의 단면으로, 중앙의 내강(lumen)을 향해 <strong>융모(villus)</strong>가 돌출된 구조가 특징적입니다. 배율을 높여보세요.</p>
+        </div>
+        <div class="structure-list" id="structure-list">
+          <div class="struct-item">
+            <div class="struct-dot"></div>
+            <div class="struct-text"><strong>점막층 (Mucosa)</strong> — 융모와 장샘이 위치하는 최내층.</div>
+          </div>
+          <div class="struct-item">
+            <div class="struct-dot" style="background:#E9C46A;"></div>
+            <div class="struct-text"><strong>점막하층 (Submucosa)</strong> — 결합조직, 혈관, 신경총.</div>
+          </div>
+          <div class="struct-item">
+            <div class="struct-dot" style="background:rgba(255,255,255,0.3);"></div>
+            <div class="struct-text"><strong>근육층 (Muscularis)</strong> — 내윤상근 + 외종주근.</div>
+          </div>
+        </div>
+        <div class="observe-box">
+          <div class="observe-label">OBSERVE</div>
+          <p class="observe-text" id="observe-text">H&amp;E 염색에서 핵은 <strong style="color:#b4a0e8;">진한 보라색</strong>, 세포질과 기저막은 <strong style="color:#f0b8c8;">분홍색</strong>으로 관찰됩니다. 10× 이상으로 확대하면 융모 구조가 선명하게 보입니다.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 탭2: 질문하기 -->
+    <div class="tab-content" id="tab1">
+      <div class="chat-scroll" id="chat-messages">
+        <div class="msg-ai">
+          <div class="msg-ai-icon"><svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 6v6l4 2"/></svg></div>
+          <div class="msg-ai-bubble">소장 H&amp;E 슬라이드에 대해 무엇이든 질문하세요. 현재 배율 기준으로 답변드립니다.</div>
+        </div>
+      </div>
+      <div class="chat-input-area">
+        <div class="ctx-tag">
+          <div class="ctx-dot"></div>
+          <span id="ctx-label">소장 H&amp;E · 전체 배율 컨텍스트 포함</span>
+        </div>
+        <div class="chat-input-row">
+          <input class="chat-input" id="chat-input" placeholder="이 구조에 대해 질문하세요..." onkeydown="if(event.key==='Enter')sendChat()"/>
+          <button class="chat-send" onclick="sendChat()"><svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 탭3: 퀴즈 -->
+    <div class="tab-content" id="tab2">
+      <div class="quiz-scroll">
+        <div id="quiz-start-view">
+          <div style="text-align:center;padding-top:16px;">
+            <div class="quiz-icon-wrap"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
+            <div style="font-size:14px;font-weight:700;color:#fff;margin-bottom:6px;">소장 H&amp;E 퀴즈</div>
+            <div style="font-size:12px;color:rgba(255,255,255,0.38);line-height:1.6;word-break:keep-all;">이 슬라이드를 기반으로 조직학 수준 퀴즈 3문제를 생성합니다.</div>
+          </div>
+          <div class="quiz-stats">
+            <div class="quiz-stat"><div class="quiz-stat-num" style="color:#E9C46A;">3</div><div class="quiz-stat-lbl">문제</div></div>
+            <div class="quiz-stat"><div class="quiz-stat-num" style="color:#2A9D8F;">H&E</div><div class="quiz-stat-lbl">유형</div></div>
+            <div class="quiz-stat"><div class="quiz-stat-num" style="color:rgba(255,255,255,0.6);">★★</div><div class="quiz-stat-lbl">난이도</div></div>
+          </div>
+          <button class="quiz-start-btn" onclick="startQuiz()">퀴즈 시작 →</button>
+        </div>
+        <div id="quiz-play-view" style="display:none;">
+          <div class="quiz-progress">
+            <span class="qprog-label" id="q-num">1 / 3</span>
+            <div class="qprog-bar"><div class="qprog-fill" id="q-prog" style="width:33%;"></div></div>
+            <span class="qprog-label">소화기계</span>
+          </div>
+          <div class="quiz-q" id="q-text"></div>
+          <div class="quiz-options" id="q-opts"></div>
+          <div class="quiz-explanation" id="q-exp"></div>
+          <button class="quiz-next-btn" id="q-next" onclick="nextQuestion()">다음 문제 →</button>
+        </div>
+        <div id="quiz-result-view" style="display:none;text-align:center;padding-top:24px;">
+          <div style="font-size:32px;font-weight:800;color:#E9C46A;margin-bottom:8px;" id="result-score"></div>
+          <div style="font-size:14px;color:rgba(255,255,255,0.6);margin-bottom:20px;">문제를 맞혔습니다</div>
+          <button class="quiz-start-btn" onclick="resetQuiz()">다시 풀기</button>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
-<div id="viewer"></div>
-<div id="meta">
-  <div class="ml">조직명</div><div class="mv">소장 · Small Intestine</div>
-  <div class="ml">염색법</div><div class="mv">H&amp;E</div>
-  <div class="ml">해상도</div><div class="mv">0.121 μm/pixel (40×)</div>
-  <div class="ml">전체 크기</div><div class="mv">{W:,} × {H:,} px</div>
-  <div class="ml">장비</div><div class="mv">3DHISTECH Pannoramic 1000</div>
-</div>
-<div id="toolbar">
-  <button class="mb" onclick="zi()">−</button>
-  <div id="md">전체</div>
-  <button class="mb" onclick="zo()">+</button>
-  <span style="color:rgba(255,255,255,0.2);font-size:20px">|</span>
-  <button class="mb" onclick="fit()">전체</button>
-  <button class="mb" onclick="sm(1)">1×</button>
-  <button class="mb" onclick="sm(4)">4×</button>
-  <button class="mb" onclick="sm(10)">10×</button>
-  <button class="mb" onclick="sm(20)">20×</button>
-  <button class="mb" onclick="sm(40)">40×</button>
-</div>
-<div id="scale">— mm</div>
+
 <script>
-var viewer = OpenSeadragon({{
+// ── 퀴즈 데이터 ──
+var QUIZ = [
+  {{
+    q: "소장 H&E 슬라이드에서 배상세포(Goblet cell)를 구별하는 가장 중요한 특징은?",
+    opts: ["진한 보라색 핵을 가진다", "밝고 투명한 세포질 (점액 미염색)", "세포 크기가 현저히 크다", "기저막에 붙어있지 않다"],
+    ans: 1,
+    exp: "배상세포는 점액을 분비하며 H&E에서 점액이 염색되지 않아 세포질이 밝고 투명하게 보입니다."
+  }},
+  {{
+    q: "소장 융모(Villus)의 주요 기능은?",
+    opts: ["소화효소 분비", "흡수 면적 증가", "점액층 형성", "연동운동 조절"],
+    ans: 1,
+    exp: "융모는 소장 점막이 손가락 모양으로 돌출된 구조로, 표면적을 크게 늘려 영양소 흡수 효율을 높입니다."
+  }},
+  {{
+    q: "H&E 염색에서 핵이 진한 보라색으로 보이는 이유는?",
+    opts: ["헤마톡실린이 DNA와 결합하기 때문", "에오신이 핵에 침착하기 때문", "핵의 지질 성분 때문", "산성 단백질 때문"],
+    ans: 0,
+    exp: "헤마톡실린은 염기성 색소로 음전하를 띤 핵산(DNA, RNA)과 결합하여 핵을 청자색으로 염색합니다."
+  }}
+];
+var qIdx = 0, score = 0;
+
+// ── 구조 가이드 데이터 ──
+var GUIDE = {{
+  low: {{
+    label: "전체 배율 · 슬라이드 개요",
+    main: "전체 슬라이드를 보고 있습니다. 소장(small intestine)의 단면으로, 중앙의 내강(lumen)을 향해 <strong>융모(villus)</strong>가 돌출된 구조가 특징적입니다. 배율을 높여보세요.",
+    structs: [
+      {{dot:"#2A9D8F", name:"점막층 (Mucosa)", desc:"융모와 장샘이 위치하는 최내층."}},
+      {{dot:"#E9C46A", name:"점막하층 (Submucosa)", desc:"결합조직, 혈관, 신경총."}},
+      {{dot:"rgba(255,255,255,0.3)", name:"근육층 (Muscularis)", desc:"내윤상근 + 외종주근."}}
+    ],
+    observe: "H&E 염색에서 핵은 <strong style='color:#b4a0e8;'>진한 보라색</strong>, 세포질과 기저막은 <strong style='color:#f0b8c8;'>분홍색</strong>으로 관찰됩니다. 10× 이상으로 확대하면 융모 구조가 선명하게 보입니다."
+  }},
+  mid: {{
+    label: "10× 배율 · 융모 구조 분석",
+    main: "10× 배율에서 소장의 <strong>융모(Villus) 구조</strong>가 선명하게 보입니다. 손가락 모양으로 돌출된 구조물이 소장의 표면적을 극대화합니다.",
+    structs: [
+      {{dot:"#2A9D8F", name:"융모 (Villus)", desc:"점막 상피가 돌출된 구조. 흡수 면적 약 10배 증가."}},
+      {{dot:"#E9C46A", name:"배상세포 (Goblet cell)", desc:"점액 분비세포. H&E에서 밝은 투명한 세포질."}},
+      {{dot:"rgba(255,255,255,0.3)", name:"장샘 (Crypt of Lieberkühn)", desc:"융모 사이 오목한 부분. 세포 재생 담당."}}
+    ],
+    observe: "융모 표면의 단층 원주상피세포가 규칙적으로 배열되어 있습니다. 세포 사이 <strong style='color:#E9C46A;'>배상세포</strong>가 밝게 보입니다."
+  }},
+  high: {{
+    label: "40× 배율 · 세포 수준 관찰",
+    main: "40× 고배율에서 <strong>단층 원주상피세포</strong>의 핵과 미세융모(brush border)를 확인할 수 있습니다.",
+    structs: [
+      {{dot:"#2A9D8F", name:"미세융모 (Microvilli)", desc:"세포 정단면의 솔경계. 흡수 면적 추가 증가."}},
+      {{dot:"#E9C46A", name:"상피세포 핵", desc:"기저부에 위치. H&E에서 진한 보라색 타원형."}},
+      {{dot:"rgba(255,255,255,0.3)", name:"고유층 (Lamina propria)", desc:"융모 중심부. 모세혈관과 유미관 포함."}}
+    ],
+    observe: "세포 정단면의 <strong style='color:#2A9D8F;'>솔경계(brush border)</strong>가 희미한 분홍색 선으로 보입니다. 핵은 기저부에 규칙적으로 배열됩니다."
+  }}
+}};
+
+// ── OpenSeadragon ──
+var osd = OpenSeadragon({{
   id: "viewer",
   prefixUrl: "https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/images/",
   tileSources: "/dzi.dzi",
@@ -367,33 +622,176 @@ var viewer = OpenSeadragon({{
   visibilityRatio: 0.05,
   showNavigator: true,
   navigatorPosition: "BOTTOM_RIGHT",
-  navigatorHeight: 120,
-  navigatorWidth: 160,
+  navigatorHeight: 100,
+  navigatorWidth: 140,
   defaultZoomLevel: 0,
 }});
-viewer.addHandler('zoom', upd);
-viewer.addHandler('open', function() {{
-  viewer.viewport.goHome(true);
-  setTimeout(upd, 400);
-}});
-function upd() {{
+
+var lastMagLevel = '';
+osd.addHandler('zoom', updViewer);
+osd.addHandler('open', function() {{ osd.viewport.goHome(true); setTimeout(updViewer, 400); }});
+
+function updViewer() {{
   try {{
-    var z = viewer.viewport.getZoom(true);
+    var z = osd.viewport.getZoom(true);
     var mag = z * 40;
-    document.getElementById('md').textContent =
-      mag >= 1 ? (Math.round(mag*10)/10)+'×' : mag.toFixed(3)+'×';
-    var vw = viewer.viewport.getBounds().width;
+    var magText = mag >= 1 ? (Math.round(mag*10)/10)+'×' : mag.toFixed(3)+'×';
+    document.getElementById('md').textContent = magText;
+    document.getElementById('hdr-mag').textContent = magText;
+    document.getElementById('mag-badge').textContent = magText;
+    document.getElementById('ctx-label').textContent = '소장 H&E · ' + magText + ' 배율 컨텍스트 포함';
+
+    var vw = osd.viewport.getBounds().width;
     var umW = vw * {W} * 0.121;
     var sc = Math.round(umW / 5);
     document.getElementById('scale').textContent =
       sc >= 1000000 ? (sc/1000000).toFixed(1)+' m' :
       sc >= 1000 ? (sc/1000).toFixed(2)+' mm' : sc+' μm';
+
+    // 구조 가이드 자동 업데이트
+    var level = mag < 2 ? 'low' : mag < 15 ? 'mid' : 'high';
+    if(level !== lastMagLevel) {{ lastMagLevel = level; updateGuide(level); }}
   }} catch(e) {{}}
 }}
-function fit() {{ viewer.viewport.goHome(false); setTimeout(upd,200); }}
-function zi() {{ viewer.viewport.zoomBy(1/1.8); setTimeout(upd,100); }}
-function zo() {{ viewer.viewport.zoomBy(1.8); setTimeout(upd,100); }}
-function sm(m) {{ viewer.viewport.zoomTo(m/40); setTimeout(upd,100); }}
+
+function updateGuide(level) {{
+  var g = GUIDE[level];
+  document.getElementById('guide-mag-label').textContent = g.label;
+  document.getElementById('guide-main-text').innerHTML = g.main;
+  document.getElementById('observe-text').innerHTML = g.observe;
+  var sl = document.getElementById('structure-list');
+  sl.innerHTML = g.structs.map(function(s) {{
+    return '<div class="struct-item"><div class="struct-dot" style="background:'+s.dot+';"></div><div class="struct-text"><strong>'+s.name+'</strong> — '+s.desc+'</div></div>';
+  }}).join('');
+}}
+
+function fit() {{ osd.viewport.goHome(false); setTimeout(updViewer,200); }}
+function zi() {{ osd.viewport.zoomBy(1/1.8); setTimeout(updViewer,100); }}
+function zo() {{ osd.viewport.zoomBy(1.8); setTimeout(updViewer,100); }}
+function sm(m) {{ osd.viewport.zoomTo(m/40); setTimeout(updViewer,100); }}
+
+// ── 탭 전환 ──
+function switchTab(idx) {{
+  document.querySelectorAll('.tab').forEach(function(t,i){{ t.classList.toggle('active', i===idx); }});
+  document.querySelectorAll('.tab-content').forEach(function(c,i){{ c.classList.toggle('active', i===idx); }});
+}}
+
+// ── AI 패널 토글 ──
+function togglePanel() {{
+  var panel = document.getElementById('ai-panel');
+  var main = document.getElementById('main');
+  var btn = document.getElementById('ai-toggle');
+  if(panel.style.display === 'none') {{
+    panel.style.display = 'flex';
+    main.style.gridTemplateColumns = '1fr 310px';
+    btn.textContent = 'AI 패널 숨기기';
+  }} else {{
+    panel.style.display = 'none';
+    main.style.gridTemplateColumns = '1fr';
+    btn.textContent = 'AI 패널 열기';
+  }}
+}}
+
+// ── 채팅 ──
+function sendChat() {{
+  var input = document.getElementById('chat-input');
+  var msg = input.value.trim();
+  if(!msg) return;
+  input.value = '';
+
+  var z = osd.viewport.getZoom(true);
+  var mag = (z * 40);
+  var magText = mag >= 1 ? Math.round(mag*10)/10 + '×' : mag.toFixed(3) + '×';
+
+  var msgs = document.getElementById('chat-messages');
+  msgs.innerHTML += '<div class="msg-user"><div class="msg-user-bubble">'+escHtml(msg)+'</div></div>';
+
+  var typingId = 'typing-' + Date.now();
+  msgs.innerHTML += '<div class="msg-ai" id="'+typingId+'"><div class="msg-ai-icon"><svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 6v6l4 2"/></svg></div><div class="msg-ai-bubble"><div class="typing-indicator"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div></div></div>';
+  msgs.scrollTop = msgs.scrollHeight;
+
+  var SLIDE_INFO = "소장(Small Intestine) H&E 염색 슬라이드, 3DHISTECH 스캐너, 현재 " + magText + " 배율";
+  var SYSTEM = "당신은 SlideAtlas의 AI 튜터입니다. 지금 학생이 보고 있는 슬라이드: " + SLIDE_INFO + ". 조직학 교육 전문가로서 친절하고 정확하게 한국어로 답변하세요. 답변은 3~5문장으로 간결하게.";
+
+  fetch("https://api.anthropic.com/v1/messages", {{
+    method: "POST",
+    headers: {{"Content-Type": "application/json"}},
+    body: JSON.stringify({{
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 600,
+      system: SYSTEM,
+      messages: [{{role:"user", content:msg}}]
+    }})
+  }})
+  .then(function(r){{ return r.json(); }})
+  .then(function(data) {{
+    var reply = data.content && data.content[0] ? data.content[0].text : "응답을 받지 못했습니다.";
+    var el = document.getElementById(typingId);
+    if(el) el.querySelector('.msg-ai-bubble').textContent = reply;
+    msgs.scrollTop = msgs.scrollHeight;
+  }})
+  .catch(function() {{
+    var el = document.getElementById(typingId);
+    if(el) el.querySelector('.msg-ai-bubble').textContent = "연결 오류가 발생했습니다. 잠시 후 다시 시도해주세요.";
+  }});
+}}
+
+function escHtml(s) {{
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}}
+
+// ── 퀴즈 ──
+function startQuiz() {{
+  qIdx = 0; score = 0;
+  document.getElementById('quiz-start-view').style.display = 'none';
+  document.getElementById('quiz-result-view').style.display = 'none';
+  document.getElementById('quiz-play-view').style.display = 'block';
+  renderQuestion();
+}}
+
+function renderQuestion() {{
+  var q = QUIZ[qIdx];
+  document.getElementById('q-num').textContent = (qIdx+1) + ' / ' + QUIZ.length;
+  document.getElementById('q-prog').style.width = ((qIdx+1)/QUIZ.length*100) + '%';
+  document.getElementById('q-text').textContent = q.q;
+  document.getElementById('q-exp').style.display = 'none';
+  document.getElementById('q-exp').textContent = q.exp;
+  document.getElementById('q-next').style.display = 'none';
+  var opts = document.getElementById('q-opts');
+  var letters = ['A','B','C','D'];
+  opts.innerHTML = q.opts.map(function(o,i) {{
+    return '<div class="quiz-opt" onclick="answerQ(this,'+i+')"><span class="opt-num">'+letters[i]+'</span>'+escHtml(o)+'</div>';
+  }}).join('');
+}}
+
+function answerQ(el, idx) {{
+  var q = QUIZ[qIdx];
+  document.querySelectorAll('.quiz-opt').forEach(function(o){{ o.onclick=null; }});
+  if(idx === q.ans) {{
+    el.classList.add('correct');
+    score++;
+  }} else {{
+    el.classList.add('wrong');
+    document.querySelectorAll('.quiz-opt')[q.ans].classList.add('correct');
+  }}
+  document.getElementById('q-exp').style.display = 'block';
+  document.getElementById('q-next').style.display = 'block';
+  document.getElementById('q-next').textContent = qIdx < QUIZ.length-1 ? '다음 문제 →' : '결과 보기 →';
+}}
+
+function nextQuestion() {{
+  qIdx++;
+  if(qIdx >= QUIZ.length) {{
+    document.getElementById('quiz-play-view').style.display = 'none';
+    document.getElementById('quiz-result-view').style.display = 'block';
+    document.getElementById('result-score').textContent = score + ' / ' + QUIZ.length;
+  }} else {{ renderQuestion(); }}
+}}
+
+function resetQuiz() {{
+  document.getElementById('quiz-result-view').style.display = 'none';
+  document.getElementById('quiz-start-view').style.display = 'block';
+}}
 </script>
 </body>
 </html>'''
