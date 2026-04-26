@@ -1131,7 +1131,7 @@ def api_chat():
         return jsonify({'reply': '메시지가 없습니다.'}), 400
 
     payload = json_mod.dumps({
-        'model': 'claude-sonnet-4-20250514',
+        'model': 'claude-sonnet-4-5',
         'max_tokens': 600,
         'system': system_prompt,
         'messages': [{'role': 'user', 'content': user_msg}]
