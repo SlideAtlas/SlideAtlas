@@ -740,19 +740,23 @@ function escHtml(s) {{
 
 function renderMd(s) {{
   var h = escHtml(s);
-  // 제목: # 으로 시작하는 줄
-  h = h.replace(/^# (.+)$/gm, '<strong style="font-size:13px;color:#0F1F3D;display:block;margin-bottom:4px;">$1</strong>');
-  h = h.replace(/^## (.+)$/gm, '<strong style="font-size:13px;color:#0F1F3D;display:block;margin-bottom:4px;">$1</strong>');
-  // 굵게: **텍스트** - split 방식으로 정규식 회피
+  // 제목: # 으로 시작하는 줄 - split 방식으로 정규식 회피
+  var lines = h.split('\n');
+  for(var i=0; i<lines.length; i++) {{
+    if(lines[i].indexOf('# ') === 0) {{
+      lines[i] = '<strong style="font-size:13px;color:#0F1F3D;display:block;margin-bottom:4px;">' + lines[i].slice(2) + '</strong>';
+    }} else if(lines[i].indexOf('## ') === 0) {{
+      lines[i] = '<strong style="font-size:13px;color:#0F1F3D;display:block;margin-bottom:4px;">' + lines[i].slice(3) + '</strong>';
+    }}
+  }}
+  h = lines.join('<br>');
+  // 굵게: **텍스트** - split 방식
   var parts = h.split('**');
   var result = '';
   for(var i=0; i<parts.length; i++) {{
     result += i%2===1 ? '<strong>'+parts[i]+'</strong>' : parts[i];
   }}
-  h = result;
-  // 줄바꿈
-  h = h.replace(/\n/g, '<br>');
-  return h;
+  return result;
 }}
 
 // ── 퀴즈 ──
