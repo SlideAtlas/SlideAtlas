@@ -741,7 +741,7 @@ function escHtml(s) {{
 function renderMd(s) {{
   var h = escHtml(s);
   // 제목: # 으로 시작하는 줄 - split 방식으로 정규식 회피
-  var lines = h.split('\n');
+  var lines = h.split('\\n');
   for(var i=0; i<lines.length; i++) {{
     if(lines[i].indexOf('# ') === 0) {{
       lines[i] = '<strong style="font-size:13px;color:#0F1F3D;display:block;margin-bottom:4px;">' + lines[i].slice(2) + '</strong>';
