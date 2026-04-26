@@ -710,8 +710,8 @@ function sendChat() {{
   msgs.innerHTML += '<div class="msg-ai" id="'+typingId+'"><div class="msg-ai-icon"><svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 6v6l4 2"/></svg></div><div class="msg-ai-bubble"><div class="typing-indicator"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div></div></div>';
   msgs.scrollTop = msgs.scrollHeight;
 
-  var SLIDE_INFO = "소장(Small Intestine) H&E 염색 슬라이드, 3DHISTECH 스캐너, 현재 " + magText + " 배율";
-  var SYSTEM = "당신은 SlideAtlas의 AI 튜터입니다. 지금 학생이 보고 있는 슬라이드: " + SLIDE_INFO + ". 조직학 교육 전문가로서 친절하고 정확하게 한국어로 답변하세요. 답변은 3~5문장으로 간결하게.";
+  var SLIDE_INFO = "Small Intestine H&E slide, 3DHISTECH scanner, current magnification: " + magText;
+  var SYSTEM = "You are SlideAtlas AI tutor. Current slide: " + SLIDE_INFO + ". Please answer in Korean, as a histology education expert. Keep answers to 3-5 sentences.";
 
   fetch("/api/chat", {{
     method: "POST",
