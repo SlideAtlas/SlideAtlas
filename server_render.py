@@ -2,7 +2,7 @@ import os
 import sys
 import threading
 
-from flask import Flask, send_file, Response
+from flask import Flask, send_file, Response, request, jsonify
 from PIL import Image
 import io
 
@@ -713,19 +713,17 @@ function sendChat() {{
   var SLIDE_INFO = "소장(Small Intestine) H&E 염색 슬라이드, 3DHISTECH 스캐너, 현재 " + magText + " 배율";
   var SYSTEM = "당신은 SlideAtlas의 AI 튜터입니다. 지금 학생이 보고 있는 슬라이드: " + SLIDE_INFO + ". 조직학 교육 전문가로서 친절하고 정확하게 한국어로 답변하세요. 답변은 3~5문장으로 간결하게.";
 
-  fetch("https://api.anthropic.com/v1/messages", {{
+  fetch("/api/chat", {{
     method: "POST",
     headers: {{"Content-Type": "application/json"}},
     body: JSON.stringify({{
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 600,
-      system: SYSTEM,
-      messages: [{{role:"user", content:msg}}]
+      message: msg,
+      system: SYSTEM
     }})
   }})
   .then(function(r){{ return r.json(); }})
   .then(function(data) {{
-    var reply = data.content && data.content[0] ? data.content[0].text : "응답을 받지 못했습니다.";
+    var reply = data.reply || "응답을 받지 못했습니다.";
     var el = document.getElementById(typingId);
     if(el) el.querySelector('.msg-ai-bubble').textContent = reply;
     msgs.scrollTop = msgs.scrollHeight;
@@ -1114,6 +1112,48 @@ footer{background:#0F1F3D;padding:28px 52px;display:flex;align-items:center;just
 </footer>
 </body>
 </html>'''
+
+# ── Claude API 중계 엔드포인트 ──
+@app.route('/api/chat', methods=['POST'])
+def api_chat():
+    import urllib.request
+    import json as json_mod
+
+    api_key = os.environ.get('ANTHROPIC_API_KEY', '')
+    if not api_key:
+        return jsonify({'reply': '서버에 API 키가 설정되지 않았습니다. 관리자에게 문의하세요.'}), 500
+
+    data = request.get_json()
+    user_msg = data.get('message', '')
+    system_prompt = data.get('system', '당신은 병리학 교육 AI 튜터입니다. 한국어로 답변하세요.')
+
+    if not user_msg:
+        return jsonify({'reply': '메시지가 없습니다.'}), 400
+
+    payload = json_mod.dumps({
+        'model': 'claude-sonnet-4-20250514',
+        'max_tokens': 600,
+        'system': system_prompt,
+        'messages': [{'role': 'user', 'content': user_msg}]
+    }).encode('utf-8')
+
+    req = urllib.request.Request(
+        'https://api.anthropic.com/v1/messages',
+        data=payload,
+        headers={
+            'Content-Type': 'application/json',
+            'x-api-key': api_key,
+            'anthropic-version': '2023-06-01'
+        },
+        method='POST'
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            result = json_mod.loads(resp.read().decode('utf-8'))
+            reply = result['content'][0]['text'] if result.get('content') else '응답 없음'
+            return jsonify({'reply': reply})
+    except Exception as e:
+        return jsonify({'reply': f'API 오류: {str(e)}'}), 500
 
 @app.route('/dzi.dzi')
 def dzi_descriptor():
