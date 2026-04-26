@@ -725,7 +725,7 @@ function sendChat() {{
   .then(function(data) {{
     var reply = data.reply || "응답을 받지 못했습니다.";
     var el = document.getElementById(typingId);
-    if(el) el.querySelector('.msg-ai-bubble').textContent = reply;
+    if(el) el.querySelector('.msg-ai-bubble').innerHTML = renderMd(reply);
     msgs.scrollTop = msgs.scrollHeight;
   }})
   .catch(function() {{
@@ -736,6 +736,15 @@ function sendChat() {{
 
 function escHtml(s) {{
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}}
+
+function renderMd(s) {{
+  return escHtml(s)
+    .replace(/^#{1,3} (.+)$/gm, '<strong style="font-size:13px;color:#0F1F3D;display:block;margin-bottom:4px;">$1</strong>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/
+/g, '<br>');
 }}
 
 // ── 퀴즈 ──
