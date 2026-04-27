@@ -1,0 +1,17 @@
+{
+  "slides": [
+    {
+      "id": "SA-HST-0001",
+      "title_ko": "소장 · 융모 구조",
+      "title_en": "Small Intestine, Villi",
+      "system": "소화기계",
+      "stain": "H&E",
+      "category": "histology",
+      "institution": "SA",
+      "dcm_files": ["000001.dcm", "000002.dcm", "000003.dcm", "000004.dcm", "000005.dcm", "000006.dcm", "000007.dcm", "000008.dcm", "000009.dcm", "000010.dcm", "000011.dcm", "000012.dcm", "000013.dcm", "000014.dcm"],
+      "dcm_entry": "000001.dcm",
+      "description": "소장의 융모(villi)와 장샘(crypts of Lieberkühn) 구조를 관찰할 수 있는 H&E 염색 슬라이드.",
+      "active": true
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "institutions": [
+    {
+      "code": "SA",
+      "name_ko": "SlideAtlas",
+      "name_en": "SlideAtlas",
+      "country": "KR",
+      "type": "platform"
+    },
+    {
+      "code": "YU",
+      "name_ko": "연세대학교",
+      "name_en": "Yonsei University",
+      "country": "KR",
+      "type": "university"
+    },
+    {
+      "code": "SNU",
+      "name_ko": "서울대학교",
+      "name_en": "Seoul National University",
+      "country": "KR",
+      "type": "university"
+    },
+    {
+      "code": "KU",
+      "name_ko": "고려대학교",
+      "name_en": "Korea University",
+      "country": "KR",
+      "type": "university"
+    },
+    {
+      "code": "MU",
+      "name_ko": "마히돌대학교",
+      "name_en": "Mahidol University",
+      "country": "TH",
+      "type": "university"
+    }
+  ],
+  "subjects": [
+    {"code": "HST", "name_ko": "조직학", "name_en": "Histology"},
+    {"code": "PATH", "name_ko": "병리학", "name_en": "Pathology"},
+    {"code": "PARA", "name_ko": "기생충학", "name_en": "Parasitology"},
+    {"code": "ANAT", "name_ko": "해부학", "name_en": "Anatomy"},
+    {"code": "EMBRY", "name_ko": "발생학", "name_en": "Embryology"}
+  ]
+}
