@@ -8,7 +8,8 @@ import io
 
 app = Flask(__name__)
 
-DCM_PATH = "/opt/render/project/src/000001.dcm"
+DCM_DIR = "/tmp/dcm_slides"
+DCM_PATH = os.path.join(DCM_DIR, "000001.dcm")
 download_status = {"done": False, "error": None, "progress": 0}
 slide = None
 dz = None
@@ -20,8 +21,38 @@ OVERLAP = 1
 def download_and_init():
     global slide, dz, W, H, DZ_LEVELS, download_status
     try:
+        import boto3
         import openslide
         from openslide import deepzoom
+
+        bucket = os.environ.get('AWS_S3_BUCKET', 'slideatlas-slides')
+        region = os.environ.get('AWS_REGION', 'ap-northeast-2')
+
+        os.makedirs(DCM_DIR, exist_ok=True)
+
+        print("S3에서 DCM 파일 다운로드 중...")
+        s3 = boto3.client(
+            's3',
+            region_name=region,
+            aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID'),
+            aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY')
+        )
+
+        # S3 버킷 루트의 모든 DCM 파일 목록 가져와서 다운로드
+        response = s3.list_objects_v2(Bucket=bucket)
+
+        dcm_files = [obj['Key'] for obj in response.get('Contents', []) if obj['Key'].endswith('.dcm')]
+        print(f"총 {len(dcm_files)}개 DCM 파일 발견")
+
+        for i, key in enumerate(dcm_files):
+            filename = os.path.basename(key)
+            local_path = os.path.join(DCM_DIR, filename)
+            if not os.path.exists(local_path):
+                print(f"다운로드 중: {filename} ({i+1}/{len(dcm_files)})")
+                s3.download_file(bucket, key, local_path)
+            else:
+                print(f"이미 존재: {filename}")
+
         print("OpenSlide 초기화 중...")
         slide = openslide.OpenSlide(DCM_PATH)
         W, H = slide.dimensions
