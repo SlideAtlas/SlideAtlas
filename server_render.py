@@ -1,12 +1,43 @@
 import os
 import sys
 import threading
+import json
+from functools import wraps
 
-from flask import Flask, send_file, Response, request, jsonify
+from flask import Flask, send_file, Response, request, jsonify, session, redirect, url_for
 from PIL import Image
 import io
 
 app = Flask(__name__)
+app.secret_key = os.environ.get('ADMIN_SECRET_KEY', 'slideatlas-dev-secret-2026')
+
+# ── JSON 데이터 경로 ──
+SLIDES_JSON = os.path.join(os.path.dirname(__file__), 'slides.json')
+INSTITUTIONS_JSON = os.path.join(os.path.dirname(__file__), 'institutions.json')
+
+def load_slides():
+    if os.path.exists(SLIDES_JSON):
+        with open(SLIDES_JSON, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return {"slides": []}
+
+def save_slides(data):
+    with open(SLIDES_JSON, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+def load_institutions():
+    if os.path.exists(INSTITUTIONS_JSON):
+        with open(INSTITUTIONS_JSON, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return {"institutions": [], "subjects": []}
+
+def admin_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get('admin_logged_in'):
+            return redirect('/admin/login')
+        return f(*args, **kwargs)
+    return decorated
 
 DCM_DIR = "/tmp/dcm_slides"
 DCM_PATH = os.path.join(DCM_DIR, "000001.dcm")
@@ -1240,6 +1271,366 @@ def dzi_tile(level, col, row):
         img.save(buf, 'JPEG')
         buf.seek(0)
         return send_file(buf, mimetype='image/jpeg')
+
+# ════════════════════════════════════════
+# ── 관리자 페이지 ──
+# ════════════════════════════════════════
+
+ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'slideatlas2026')
+
+@app.route('/admin/login', methods=['GET', 'POST'])
+def admin_login():
+    error = ''
+    if request.method == 'POST':
+        pw = request.form.get('password', '')
+        if pw == ADMIN_PASSWORD:
+            session['admin_logged_in'] = True
+            return redirect('/admin')
+        else:
+            error = '비밀번호가 올바르지 않습니다.'
+    return f'''<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SlideAtlas Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+@import url('https://cdn.jsdelivr.net/gh/sunn-us/SUIT/fonts/variable/woff2/SUIT-Variable.css');
+* {{ margin:0; padding:0; box-sizing:border-box; }}
+body {{ font-family:"SUIT Variable","SUIT",sans-serif; background:#0F1F3D; display:flex; align-items:center; justify-content:center; min-height:100vh; }}
+.login-box {{ background:#fff; border-radius:12px; padding:48px 40px; width:360px; box-shadow:0 20px 60px rgba(0,0,0,0.3); }}
+.logo {{ text-align:center; margin-bottom:32px; }}
+.logo-slide {{ font-size:9px; letter-spacing:0.22em; color:#2A9D8F; font-family:"DM Mono",monospace; }}
+.logo-atlas {{ font-size:24px; font-weight:800; color:#0F1F3D; }}
+.logo-admin {{ font-size:11px; color:#9B9490; letter-spacing:0.08em; margin-top:4px; font-family:"DM Mono",monospace; }}
+label {{ font-size:13px; font-weight:600; color:#0F1F3D; display:block; margin-bottom:8px; }}
+input[type=password] {{ width:100%; padding:11px 14px; border:1.5px solid #E5E0D8; border-radius:7px; font-size:14px; font-family:"SUIT Variable",sans-serif; outline:none; transition:border 0.2s; }}
+input[type=password]:focus {{ border-color:#2A9D8F; }}
+.btn {{ width:100%; padding:12px; background:#2A9D8F; color:#fff; border:none; border-radius:7px; font-size:14px; font-weight:600; font-family:"SUIT Variable",sans-serif; cursor:pointer; margin-top:16px; }}
+.btn:hover {{ background:#238b7f; }}
+.error {{ color:#e76f51; font-size:13px; margin-top:12px; text-align:center; }}
+</style>
+</head>
+<body>
+<div class="login-box">
+  <div class="logo">
+    <div class="logo-slide">SLIDE</div>
+    <div class="logo-atlas">ATLAS</div>
+    <div class="logo-admin">ADMIN CONSOLE</div>
+  </div>
+  <form method="POST">
+    <label>관리자 비밀번호</label>
+    <input type="password" name="password" placeholder="비밀번호 입력" autofocus>
+    <button class="btn" type="submit">로그인</button>
+    {f'<div class="error">{error}</div>' if error else ''}
+  </form>
+</div>
+</body>
+</html>'''
+
+@app.route('/admin/logout')
+def admin_logout():
+    session.pop('admin_logged_in', None)
+    return redirect('/admin/login')
+
+@app.route('/admin')
+@admin_required
+def admin_dashboard():
+    data = load_slides()
+    inst_data = load_institutions()
+    slides = data.get('slides', [])
+    institutions = inst_data.get('institutions', [])
+    subjects = inst_data.get('subjects', [])
+
+    inst_options = ''.join([f'<option value="{i["code"]}">{i["code"]} · {i["name_ko"]}</option>' for i in institutions])
+    subj_options = ''.join([f'<option value="{s["code"]}">{s["code"]} · {s["name_ko"]}</option>' for s in subjects])
+
+    slide_rows = ''
+    for s in slides:
+        status_badge = '<span class="badge-active">활성</span>' if s.get('active') else '<span class="badge-inactive">비활성</span>'
+        slide_rows += f'''
+        <tr>
+          <td><code>{s["id"]}</code></td>
+          <td>{s["title_ko"]}</td>
+          <td>{s.get("system","")}</td>
+          <td><span class="stain-badge">{s.get("stain","")}</span></td>
+          <td>{s.get("institution","")}</td>
+          <td>{status_badge}</td>
+          <td>
+            <button class="btn-edit" onclick="openEdit({json.dumps(s)})">수정</button>
+            <button class="btn-del" onclick="deleteSlide('{s["id"]}')">삭제</button>
+          </td>
+        </tr>'''
+
+    return f'''<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SlideAtlas Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+@import url('https://cdn.jsdelivr.net/gh/sunn-us/SUIT/fonts/variable/woff2/SUIT-Variable.css');
+*{{margin:0;padding:0;box-sizing:border-box;}}
+body{{font-family:"SUIT Variable","SUIT",sans-serif;background:#F7F4EF;color:#0F1F3D;min-height:100vh;}}
+nav{{background:#0F1F3D;padding:0 32px;height:54px;display:flex;align-items:center;justify-content:space-between;}}
+.logo{{display:flex;flex-direction:column;line-height:1;gap:1px;}}
+.logo-slide{{font-size:7px;letter-spacing:0.22em;color:#2A9D8F;font-family:"DM Mono",monospace;}}
+.logo-atlas{{font-size:18px;font-weight:800;color:#fff;}}
+.nav-right{{display:flex;align-items:center;gap:12px;}}
+.nav-badge{{font-size:10px;color:#2A9D8F;border:1px solid rgba(42,157,143,0.4);padding:3px 10px;border-radius:20px;font-family:"DM Mono",monospace;}}
+.nav-logout{{color:rgba(255,255,255,0.45);font-size:12px;text-decoration:none;}}
+.nav-logout:hover{{color:#fff;}}
+.container{{max-width:1100px;margin:0 auto;padding:32px 24px;}}
+.page-header{{display:flex;align-items:center;justify-content:space-between;margin-bottom:28px;}}
+.page-title{{font-size:22px;font-weight:800;letter-spacing:-0.02em;}}
+.page-sub{{font-size:13px;color:#9B9490;margin-top:3px;font-family:"DM Mono",monospace;}}
+.btn-add{{background:#2A9D8F;color:#fff;border:none;padding:10px 20px;border-radius:7px;font-size:13px;font-weight:600;font-family:"SUIT Variable",sans-serif;cursor:pointer;}}
+.btn-add:hover{{background:#238b7f;}}
+.card{{background:#fff;border:1px solid #E5E0D8;border-radius:12px;overflow:hidden;}}
+.card-header{{padding:18px 24px;border-bottom:1px solid #E5E0D8;display:flex;align-items:center;justify-content:space-between;}}
+.card-title{{font-size:14px;font-weight:700;}}
+.slide-count{{font-size:11px;color:#9B9490;font-family:"DM Mono",monospace;}}
+table{{width:100%;border-collapse:collapse;}}
+th{{text-align:left;padding:11px 16px;font-size:11px;letter-spacing:0.06em;color:#9B9490;font-weight:600;border-bottom:1px solid #E5E0D8;font-family:"DM Mono",monospace;}}
+td{{padding:13px 16px;font-size:13px;border-bottom:1px solid #F0EDE8;vertical-align:middle;}}
+tr:last-child td{{border-bottom:none;}}
+code{{background:#F0EDE8;padding:2px 7px;border-radius:4px;font-size:12px;font-family:"DM Mono",monospace;}}
+.stain-badge{{background:#EBF6F5;color:#0F6E56;font-size:11px;padding:2px 8px;border-radius:12px;font-weight:600;font-family:"DM Mono",monospace;}}
+.badge-active{{background:#EBF6F5;color:#0F6E56;font-size:11px;padding:2px 8px;border-radius:12px;font-weight:600;}}
+.badge-inactive{{background:#F5F0E8;color:#9B9490;font-size:11px;padding:2px 8px;border-radius:12px;font-weight:600;}}
+.btn-edit{{background:#F0EDE8;color:#0F1F3D;border:none;padding:5px 12px;border-radius:5px;font-size:12px;cursor:pointer;font-family:"SUIT Variable",sans-serif;font-weight:600;margin-right:4px;}}
+.btn-del{{background:#fde8e4;color:#c0392b;border:none;padding:5px 12px;border-radius:5px;font-size:12px;cursor:pointer;font-family:"SUIT Variable",sans-serif;font-weight:600;}}
+.btn-edit:hover{{background:#E5E0D8;}}
+.btn-del:hover{{background:#f5c6c0;}}
+
+/* 모달 */
+.modal-overlay{{display:none;position:fixed;inset:0;background:rgba(15,31,61,0.6);z-index:1000;align-items:center;justify-content:center;}}
+.modal-overlay.open{{display:flex;}}
+.modal{{background:#fff;border-radius:12px;width:540px;max-height:85vh;overflow-y:auto;padding:32px;}}
+.modal-title{{font-size:18px;font-weight:800;margin-bottom:24px;}}
+.form-row{{margin-bottom:16px;}}
+.form-row label{{font-size:12px;font-weight:600;color:#0F1F3D;display:block;margin-bottom:6px;letter-spacing:0.02em;}}
+.form-row input,.form-row select,.form-row textarea{{width:100%;padding:9px 12px;border:1.5px solid #E5E0D8;border-radius:7px;font-size:13px;font-family:"SUIT Variable",sans-serif;outline:none;}}
+.form-row input:focus,.form-row select:focus,.form-row textarea:focus{{border-color:#2A9D8F;}}
+.form-row textarea{{resize:vertical;min-height:72px;}}
+.form-grid{{display:grid;grid-template-columns:1fr 1fr;gap:12px;}}
+.modal-footer{{display:flex;gap:10px;justify-content:flex-end;margin-top:24px;}}
+.btn-cancel{{background:#F0EDE8;color:#0F1F3D;border:none;padding:10px 20px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;font-family:"SUIT Variable",sans-serif;}}
+.btn-save{{background:#2A9D8F;color:#fff;border:none;padding:10px 20px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;font-family:"SUIT Variable",sans-serif;}}
+.hint{{font-size:11px;color:#9B9490;margin-top:4px;font-family:"DM Mono",monospace;}}
+</style>
+</head>
+<body>
+<nav>
+  <div class="logo">
+    <span class="logo-slide">SLIDE</span>
+    <span class="logo-atlas">ATLAS</span>
+  </div>
+  <div class="nav-right">
+    <span class="nav-badge">ADMIN CONSOLE</span>
+    <a class="nav-logout" href="/admin/logout">로그아웃</a>
+  </div>
+</nav>
+
+<div class="container">
+  <div class="page-header">
+    <div>
+      <div class="page-title">슬라이드 관리</div>
+      <div class="page-sub">Slide Management · {len(slides)} slides total</div>
+    </div>
+    <button class="btn-add" onclick="openAdd()">+ 슬라이드 추가</button>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">전체 슬라이드</span>
+      <span class="slide-count">{len(slides)} TOTAL</span>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>슬라이드명</th>
+          <th>계통</th>
+          <th>염색</th>
+          <th>기관</th>
+          <th>상태</th>
+          <th>작업</th>
+        </tr>
+      </thead>
+      <tbody>{slide_rows if slide_rows else '<tr><td colspan="7" style="text-align:center;color:#9B9490;padding:32px;">등록된 슬라이드가 없습니다.</td></tr>'}</tbody>
+    </table>
+  </div>
+</div>
+
+<!-- 추가/수정 모달 -->
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <div class="modal-title" id="modal-title">슬라이드 추가</div>
+    <input type="hidden" id="edit-id">
+    <div class="form-grid">
+      <div class="form-row">
+        <label>기관 코드</label>
+        <select id="f-institution">{inst_options}</select>
+      </div>
+      <div class="form-row">
+        <label>과목 코드</label>
+        <select id="f-subject">{subj_options}</select>
+      </div>
+    </div>
+    <div class="form-row">
+      <label>슬라이드 ID <span style="color:#9B9490;font-weight:400">(자동생성 또는 직접 입력)</span></label>
+      <input type="text" id="f-id" placeholder="예: SA-HST-0002">
+      <div class="hint">기관코드-과목코드-순번 형식</div>
+    </div>
+    <div class="form-grid">
+      <div class="form-row">
+        <label>슬라이드명 (한글)</label>
+        <input type="text" id="f-title-ko" placeholder="예: 소장 · 융모 구조">
+      </div>
+      <div class="form-row">
+        <label>슬라이드명 (영문)</label>
+        <input type="text" id="f-title-en" placeholder="예: Small Intestine, Villi">
+      </div>
+    </div>
+    <div class="form-grid">
+      <div class="form-row">
+        <label>계통</label>
+        <input type="text" id="f-system" placeholder="예: 소화기계">
+      </div>
+      <div class="form-row">
+        <label>염색법</label>
+        <input type="text" id="f-stain" placeholder="예: H&E">
+      </div>
+    </div>
+    <div class="form-row">
+      <label>S3 진입 파일명 (dcm_entry)</label>
+      <input type="text" id="f-entry" placeholder="예: 000001.dcm">
+      <div class="hint">OpenSlide가 처음 읽을 DCM 파일명</div>
+    </div>
+    <div class="form-row">
+      <label>DCM 파일 목록 (쉼표로 구분)</label>
+      <textarea id="f-files" placeholder="000001.dcm, 000002.dcm, 000003.dcm ..."></textarea>
+    </div>
+    <div class="form-row">
+      <label>설명</label>
+      <textarea id="f-desc" placeholder="슬라이드 설명 입력"></textarea>
+    </div>
+    <div class="form-row">
+      <label>상태</label>
+      <select id="f-active">
+        <option value="true">활성</option>
+        <option value="false">비활성</option>
+      </select>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="closeModal()">취소</button>
+      <button class="btn-save" onclick="saveSlide()">저장</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function openAdd() {{
+  document.getElementById('modal-title').textContent = '슬라이드 추가';
+  document.getElementById('edit-id').value = '';
+  ['f-id','f-title-ko','f-title-en','f-system','f-stain','f-entry','f-files','f-desc'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('f-active').value = 'true';
+  document.getElementById('modal').classList.add('open');
+}}
+
+function openEdit(slide) {{
+  document.getElementById('modal-title').textContent = '슬라이드 수정';
+  document.getElementById('edit-id').value = slide.id;
+  document.getElementById('f-id').value = slide.id;
+  document.getElementById('f-title-ko').value = slide.title_ko || '';
+  document.getElementById('f-title-en').value = slide.title_en || '';
+  document.getElementById('f-system').value = slide.system || '';
+  document.getElementById('f-stain').value = slide.stain || '';
+  document.getElementById('f-entry').value = slide.dcm_entry || '';
+  document.getElementById('f-files').value = (slide.dcm_files || []).join(', ');
+  document.getElementById('f-desc').value = slide.description || '';
+  document.getElementById('f-active').value = slide.active ? 'true' : 'false';
+  document.getElementById('f-institution').value = slide.institution || 'SA';
+  document.getElementById('modal').classList.add('open');
+}}
+
+function closeModal() {{
+  document.getElementById('modal').classList.remove('open');
+}}
+
+async function saveSlide() {{
+  const payload = {{
+    id: document.getElementById('f-id').value.trim(),
+    title_ko: document.getElementById('f-title-ko').value.trim(),
+    title_en: document.getElementById('f-title-en').value.trim(),
+    system: document.getElementById('f-system').value.trim(),
+    stain: document.getElementById('f-stain').value.trim(),
+    institution: document.getElementById('f-institution').value,
+    category: document.getElementById('f-subject').value.toLowerCase(),
+    dcm_entry: document.getElementById('f-entry').value.trim(),
+    dcm_files: document.getElementById('f-files').value.split(',').map(s => s.trim()).filter(Boolean),
+    description: document.getElementById('f-desc').value.trim(),
+    active: document.getElementById('f-active').value === 'true',
+    edit_id: document.getElementById('edit-id').value
+  }};
+  const res = await fetch('/admin/api/slide', {{method:'POST', headers:{{'Content-Type':'application/json'}}, body: JSON.stringify(payload)}});
+  const result = await res.json();
+  if (result.ok) {{ location.reload(); }} else {{ alert('오류: ' + result.error); }}
+}}
+
+async function deleteSlide(id) {{
+  if (!confirm(id + ' 슬라이드를 삭제하시겠습니까?')) return;
+  const res = await fetch('/admin/api/slide/' + id, {{method:'DELETE'}});
+  const result = await res.json();
+  if (result.ok) {{ location.reload(); }} else {{ alert('오류: ' + result.error); }}
+}}
+
+document.getElementById('modal').addEventListener('click', function(e) {{
+  if (e.target === this) closeModal();
+}});
+</script>
+</body>
+</html>'''
+
+# ── Admin API ──
+@app.route('/admin/api/slide', methods=['POST'])
+@admin_required
+def admin_save_slide():
+    try:
+        payload = request.get_json()
+        data = load_slides()
+        slides = data.get('slides', [])
+        edit_id = payload.pop('edit_id', None)
+
+        if edit_id:
+            for i, s in enumerate(slides):
+                if s['id'] == edit_id:
+                    slides[i] = payload
+                    break
+        else:
+            if any(s['id'] == payload['id'] for s in slides):
+                return jsonify({'ok': False, 'error': '이미 존재하는 ID입니다.'})
+            slides.append(payload)
+
+        data['slides'] = slides
+        save_slides(data)
+        return jsonify({'ok': True})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)})
+
+@app.route('/admin/api/slide/<slide_id>', methods=['DELETE'])
+@admin_required
+def admin_delete_slide(slide_id):
+    try:
+        data = load_slides()
+        data['slides'] = [s for s in data.get('slides', []) if s['id'] != slide_id]
+        save_slides(data)
+        return jsonify({'ok': True})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)})
 
 if __name__ == '__main__':
     print(f"\n✅ SlideAtlas 서버 시작!")
