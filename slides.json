@@ -8,9 +8,24 @@
       "stain": "H&E",
       "category": "histology",
       "institution": "SA",
+      "format": "dcm",
+      "s3_key": "000001.dcm",
       "dcm_files": ["000001.dcm", "000002.dcm", "000003.dcm", "000004.dcm", "000005.dcm", "000006.dcm", "000007.dcm", "000008.dcm", "000009.dcm", "000010.dcm", "000011.dcm", "000012.dcm", "000013.dcm", "000014.dcm"],
       "dcm_entry": "000001.dcm",
       "description": "소장의 융모(villi)와 장샘(crypts of Lieberkühn) 구조를 관찰할 수 있는 H&E 염색 슬라이드.",
+      "active": true
+    },
+    {
+      "id": "SA-PATH-0001",
+      "title_ko": "대장 · 선암",
+      "title_en": "Colon, Adenocarcinoma",
+      "system": "소화기계",
+      "stain": "H&E",
+      "category": "pathology",
+      "institution": "SA",
+      "format": "svs",
+      "s3_key": "TCGA-A6-2686-01Z-00-DX1.0540a027-2a0c-46c7-9af0-7b8672631de7.svs",
+      "description": "TCGA 대장선암(Colorectal Adenocarcinoma) H&E 슬라이드. 종양 조직의 선구조와 침윤 패턴을 관찰할 수 있습니다.",
       "active": true
     }
   ]
