@@ -39,65 +39,81 @@ def admin_required(f):
         return f(*args, **kwargs)
     return decorated
 
-DCM_DIR = "/tmp/dcm_slides"
-DCM_PATH = os.path.join(DCM_DIR, "000001.dcm")
-download_status = {"done": False, "error": None, "progress": 0}
-slide = None
-dz = None
-W, H = 57344, 60416
-DZ_LEVELS = 17
+# ── 온디맨드 슬라이드 캐시 ──
+SLIDE_CACHE = {}           # slide_id → {"slide": obj, "dz": obj, "W": int, "H": int, "levels": int}
+SLIDE_LOCKS = {}           # slide_id → threading.Lock()
+SLIDE_STATUS = {}          # slide_id → {"done": bool, "error": str|None}
 TILE_SIZE = 256
 OVERLAP = 1
+SLIDES_DIR = "/tmp/slides"
 
-def download_and_init():
-    global slide, dz, W, H, DZ_LEVELS, download_status
-    try:
-        import boto3
-        import openslide
-        from openslide import deepzoom
+def get_s3_client():
+    import boto3
+    return boto3.client(
+        's3',
+        region_name=os.environ.get('AWS_REGION', 'ap-northeast-2'),
+        aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID'),
+        aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY')
+    )
 
-        bucket = os.environ.get('AWS_S3_BUCKET', 'slideatlas-slides')
-        region = os.environ.get('AWS_REGION', 'ap-northeast-2')
+def init_slide(slide_id):
+    """슬라이드 요청 시 온디맨드로 로드. SVS는 S3 스트리밍, DCM은 다운로드."""
+    if slide_id not in SLIDE_LOCKS:
+        SLIDE_LOCKS[slide_id] = threading.Lock()
+    with SLIDE_LOCKS[slide_id]:
+        if slide_id in SLIDE_CACHE:
+            return True
+        SLIDE_STATUS[slide_id] = {"done": False, "error": None}
+        try:
+            import openslide
+            from openslide import deepzoom
 
-        os.makedirs(DCM_DIR, exist_ok=True)
+            data = load_slides()
+            slide_info = next((s for s in data.get('slides', []) if s['id'] == slide_id), None)
+            if not slide_info:
+                SLIDE_STATUS[slide_id]["error"] = "슬라이드 정보를 찾을 수 없습니다."
+                return False
 
-        print("S3에서 DCM 파일 다운로드 중...")
-        s3 = boto3.client(
-            's3',
-            region_name=region,
-            aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID'),
-            aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY')
-        )
+            bucket = os.environ.get('AWS_S3_BUCKET', 'slideatlas-slides')
+            s3_key = slide_info.get('s3_key', '')
+            fmt = slide_info.get('format', 'dcm').lower()
 
-        # S3 버킷 루트의 모든 DCM 파일 목록 가져와서 다운로드
-        response = s3.list_objects_v2(Bucket=bucket)
+            os.makedirs(SLIDES_DIR, exist_ok=True)
 
-        dcm_files = [obj['Key'] for obj in response.get('Contents', []) if obj['Key'].endswith('.dcm')]
-        print(f"총 {len(dcm_files)}개 DCM 파일 발견")
-
-        for i, key in enumerate(dcm_files):
-            filename = os.path.basename(key)
-            local_path = os.path.join(DCM_DIR, filename)
-            if not os.path.exists(local_path):
-                print(f"다운로드 중: {filename} ({i+1}/{len(dcm_files)})")
-                s3.download_file(bucket, key, local_path)
+            if fmt == 'svs':
+                # SVS: S3에서 직접 다운로드 후 OpenSlide로 읽기
+                local_path = os.path.join(SLIDES_DIR, f"{slide_id}.svs")
+                if not os.path.exists(local_path):
+                    print(f"SVS 다운로드 중: {s3_key}")
+                    s3 = get_s3_client()
+                    s3.download_file(bucket, s3_key, local_path)
+                    print(f"SVS 다운로드 완료: {local_path}")
+                slide_obj = openslide.OpenSlide(local_path)
             else:
-                print(f"이미 존재: {filename}")
+                # DCM: 관련 파일 전체 다운로드
+                dcm_files = slide_info.get('dcm_files', [])
+                dcm_entry = slide_info.get('dcm_entry', dcm_files[0] if dcm_files else '')
+                slide_dir = os.path.join(SLIDES_DIR, slide_id)
+                os.makedirs(slide_dir, exist_ok=True)
+                s3 = get_s3_client()
+                for fname in dcm_files:
+                    local_f = os.path.join(slide_dir, fname)
+                    if not os.path.exists(local_f):
+                        print(f"DCM 다운로드: {fname}")
+                        s3.download_file(bucket, fname, local_f)
+                local_path = os.path.join(slide_dir, dcm_entry)
+                slide_obj = openslide.OpenSlide(local_path)
 
-        print("OpenSlide 초기화 중...")
-        slide = openslide.OpenSlide(DCM_PATH)
-        W, H = slide.dimensions
-        dz = deepzoom.DeepZoomGenerator(slide, tile_size=TILE_SIZE, overlap=OVERLAP, limit_bounds=True)
-        DZ_LEVELS = dz.level_count
-        download_status["done"] = True
-        print(f"✅ 준비 완료! {W}x{H}, {DZ_LEVELS}레벨")
-    except Exception as e:
-        download_status["error"] = str(e)
-        print(f"❌ 오류: {e}")
-
-thread = threading.Thread(target=download_and_init)
-thread.daemon = True
-thread.start()
+            W, H = slide_obj.dimensions
+            dz = deepzoom.DeepZoomGenerator(slide_obj, tile_size=TILE_SIZE, overlap=OVERLAP, limit_bounds=True)
+            SLIDE_CACHE[slide_id] = {"slide": slide_obj, "dz": dz, "W": W, "H": H, "levels": dz.level_count}
+            SLIDE_STATUS[slide_id]["done"] = True
+            print(f"✅ [{slide_id}] 로드 완료! {W}x{H}, {dz.level_count}레벨")
+            return True
+        except Exception as e:
+            SLIDE_STATUS[slide_id]["error"] = str(e)
+            print(f"❌ [{slide_id}] 오류: {e}")
+            return False
 
 # ── 랜딩페이지 ──
 @app.route('/')
@@ -291,52 +307,81 @@ footer { background: #0F1F3D; padding: 28px 52px; display: flex; align-items: ce
 </body>
 </html>'''
 
-# ── 뷰어 (기존 / 라우트에서 /viewer로 이동) ──
+# ── 뷰어 (슬라이드별 온디맨드) ──
 @app.route('/viewer')
-def viewer():
-    if not download_status["done"]:
-        if download_status["error"]:
-            return f'''<!DOCTYPE html>
+def viewer_default():
+    # 기본 뷰어는 첫 번째 활성 슬라이드로 리다이렉트
+    data = load_slides()
+    slides = [s for s in data.get('slides', []) if s.get('active')]
+    if slides:
+        return redirect(f'/viewer/{slides[0]["id"]}')
+    return redirect('/')
+
+@app.route('/viewer/<slide_id>')
+def viewer(slide_id):
+    data = load_slides()
+    slide_info = next((s for s in data.get('slides', []) if s['id'] == slide_id), None)
+    if not slide_info:
+        return redirect('/slides')
+
+    # 백그라운드에서 슬라이드 로딩 시작
+    if slide_id not in SLIDE_CACHE:
+        t = threading.Thread(target=init_slide, args=(slide_id,))
+        t.daemon = True
+        t.start()
+
+    status = SLIDE_STATUS.get(slide_id, {"done": False, "error": None})
+
+    if status.get("error"):
+        return f'''<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><title>SlideAtlas</title>
 <style>body{{background:#0d1219;color:white;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;}}</style>
 </head><body><div style="text-align:center">
 <h2 style="color:#e76f51">오류 발생</h2>
-<p style="color:rgba(255,255,255,0.5)">{download_status["error"]}</p>
-<a href="/" style="color:#2A9D8F;margin-top:16px;display:block;">← 홈으로</a>
+<p style="color:rgba(255,255,255,0.5)">{status["error"]}</p>
+<a href="/slides" style="color:#2A9D8F;margin-top:16px;display:block;">← 목록으로</a>
 </div></body></html>'''
 
-        return '''<!DOCTYPE html>
+    if not status.get("done"):
+        return f'''<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><title>SlideAtlas — 로딩 중</title>
 <meta http-equiv="refresh" content="5">
 <style>
-* { margin:0; padding:0; box-sizing:border-box; }
-body { background:#0d1219; color:white; font-family:"Segoe UI",sans-serif;
-  display:flex; align-items:center; justify-content:center; height:100vh; }
-.logo-slide { font-size:9px; letter-spacing:0.25em; color:#2A9D8F; }
-.logo-atlas { font-size:28px; font-weight:700; margin-bottom:32px; }
-.spinner { width:40px; height:40px; border:3px solid rgba(255,255,255,0.1);
+* {{ margin:0; padding:0; box-sizing:border-box; }}
+body {{ background:#0d1219; color:white; font-family:"Segoe UI",sans-serif;
+  display:flex; align-items:center; justify-content:center; height:100vh; }}
+.logo-slide {{ font-size:9px; letter-spacing:0.25em; color:#2A9D8F; }}
+.logo-atlas {{ font-size:28px; font-weight:700; margin-bottom:32px; }}
+.spinner {{ width:40px; height:40px; border:3px solid rgba(255,255,255,0.1);
   border-top-color:#2A9D8F; border-radius:50%;
-  animation:spin 1s linear infinite; margin:0 auto 20px; }
-@keyframes spin { to { transform:rotate(360deg); } }
-p { color:rgba(255,255,255,0.45); font-size:14px; }
-small { color:rgba(255,255,255,0.25); font-size:12px; margin-top:8px; display:block; }
+  animation:spin 1s linear infinite; margin:0 auto 20px; }}
+@keyframes spin {{ to {{ transform:rotate(360deg); }} }}
+p {{ color:rgba(255,255,255,0.45); font-size:14px; }}
+small {{ color:rgba(255,255,255,0.25); font-size:12px; margin-top:8px; display:block; }}
 </style>
 </head>
 <body>
 <div style="text-align:center">
-  <div class="logo-slide">slide</div>
+  <div class="logo-slide">SLIDE</div>
   <div class="logo-atlas">ATLAS</div>
   <div class="spinner"></div>
-  <p>슬라이드 데이터 로딩 중...</p>
+  <p>{slide_info.get("title_ko", slide_id)} 로딩 중...</p>
   <small>처음 접속 시 1~2분 소요됩니다. 페이지가 자동으로 새로고침됩니다.</small>
 </div>
 </body></html>'''
+
+    cache = SLIDE_CACHE[slide_id]
+    W, H, DZ_LEVELS = cache["W"], cache["H"], cache["levels"]
+    title_ko = slide_info.get("title_ko", slide_id)
+    title_en = slide_info.get("title_en", "")
+    system = slide_info.get("system", "")
+    stain = slide_info.get("stain", "H&E")
 
     return f'''<!DOCTYPE html>
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<title>SlideAtlas — 소장 H&E</title>
+<title>SlideAtlas — {title_ko}</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/openseadragon.min.js"></script>
 <style>
@@ -674,7 +719,7 @@ var GUIDE = {{
 var osd = OpenSeadragon({{
   id: "viewer",
   prefixUrl: "https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/images/",
-  tileSources: "/dzi.dzi",
+  tileSources: "/dzi/{slide_id}.dzi",
   showNavigationControl: false,
   animationTime: 0.3,
   blendTime: 0.1,
@@ -1238,10 +1283,12 @@ def api_chat():
     except Exception as e:
         return jsonify({'reply': f'API 오류: {str(e)}'}), 500
 
-@app.route('/dzi.dzi')
-def dzi_descriptor():
-    if not download_status["done"]:
+@app.route('/dzi/<slide_id>.dzi')
+def dzi_descriptor(slide_id):
+    if slide_id not in SLIDE_CACHE:
         return Response("Loading...", status=503)
+    cache = SLIDE_CACHE[slide_id]
+    dz = cache["dz"]
     w, h = dz.level_dimensions[-1]
     xml = f'''<?xml version="1.0" encoding="UTF-8"?>
 <Image xmlns="http://schemas.microsoft.com/deepzoom/2008"
@@ -1250,16 +1297,17 @@ def dzi_descriptor():
 </Image>'''
     return Response(xml, mimetype='application/xml')
 
-@app.route('/dzi_files/<int:level>/<int:col>_<int:row>.jpeg')
-@app.route('/dzi_files/<int:level>/<int:col>_<int:row>.jpg')
-def dzi_tile(level, col, row):
-    if not download_status["done"]:
+@app.route('/dzi/<slide_id>_files/<int:level>/<int:col>_<int:row>.jpeg')
+@app.route('/dzi/<slide_id>_files/<int:level>/<int:col>_<int:row>.jpg')
+def dzi_tile(slide_id, level, col, row):
+    if slide_id not in SLIDE_CACHE:
         img = Image.new('RGB', (TILE_SIZE, TILE_SIZE), (245, 240, 235))
         buf = io.BytesIO()
         img.save(buf, 'JPEG')
         buf.seek(0)
         return send_file(buf, mimetype='image/jpeg')
     try:
+        dz = SLIDE_CACHE[slide_id]["dz"]
         tile = dz.get_tile(level, (col, row))
         buf = io.BytesIO()
         tile.save(buf, format='JPEG', quality=88)
