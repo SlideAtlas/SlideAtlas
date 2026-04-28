@@ -924,7 +924,61 @@ function resetQuiz() {{
 
 @app.route('/slides')
 def slides():
-    return '''<!DOCTYPE html>
+    data = load_slides()
+    all_slides = [s for s in data.get('slides', []) if s.get('active')]
+
+    # 필터 데이터 동적 생성
+    systems = {}
+    stains = {}
+    categories = {}
+    for s in all_slides:
+        sys = s.get('system', '기타')
+        stain = s.get('stain', '기타')
+        cat = s.get('category', '기타')
+        systems[sys] = systems.get(sys, 0) + 1
+        stains[stain] = stains.get(stain, 0) + 1
+        categories[cat] = categories.get(cat, 0) + 1
+
+    # 카드 HTML 생성
+    stain_class = {'H&E': 'he', 'PAS': 'pas', 'Masson Trichrome': 'masson', 'Silver': 'silver'}
+    cards_html = ''
+    for s in all_slides:
+        sid = s['id']
+        sc = stain_class.get(s.get('stain',''), 'he')
+        stain_badge = s.get('stain', 'H&E')
+        cards_html += f'''
+      <a class="slide-card" href="/viewer/{sid}">
+        <div class="card-thumb thumb-{sc}">
+          <span class="card-thumb-badge badge-{sc}">{stain_badge}</span>
+          <span class="card-sample-badge">AVAILABLE</span>
+          <span class="card-scale">WSI · 40×</span>
+        </div>
+        <div class="card-body">
+          <div class="card-system">{s.get('system','')}</div>
+          <div class="card-name-ko">{s.get('title_ko', sid)}</div>
+          <div class="card-name-en">{s.get('title_en','')}</div>
+          <div class="card-meta">
+            <span class="card-stain">{stain_badge} · {s.get('institution','SA')}</span>
+            <span class="card-link">열기 →</span>
+          </div>
+        </div>
+      </a>'''
+
+    system_filters = ''.join([f'''
+      <div class="filter-item">
+        <div class="filter-item-left"><div class="filter-cb"></div><span class="filter-label">{sys}</span></div>
+        <span class="filter-count">{cnt}</span>
+      </div>''' for sys, cnt in systems.items()])
+
+    stain_filters = ''.join([f'''
+      <div class="filter-item">
+        <div class="filter-item-left"><div class="filter-cb"></div><span class="filter-label">{st}</span></div>
+        <span class="filter-count">{cnt}</span>
+      </div>''' for st, cnt in stains.items()])
+
+    total = len(all_slides)
+
+    return f'''<!DOCTYPE html>
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -1032,8 +1086,8 @@ footer{background:#0F1F3D;padding:28px 52px;display:flex;align-items:center;just
 <div class="page-header">
   <div class="page-header-top">
     <div>
-      <h1 class="page-title">조직학 · Histology</h1>
-      <p class="page-desc">정상 조직의 미시적 구조를 고해상도 디지털 슬라이드로 관찰합니다.&nbsp;|&nbsp;준비 중 포함 6개 슬라이드</p>
+      <h1 class="page-title">슬라이드 라이브러리</h1>
+      <p class="page-desc">고해상도 디지털 WSI 슬라이드 아카이브&nbsp;|&nbsp;{total}개 슬라이드 열람 가능</p>
     </div>
     <div class="search-bar">
       <svg class="search-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
@@ -1052,46 +1106,12 @@ footer{background:#0F1F3D;padding:28px 52px;display:flex;align-items:center;just
   <div class="sidebar">
     <div class="filter-group">
       <div class="filter-group-title">계통별 · System</div>
-      <div class="filter-item">
-        <div class="filter-item-left"><div class="filter-cb checked"></div><span class="filter-label">소화기계</span></div>
-        <span class="filter-count">2</span>
-      </div>
-      <div class="filter-item">
-        <div class="filter-item-left"><div class="filter-cb"></div><span class="filter-label">비뇨기계</span></div>
-        <span class="filter-count">1</span>
-      </div>
-      <div class="filter-item">
-        <div class="filter-item-left"><div class="filter-cb"></div><span class="filter-label">순환기계</span></div>
-        <span class="filter-count">1</span>
-      </div>
-      <div class="filter-item">
-        <div class="filter-item-left"><div class="filter-cb"></div><span class="filter-label">호흡기계</span></div>
-        <span class="filter-count">1</span>
-      </div>
-      <div class="filter-item">
-        <div class="filter-item-left"><div class="filter-cb"></div><span class="filter-label">신경계</span></div>
-        <span class="filter-count">1</span>
-      </div>
+      {system_filters}
     </div>
     <div class="filter-divider"></div>
     <div class="filter-group">
       <div class="filter-group-title">염색법 · Stain</div>
-      <div class="filter-item">
-        <div class="filter-item-left"><div class="filter-cb checked"></div><span class="filter-label">H&amp;E</span></div>
-        <span class="filter-count">3</span>
-      </div>
-      <div class="filter-item">
-        <div class="filter-item-left"><div class="filter-cb"></div><span class="filter-label">PAS</span></div>
-        <span class="filter-count">1</span>
-      </div>
-      <div class="filter-item">
-        <div class="filter-item-left"><div class="filter-cb"></div><span class="filter-label">Masson Trichrome</span></div>
-        <span class="filter-count">1</span>
-      </div>
-      <div class="filter-item">
-        <div class="filter-item-left"><div class="filter-cb"></div><span class="filter-label">Silver</span></div>
-        <span class="filter-count">1</span>
-      </div>
+      {stain_filters}
     </div>
     <div class="filter-divider"></div>
     <div class="filter-group">
@@ -1113,7 +1133,7 @@ footer{background:#0F1F3D;padding:28px 52px;display:flex;align-items:center;just
 
   <div class="main">
     <div class="main-top">
-      <span class="result-count"><strong>6개</strong> 슬라이드 (1개 체험 가능)</span>
+      <span class="result-count"><strong>{total}개</strong> 슬라이드</span>
       <select class="sort-select">
         <option>최신 등록순</option>
         <option>이름순</option>
@@ -1122,109 +1142,7 @@ footer{background:#0F1F3D;padding:28px 52px;display:flex;align-items:center;just
     </div>
 
     <div class="slides-grid">
-
-      <a class="slide-card" href="/viewer">
-        <div class="card-thumb thumb-he">
-          <span class="card-thumb-badge badge-he">H&amp;E</span>
-          <span class="card-sample-badge">SAMPLE</span>
-          <span class="card-scale">100 μm · 40×</span>
-        </div>
-        <div class="card-body">
-          <div class="card-system">소화기계</div>
-          <div class="card-name-ko">소장 · 융모 구조</div>
-          <div class="card-name-en">Small Intestine, Villi</div>
-          <div class="card-meta">
-            <span class="card-stain">H&amp;E · 3DHISTECH</span>
-            <span class="card-link">체험하기 →</span>
-          </div>
-        </div>
-      </a>
-
-      <div class="slide-card locked">
-        <div class="card-thumb thumb-he">
-          <span class="card-thumb-badge badge-he">H&amp;E</span>
-          <span class="card-coming-badge">COMING SOON</span>
-          <span class="card-scale">100 μm</span>
-        </div>
-        <div class="card-body">
-          <div class="card-system">소화기계</div>
-          <div class="card-name-ko">간 · 소엽 구조</div>
-          <div class="card-name-en">Liver, Lobule</div>
-          <div class="card-meta">
-            <span class="card-stain">H&amp;E</span>
-            <span class="card-coming">준비 중</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="slide-card locked">
-        <div class="card-thumb thumb-pas">
-          <span class="card-thumb-badge badge-pas">PAS</span>
-          <span class="card-coming-badge">COMING SOON</span>
-          <span class="card-scale">100 μm</span>
-        </div>
-        <div class="card-body">
-          <div class="card-system">비뇨기계</div>
-          <div class="card-name-ko">신장 · 사구체</div>
-          <div class="card-name-en">Kidney, Glomerulus</div>
-          <div class="card-meta">
-            <span class="card-stain">PAS</span>
-            <span class="card-coming">준비 중</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="slide-card locked">
-        <div class="card-thumb thumb-he">
-          <span class="card-thumb-badge badge-he">H&amp;E</span>
-          <span class="card-coming-badge">COMING SOON</span>
-          <span class="card-scale">100 μm</span>
-        </div>
-        <div class="card-body">
-          <div class="card-system">호흡기계</div>
-          <div class="card-name-ko">폐 · 폐포 구조</div>
-          <div class="card-name-en">Lung, Alveoli</div>
-          <div class="card-meta">
-            <span class="card-stain">H&amp;E</span>
-            <span class="card-coming">준비 중</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="slide-card locked">
-        <div class="card-thumb thumb-masson">
-          <span class="card-thumb-badge badge-masson">MASSON</span>
-          <span class="card-coming-badge">COMING SOON</span>
-          <span class="card-scale">100 μm</span>
-        </div>
-        <div class="card-body">
-          <div class="card-system">순환기계</div>
-          <div class="card-name-ko">심장 · 심근섬유</div>
-          <div class="card-name-en">Heart, Cardiac Muscle</div>
-          <div class="card-meta">
-            <span class="card-stain">Masson Trichrome</span>
-            <span class="card-coming">준비 중</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="slide-card locked">
-        <div class="card-thumb thumb-silver">
-          <span class="card-thumb-badge badge-silver">SILVER</span>
-          <span class="card-coming-badge">COMING SOON</span>
-          <span class="card-scale">100 μm</span>
-        </div>
-        <div class="card-body">
-          <div class="card-system">신경계</div>
-          <div class="card-name-ko">대뇌 · 피질 구조</div>
-          <div class="card-name-en">Cerebral Cortex</div>
-          <div class="card-meta">
-            <span class="card-stain">Silver</span>
-            <span class="card-coming">준비 중</span>
-          </div>
-        </div>
-      </div>
-
+      {cards_html}
     </div>
   </div>
 </div>
