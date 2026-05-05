@@ -671,7 +671,21 @@ osd.addHandler('open', function() {{ osd.viewport.goHome(true); setTimeout(updVi
 function updViewer() {{
   try {{
     var z = osd.viewport.getZoom(true);
-    var mag = z * (0.25 / SLIDE_MPP) * 40;
+    // 정확한 배율: 화면픽셀 기준 계산
+    // zoom=1이면 슬라이드 전체폭=뷰포트폭
+    // 실제 배율 = (화면에서 1mm당 슬라이드픽셀수) / (기준 10x에서 1mm당 픽셀수)
+    var tiledImageW = osd.world.getItemAt(0) ? osd.world.getItemAt(0).getContentSize().x : SLIDE_W;
+    var viewportW = osd.viewport.getBounds().width;
+    // viewportW는 0~1 정규화 기준, 1=슬라이드폭
+    // 화면에 보이는 슬라이드 폭(픽셀) = SLIDE_W / viewportW * (containerW/SLIDE_W)
+    // 더 단순하게: 1픽셀당 실제 크기(um) = viewportW * SLIDE_W * SLIDE_MPP / containerW
+    var containerW = osd.container ? osd.container.clientWidth : 1000;
+    var umPerScreenPx = viewportW * SLIDE_W * SLIDE_MPP / containerW;
+    // 10x 기준: 1μm = 1화면픽셀 (표준 현미경 기준)
+    var mag = 10 / umPerScreenPx / 10;
+    // 실제 현미경 배율 = 1/umPerScreenPx * SCALE_FACTOR
+    // 40x objective에서 1px = 0.25μm이므로
+    mag = 1 / umPerScreenPx * 0.25 * 40;
     var magText = mag >= 1 ? (Math.round(mag*10)/10)+'×' : mag.toFixed(3)+'×';
     document.getElementById('md').textContent = magText;
     document.getElementById('hdr-mag').textContent = magText;
@@ -689,7 +703,15 @@ function updViewer() {{
 function fit() {{ osd.viewport.goHome(false); setTimeout(updViewer,200); }}
 function zi() {{ osd.viewport.zoomBy(1/1.8); setTimeout(updViewer,100); }}
 function zo() {{ osd.viewport.zoomBy(1.8); setTimeout(updViewer,100); }}
-function sm(m) {{ osd.viewport.zoomTo(m / ((0.25 / SLIDE_MPP) * 40)); setTimeout(updViewer,100); }}
+function sm(m) {{
+  // 원하는 배율(m)에서의 umPerScreenPx = 0.25*40/m
+  // viewportW = umPerScreenPx * containerW / (SLIDE_W * SLIDE_MPP)
+  var containerW = osd.container ? osd.container.clientWidth : 1000;
+  var umPerPx = (0.25 * 40 / m);
+  var targetViewportW = umPerPx * containerW / (SLIDE_W * SLIDE_MPP);
+  osd.viewport.zoomTo(1 / targetViewportW);
+  setTimeout(updViewer,100);
+}}
 
 function switchTab(idx) {{
   document.querySelectorAll('.tab').forEach(function(t,i){{ t.classList.toggle('active', i===idx); }});
@@ -717,7 +739,10 @@ function sendChat() {{
   if(!msg) return;
   input.value = '';
   var z = osd.viewport.getZoom(true);
-  var mag = (z * 40);
+  var containerW2 = osd.container ? osd.container.clientWidth : 1000;
+  var vw2 = osd.viewport.getBounds().width;
+  var umPerPx2 = vw2 * SLIDE_W * SLIDE_MPP / containerW2;
+  var mag = 1 / umPerPx2 * 0.25 * 40;
   var magText = mag >= 1 ? Math.round(mag*10)/10 + '×' : mag.toFixed(3) + '×';
   var msgs = document.getElementById('chat-messages');
   msgs.innerHTML += '<div class="msg-user"><div class="msg-user-bubble">'+escHtml(msg)+'</div></div>';
