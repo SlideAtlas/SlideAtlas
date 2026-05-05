@@ -120,6 +120,20 @@ def init_slide(slide_id):
             print(f"❌ [{slide_id}] 오류: {e}")
             return False
 
+# ── EC2 타일서버 프록시 (Mixed Content 해결) ──
+@app.route('/ec2tile/<path:subpath>')
+def ec2_proxy(subpath):
+    import urllib.request
+    url = f"{EC2_TILESERVER}/{subpath}"
+    try:
+        with urllib.request.urlopen(url, timeout=30) as resp:
+            data = resp.read()
+            ct = resp.headers.get('Content-Type', 'image/jpeg')
+            return Response(data, mimetype=ct)
+    except Exception as e:
+        print(f"EC2 proxy error {url}: {e}")
+        return Response(str(e), status=502)
+
 # ── 랜딩페이지 ──
 @app.route('/')
 def landing():
@@ -384,7 +398,7 @@ small {{ color:rgba(255,255,255,0.25); font-size:12px; margin-top:8px; display:b
     stain = slide_info.get("stain", "H&E")
 
     if use_ec2:
-        tile_source_url = f"{EC2_TILESERVER}/dzi/{slide_id}.dzi"
+        tile_source_url = f"/ec2tile/dzi/{slide_id}.dzi"
     else:
         tile_source_url = f"/dzi/{slide_id}.dzi"
 
