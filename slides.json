@@ -12,6 +12,7 @@
       "s3_key": "000001.dcm",
       "dcm_files": ["000001.dcm", "000002.dcm", "000003.dcm", "000004.dcm", "000005.dcm", "000006.dcm", "000007.dcm", "000008.dcm", "000009.dcm", "000010.dcm", "000011.dcm", "000012.dcm", "000013.dcm", "000014.dcm"],
       "dcm_entry": "000001.dcm",
+      "mpp": 0.121,
       "description": "소장의 융모(villi)와 장샘(crypts of Lieberkühn) 구조를 관찰할 수 있는 H&E 염색 슬라이드.",
       "active": true
     },
@@ -25,6 +26,7 @@
       "institution": "SA",
       "format": "svs",
       "s3_key": "TCGA-A6-2686-01Z-00-DX1.0540a027-2a0c-46c7-9af0-7b8672631de7.svs",
+      "mpp": 0.25,
       "description": "TCGA 대장선암(Colorectal Adenocarcinoma) H&E 슬라이드.",
       "active": false
     },
@@ -39,6 +41,7 @@
       "format": "svs",
       "tileserver": "ec2",
       "s3_key": "SA-PATH-0002/SA-PATH-0002.svs",
+      "mpp": 0.2526,
       "description": "HCM-BROD 유방암 H&E 슬라이드. 침윤성 관암종의 세포 구조를 관찰합니다.",
       "active": true
     }
