@@ -396,6 +396,7 @@ small {{ color:rgba(255,255,255,0.25); font-size:12px; margin-top:8px; display:b
     title_en = slide_info.get("title_en", "")
     system = slide_info.get("system", "")
     stain = slide_info.get("stain", "H&E")
+    mpp = slide_info.get("mpp", 0.25)
 
     if use_ec2:
         tile_source_url = f"/ec2tile/dzi/{slide_id}.dzi"
@@ -637,6 +638,12 @@ body{{background:#0d1219;font-family:"SUIT Variable","SUIT",sans-serif;overflow:
   </div>
 </div>
 <script>
+var SLIDE_ID = "{slide_id}";
+var SLIDE_TITLE = "{title_ko}";
+var SLIDE_STAIN = "{stain}";
+var SLIDE_W = {W};
+var SLIDE_H = {H};
+var SLIDE_MPP = {mpp};
 var QUIZ = [];
 var qIdx = 0, score = 0;
 
@@ -671,7 +678,7 @@ function updViewer() {{
     document.getElementById('mag-badge').textContent = magText;
     document.getElementById('ctx-label').textContent = '{title_ko} · ' + magText + ' 배율';
     var vw = osd.viewport.getBounds().width;
-    var umW = vw * {W} * 0.121;
+    var umW = vw * SLIDE_W * SLIDE_MPP;
     var sc = Math.round(umW / 5);
     document.getElementById('scale').textContent =
       sc >= 1000000 ? (sc/1000000).toFixed(1)+' m' :
