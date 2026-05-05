@@ -671,7 +671,7 @@ osd.addHandler('open', function() {{ osd.viewport.goHome(true); setTimeout(updVi
 function updViewer() {{
   try {{
     var z = osd.viewport.getZoom(true);
-    var mag = z * 40;
+    var mag = z * (0.25 / SLIDE_MPP) * 40;
     var magText = mag >= 1 ? (Math.round(mag*10)/10)+'×' : mag.toFixed(3)+'×';
     document.getElementById('md').textContent = magText;
     document.getElementById('hdr-mag').textContent = magText;
@@ -689,7 +689,7 @@ function updViewer() {{
 function fit() {{ osd.viewport.goHome(false); setTimeout(updViewer,200); }}
 function zi() {{ osd.viewport.zoomBy(1/1.8); setTimeout(updViewer,100); }}
 function zo() {{ osd.viewport.zoomBy(1.8); setTimeout(updViewer,100); }}
-function sm(m) {{ osd.viewport.zoomTo(m/40); setTimeout(updViewer,100); }}
+function sm(m) {{ osd.viewport.zoomTo(m / ((0.25 / SLIDE_MPP) * 40)); setTimeout(updViewer,100); }}
 
 function switchTab(idx) {{
   document.querySelectorAll('.tab').forEach(function(t,i){{ t.classList.toggle('active', i===idx); }});
