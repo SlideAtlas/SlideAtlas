@@ -40,12 +40,14 @@ def admin_required(f):
     return decorated
 
 # ── 온디맨드 슬라이드 캐시 ──
-SLIDE_CACHE = {}           # slide_id → {"slide": obj, "dz": obj, "W": int, "H": int, "levels": int}
-SLIDE_LOCKS = {}           # slide_id → threading.Lock()
-SLIDE_STATUS = {}          # slide_id → {"done": bool, "error": str|None}
+SLIDE_CACHE = {}
+SLIDE_LOCKS = {}
+SLIDE_STATUS = {}
 TILE_SIZE = 256
 OVERLAP = 1
 SLIDES_DIR = "/tmp/slides"
+
+EC2_TILESERVER = "http://ec2-13-209-99-51.ap-northeast-2.compute.amazonaws.com:8000"
 
 def get_s3_client():
     import boto3
@@ -57,7 +59,6 @@ def get_s3_client():
     )
 
 def init_slide(slide_id):
-    """슬라이드 요청 시 온디맨드로 로드. SVS는 S3 스트리밍, DCM은 다운로드."""
     if slide_id not in SLIDE_LOCKS:
         SLIDE_LOCKS[slide_id] = threading.Lock()
     with SLIDE_LOCKS[slide_id]:
@@ -74,6 +75,13 @@ def init_slide(slide_id):
                 SLIDE_STATUS[slide_id]["error"] = "슬라이드 정보를 찾을 수 없습니다."
                 return False
 
+            # EC2 타일서버를 쓰는 SVS는 Render에서 로드하지 않음
+            if slide_info.get('tileserver') == 'ec2':
+                SLIDE_CACHE[slide_id] = {"ec2": True, "W": 83663, "H": 13119, "levels": 18}
+                SLIDE_STATUS[slide_id]["done"] = True
+                print(f"✅ [{slide_id}] EC2 타일서버 모드")
+                return True
+
             bucket = os.environ.get('AWS_S3_BUCKET', 'slideatlas-slides')
             s3_key = slide_info.get('s3_key', '')
             fmt = slide_info.get('format', 'dcm').lower()
@@ -81,16 +89,13 @@ def init_slide(slide_id):
             os.makedirs(SLIDES_DIR, exist_ok=True)
 
             if fmt == 'svs':
-                # SVS: S3에서 직접 다운로드 후 OpenSlide로 읽기
                 local_path = os.path.join(SLIDES_DIR, f"{slide_id}.svs")
                 if not os.path.exists(local_path):
                     print(f"SVS 다운로드 중: {s3_key}")
                     s3 = get_s3_client()
                     s3.download_file(bucket, s3_key, local_path)
-                    print(f"SVS 다운로드 완료: {local_path}")
                 slide_obj = openslide.OpenSlide(local_path)
             else:
-                # DCM: 관련 파일 전체 다운로드
                 dcm_files = slide_info.get('dcm_files', [])
                 dcm_entry = slide_info.get('dcm_entry', dcm_files[0] if dcm_files else '')
                 slide_dir = os.path.join(SLIDES_DIR, slide_id)
@@ -220,11 +225,11 @@ footer { background: #0F1F3D; padding: 28px 52px; display: flex; align-items: ce
     </h1>
     <p class="hero-desc">의과대학 학생과 전공의를 위한 고해상도 디지털 슬라이드 아카이브. 현미경 수업의 연장선에서, 언제 어디서나 40배율까지 자유롭게 관찰하세요.</p>
     <div class="hero-cta">
-      <a class="btn-primary" href="/viewer">슬라이드 체험하기 →</a>
+      <a class="btn-primary" href="/slides">슬라이드 체험하기 →</a>
       <button class="btn-secondary">기관 구독 문의</button>
     </div>
     <div class="hero-stats">
-      <div><div class="stat-num">1+</div><div class="stat-label">샘플 슬라이드</div></div>
+      <div><div class="stat-num">2+</div><div class="stat-label">샘플 슬라이드</div></div>
       <div><div class="stat-num">40×</div><div class="stat-label">최대 배율</div></div>
       <div><div class="stat-num">WSI</div><div class="stat-label">고해상도 이미징</div></div>
     </div>
@@ -268,29 +273,29 @@ footer { background: #0F1F3D; padding: 28px 52px; display: flex; align-items: ce
   <div class="section-label">Browse by Discipline</div>
   <h2 class="section-title">과목별 슬라이드 라이브러리</h2>
   <div class="discipline-grid">
-    <a class="discipline-card" href="/viewer">
+    <a class="discipline-card" href="/slides">
       <div class="card-core-badge">CORE</div>
       <div class="card-icon"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></div>
-      <div class="card-count">1 SLIDE · SAMPLE</div>
-      <div class="card-title-ko">조직학</div>
-      <div class="card-title-en">Histology</div>
-      <p class="card-desc">정상 조직의 미시적 구조를 고해상도 디지털 슬라이드로 관찰합니다.</p>
+      <div class="card-count">2 SLIDES · SAMPLE</div>
+      <div class="card-title-ko">조직학 · 병리학</div>
+      <div class="card-title-en">Histology · Pathology</div>
+      <p class="card-desc">정상 조직 및 병변 조직의 미시적 구조를 고해상도 디지털 슬라이드로 관찰합니다.</p>
       <span class="card-arrow">→</span>
     </a>
     <div class="discipline-card" style="opacity:0.55; cursor:default;">
       <div class="card-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg></div>
       <div class="card-count">준비 중</div>
-      <div class="card-title-ko">병리학</div>
-      <div class="card-title-en">Pathology</div>
-      <p class="card-desc">질병에 의한 조직 변화를 관찰하고 진단적 사고를 훈련합니다.</p>
-      <span class="card-arrow">→</span>
-    </div>
-    <div class="discipline-card" style="opacity:0.55; cursor:default;">
-      <div class="card-icon"><svg viewBox="0 0 24 24"><path d="M8 3c0 0 1 2 1 5s-2 5-2 8c0 2.21 1.79 4 4 4s4-1.79 4-4c0-3-2-5-2-8s1-5 1-5"/><path d="M5 8c-1 0-2 1-2 2s1 2 2 2M19 8c1 0 2 1 2 2s-1 2-2 2"/></svg></div>
-      <div class="card-count">준비 중</div>
       <div class="card-title-ko">기생충학</div>
       <div class="card-title-en">Parasitology</div>
       <p class="card-desc">기생충의 조직학적 특징과 숙주 반응을 고해상도로 학습합니다.</p>
+      <span class="card-arrow">→</span>
+    </div>
+    <div class="discipline-card" style="opacity:0.55; cursor:default;">
+      <div class="card-icon"><svg viewBox="0 0 24 24"><path d="M8 3c0 0 1 2 1 5s-2 5-2 8c0 2.21 1.79 4 4 4s4-1.79 4-4c0-3-2-5-2-8s1-5 1-5"/></svg></div>
+      <div class="card-count">준비 중</div>
+      <div class="card-title-ko">발생학</div>
+      <div class="card-title-en">Embryology</div>
+      <p class="card-desc">발생 단계별 조직 변화를 슬라이드로 학습합니다.</p>
       <span class="card-arrow">→</span>
     </div>
   </div>
@@ -301,16 +306,14 @@ footer { background: #0F1F3D; padding: 28px 52px; display: flex; align-items: ce
   <div class="footer-links">
     <a href="mailto:mcmajo@naver.com">문의</a>
     <a href="#">기관 구독</a>
-    <a href="/viewer">슬라이드 체험</a>
+    <a href="/slides">슬라이드 열람</a>
   </div>
 </footer>
 </body>
 </html>'''
 
-# ── 뷰어 (슬라이드별 온디맨드) ──
 @app.route('/viewer')
 def viewer_default():
-    # 기본 뷰어는 첫 번째 활성 슬라이드로 리다이렉트
     data = load_slides()
     slides = [s for s in data.get('slides', []) if s.get('active')]
     if slides:
@@ -324,7 +327,8 @@ def viewer(slide_id):
     if not slide_info:
         return redirect('/slides')
 
-    # 백그라운드에서 슬라이드 로딩 시작
+    use_ec2 = slide_info.get('tileserver') == 'ec2'
+
     if slide_id not in SLIDE_CACHE:
         t = threading.Thread(target=init_slide, args=(slide_id,))
         t.daemon = True
@@ -345,7 +349,7 @@ def viewer(slide_id):
     if not status.get("done"):
         return f'''<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><title>SlideAtlas — 로딩 중</title>
-<meta http-equiv="refresh" content="5">
+<meta http-equiv="refresh" content="3">
 <style>
 * {{ margin:0; padding:0; box-sizing:border-box; }}
 body {{ background:#0d1219; color:white; font-family:"Segoe UI",sans-serif;
@@ -366,16 +370,23 @@ small {{ color:rgba(255,255,255,0.25); font-size:12px; margin-top:8px; display:b
   <div class="logo-atlas">ATLAS</div>
   <div class="spinner"></div>
   <p>{slide_info.get("title_ko", slide_id)} 로딩 중...</p>
-  <small>처음 접속 시 1~2분 소요됩니다. 페이지가 자동으로 새로고침됩니다.</small>
+  <small>처음 접속 시 잠시 소요됩니다. 페이지가 자동으로 새로고침됩니다.</small>
 </div>
 </body></html>'''
 
     cache = SLIDE_CACHE[slide_id]
-    W, H, DZ_LEVELS = cache["W"], cache["H"], cache["levels"]
+    W = cache.get("W", 83663)
+    H = cache.get("H", 13119)
+    DZ_LEVELS = cache.get("levels", 18)
     title_ko = slide_info.get("title_ko", slide_id)
     title_en = slide_info.get("title_en", "")
     system = slide_info.get("system", "")
     stain = slide_info.get("stain", "H&E")
+
+    if use_ec2:
+        tile_source_url = f"{EC2_TILESERVER}/dzi/{slide_id}.dzi"
+    else:
+        tile_source_url = f"/dzi/{slide_id}.dzi"
 
     return f'''<!DOCTYPE html>
 <html lang="ko">
@@ -388,8 +399,6 @@ small {{ color:rgba(255,255,255,0.25); font-size:12px; margin-top:8px; display:b
 @import url('https://cdn.jsdelivr.net/gh/sunn-us/SUIT/fonts/variable/woff2/SUIT-Variable.css');
 *{{margin:0;padding:0;box-sizing:border-box;}}
 body{{background:#0d1219;font-family:"SUIT Variable","SUIT",sans-serif;overflow:hidden;height:100vh;display:flex;flex-direction:column;}}
-
-/* HEADER */
 #header{{background:rgba(15,31,61,0.97);border-bottom:1px solid rgba(255,255,255,0.08);padding:0 20px;height:50px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;z-index:100;}}
 .logo{{display:flex;flex-direction:column;line-height:1;gap:1px;text-decoration:none;}}
 .logo-slide{{font-size:7px;letter-spacing:0.22em;color:#2A9D8F;font-family:"DM Mono",monospace;font-weight:500;}}
@@ -398,25 +407,16 @@ body{{background:#0d1219;font-family:"SUIT Variable","SUIT",sans-serif;overflow:
 #hdr-right{{display:flex;align-items:center;gap:8px;}}
 .hdr-back{{color:#2A9D8F;font-size:12px;text-decoration:none;border:1px solid rgba(42,157,143,0.3);padding:4px 10px;border-radius:5px;}}
 .hdr-btn{{background:transparent;color:rgba(255,255,255,0.45);border:1px solid rgba(255,255,255,0.12);padding:4px 10px;border-radius:5px;font-size:12px;cursor:pointer;font-family:"SUIT Variable",sans-serif;}}
-
-/* MAIN SPLIT */
 #main{{display:grid;grid-template-columns:1fr 310px;flex:1;overflow:hidden;}}
-
-/* VIEWER */
 #viewer-wrap{{position:relative;overflow:hidden;background:#111824;}}
 #viewer{{position:absolute;inset:0;}}
-
-/* toolbar */
 #toolbar{{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);background:rgba(15,31,61,0.95);border:1px solid rgba(255,255,255,0.12);border-radius:10px;padding:8px 16px;display:flex;align-items:center;gap:6px;z-index:50;box-shadow:0 8px 32px rgba(0,0,0,0.4);}}
 .mb{{background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.8);padding:5px 12px;border-radius:6px;cursor:pointer;font-size:11px;font-family:"DM Mono",monospace;transition:all 0.15s;}}
 .mb:hover{{background:rgba(42,157,143,0.3);border-color:#2A9D8F;color:white;}}
 .mb.active{{background:#2A9D8F;border-color:#2A9D8F;color:#fff;}}
 #md{{font-family:"DM Mono",monospace;font-size:14px;color:white;min-width:48px;text-align:center;font-weight:500;}}
 #scale{{position:absolute;bottom:16px;left:16px;background:rgba(0,0,0,0.6);color:rgba(255,255,255,0.7);padding:5px 12px;border-radius:6px;font-family:"DM Mono",monospace;font-size:11px;border:1px solid rgba(255,255,255,0.08);z-index:50;}}
-
-/* AI PANEL - 밝은 베이지/흰색 테마 */
 #ai-panel{{background:#F7F4EF;border-left:1px solid #E5E0D8;display:flex;flex-direction:column;overflow:hidden;}}
-
 .slide-meta{{padding:14px 18px;border-bottom:1px solid #E5E0D8;background:#fff;flex-shrink:0;}}
 .meta-title{{font-size:15px;font-weight:800;letter-spacing:-0.02em;color:#0F1F3D;margin-bottom:3px;}}
 .meta-sub{{font-size:11px;color:#9B9490;font-family:"DM Mono",monospace;}}
@@ -425,17 +425,12 @@ body{{background:#0d1219;font-family:"SUIT Variable","SUIT",sans-serif;overflow:
 .mbadge-he{{background:#EBF6F5;color:#0F6E56;border:1px solid rgba(42,157,143,0.2);}}
 .mbadge-sys{{background:#F0EDE8;color:#6B6560;border:1px solid #E5E0D8;}}
 .mbadge-mag{{background:#FEF7E6;color:#8B6010;border:1px solid rgba(233,196,106,0.3);}}
-
-/* TABS */
 .tabs{{display:flex;border-bottom:1px solid #E5E0D8;background:#fff;flex-shrink:0;}}
 .tab{{flex:1;padding:11px 0;text-align:center;font-size:13px;font-weight:600;color:#9B9490;cursor:pointer;border-bottom:2px solid transparent;transition:all 0.2s;}}
 .tab.active{{color:#2A9D8F;border-bottom-color:#2A9D8F;}}
 .tab:hover:not(.active){{color:#0F1F3D;}}
-
 .tab-content{{flex:1;overflow:hidden;display:none;flex-direction:column;}}
 .tab-content.active{{display:flex;}}
-
-/* 탭1: 구조 가이드 */
 .guide-scroll{{flex:1;overflow-y:auto;padding:16px 18px;background:#F7F4EF;}}
 .guide-scroll::-webkit-scrollbar{{width:3px;}}
 .guide-scroll::-webkit-scrollbar-thumb{{background:#E5E0D8;border-radius:2px;}}
@@ -458,8 +453,6 @@ body{{background:#0d1219;font-family:"SUIT Variable","SUIT",sans-serif;overflow:
 .observe-box{{background:#EBF6F5;border:1px solid rgba(42,157,143,0.2);border-radius:8px;padding:12px 14px;margin-top:12px;}}
 .observe-label{{font-size:10px;color:#2A9D8F;font-weight:700;letter-spacing:0.1em;font-family:"DM Mono",monospace;margin-bottom:6px;}}
 .observe-text{{font-size:12px;color:#2D5A52;line-height:1.65;word-break:keep-all;}}
-
-/* 탭2: 질문하기 */
 .chat-scroll{{flex:1;overflow-y:auto;padding:14px 18px;display:flex;flex-direction:column;gap:10px;background:#F7F4EF;}}
 .chat-scroll::-webkit-scrollbar{{width:3px;}}
 .chat-scroll::-webkit-scrollbar-thumb{{background:#E5E0D8;border-radius:2px;}}
@@ -484,8 +477,6 @@ body{{background:#0d1219;font-family:"SUIT Variable","SUIT",sans-serif;overflow:
 .chat-send{{background:#2A9D8F;border:none;width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;}}
 .chat-send:hover{{background:#238b7f;}}
 .chat-send svg{{width:14px;height:14px;stroke:#fff;fill:none;stroke-width:2;}}
-
-/* 탭3: 퀴즈 */
 .quiz-scroll{{flex:1;overflow-y:auto;padding:16px 18px;background:#F7F4EF;}}
 .quiz-scroll::-webkit-scrollbar{{width:3px;}}
 .quiz-scroll::-webkit-scrollbar-thumb{{background:#E5E0D8;border-radius:2px;}}
@@ -513,7 +504,6 @@ body{{background:#0d1219;font-family:"SUIT Variable","SUIT",sans-serif;overflow:
 </style>
 </head>
 <body>
-
 <div id="header">
   <div style="display:flex;align-items:center;gap:12px;">
     <a href="/slides" class="hdr-back">← 목록</a>
@@ -522,14 +512,12 @@ body{{background:#0d1219;font-family:"SUIT Variable","SUIT",sans-serif;overflow:
       <span class="logo-atlas">ATLAS</span>
     </a>
   </div>
-  <span id="hdr-center">소장 · Small Intestine &nbsp;/&nbsp; H&amp;E &nbsp;/&nbsp; <span id="hdr-mag">전체</span></span>
+  <span id="hdr-center">{title_ko} &nbsp;/&nbsp; {stain} &nbsp;/&nbsp; <span id="hdr-mag">전체</span></span>
   <div id="hdr-right">
     <button class="hdr-btn" id="ai-toggle" onclick="togglePanel()">AI 패널 숨기기</button>
   </div>
 </div>
-
 <div id="main">
-  <!-- 뷰어 -->
   <div id="viewer-wrap">
     <div id="viewer"></div>
     <div id="scale">— mm</div>
@@ -546,28 +534,23 @@ body{{background:#0d1219;font-family:"SUIT Variable","SUIT",sans-serif;overflow:
       <button class="mb" onclick="sm(40)">40×</button>
     </div>
   </div>
-
-  <!-- AI 패널 -->
   <div id="ai-panel">
     <div class="slide-meta">
-      <div class="meta-title">소장 · Small Intestine</div>
-      <div class="meta-sub">SA-HST-0001 · 소화기계 · 3DHISTECH</div>
+      <div class="meta-title">{title_ko}</div>
+      <div class="meta-sub">{slide_id} · {system}</div>
       <div class="meta-badges">
-        <span class="mbadge mbadge-he">H&amp;E</span>
-        <span class="mbadge mbadge-sys">소화기계</span>
+        <span class="mbadge mbadge-he">{stain}</span>
+        <span class="mbadge mbadge-sys">{system}</span>
         <span class="mbadge mbadge-mag" id="mag-badge">전체</span>
       </div>
     </div>
-
     <div class="tabs">
       <div class="tab active" onclick="switchTab(0)">구조 가이드</div>
       <div class="tab" onclick="switchTab(1)">질문하기</div>
       <div class="tab" onclick="switchTab(2)">퀴즈</div>
     </div>
-
-    <!-- 탭1: 구조 가이드 -->
     <div class="tab-content active" id="tab0">
-      <div class="guide-scroll" id="guide-content">
+      <div class="guide-scroll">
         <div class="guide-mag-header">
           <div class="guide-mag-dot"></div>
           <span class="guide-mag-label" id="guide-mag-label">전체 배율 · 슬라이드 개요</span>
@@ -577,41 +560,26 @@ body{{background:#0d1219;font-family:"SUIT Variable","SUIT",sans-serif;overflow:
             <div class="ai-icon"><svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 6v6l4 2"/></svg></div>
             <span class="ai-label">ATLAS AI</span>
           </div>
-          <p class="ai-text" id="guide-main-text">전체 슬라이드를 보고 있습니다. 소장(small intestine)의 단면으로, 중앙의 내강(lumen)을 향해 <strong>융모(villus)</strong>가 돌출된 구조가 특징적입니다. 배율을 높여보세요.</p>
+          <p class="ai-text" id="guide-main-text">슬라이드를 로드하는 중입니다. 배율을 조정하면 구조 가이드가 업데이트됩니다.</p>
         </div>
-        <div class="structure-list" id="structure-list">
-          <div class="struct-item">
-            <div class="struct-dot"></div>
-            <div class="struct-text"><strong>점막층 (Mucosa)</strong> — 융모와 장샘이 위치하는 최내층.</div>
-          </div>
-          <div class="struct-item">
-            <div class="struct-dot" style="background:#E9C46A;"></div>
-            <div class="struct-text"><strong>점막하층 (Submucosa)</strong> — 결합조직, 혈관, 신경총.</div>
-          </div>
-          <div class="struct-item">
-            <div class="struct-dot" style="background:rgba(255,255,255,0.3);"></div>
-            <div class="struct-text"><strong>근육층 (Muscularis)</strong> — 내윤상근 + 외종주근.</div>
-          </div>
-        </div>
+        <div class="structure-list" id="structure-list"></div>
         <div class="observe-box">
           <div class="observe-label">OBSERVE</div>
-          <p class="observe-text" id="observe-text">H&amp;E 염색에서 핵은 <strong style="color:#6B4FA0;">진한 보라색</strong>, 세포질과 기저막은 <strong style="color:#C2607A;">분홍색</strong>으로 관찰됩니다. 10× 이상으로 확대하면 융모 구조가 선명하게 보입니다.</p>
+          <p class="observe-text" id="observe-text">H&amp;E 염색에서 핵은 <strong style="color:#6B4FA0;">진한 보라색</strong>, 세포질과 기저막은 <strong style="color:#C2607A;">분홍색</strong>으로 관찰됩니다.</p>
         </div>
       </div>
     </div>
-
-    <!-- 탭2: 질문하기 -->
     <div class="tab-content" id="tab1">
       <div class="chat-scroll" id="chat-messages">
         <div class="msg-ai">
           <div class="msg-ai-icon"><svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 6v6l4 2"/></svg></div>
-          <div class="msg-ai-bubble">소장 H&amp;E 슬라이드에 대해 무엇이든 질문하세요. 현재 배율 기준으로 답변드립니다.</div>
+          <div class="msg-ai-bubble">{title_ko} 슬라이드에 대해 무엇이든 질문하세요.</div>
         </div>
       </div>
       <div class="chat-input-area">
         <div class="ctx-tag">
           <div class="ctx-dot"></div>
-          <span id="ctx-label">소장 H&amp;E · 전체 배율 컨텍스트 포함</span>
+          <span id="ctx-label">{title_ko} · 전체 배율 컨텍스트 포함</span>
         </div>
         <div class="chat-input-row">
           <input class="chat-input" id="chat-input" placeholder="이 구조에 대해 질문하세요..." onkeydown="if(event.key==='Enter')sendChat()"/>
@@ -619,20 +587,18 @@ body{{background:#0d1219;font-family:"SUIT Variable","SUIT",sans-serif;overflow:
         </div>
       </div>
     </div>
-
-    <!-- 탭3: 퀴즈 -->
     <div class="tab-content" id="tab2">
       <div class="quiz-scroll">
         <div id="quiz-start-view">
           <div style="text-align:center;padding-top:16px;">
             <div class="quiz-icon-wrap"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
-            <div style="font-size:14px;font-weight:700;color:#fff;margin-bottom:6px;">소장 H&amp;E 퀴즈</div>
-            <div style="font-size:12px;color:rgba(255,255,255,0.38);line-height:1.6;word-break:keep-all;">이 슬라이드를 기반으로 조직학 수준 퀴즈 3문제를 생성합니다.</div>
+            <div style="font-size:14px;font-weight:700;color:#0F1F3D;margin-bottom:6px;">{title_ko} 퀴즈</div>
+            <div style="font-size:12px;color:#6B6560;line-height:1.6;word-break:keep-all;">이 슬라이드를 기반으로 조직학 수준 퀴즈를 생성합니다.</div>
           </div>
           <div class="quiz-stats">
             <div class="quiz-stat"><div class="quiz-stat-num" style="color:#E9C46A;">3</div><div class="quiz-stat-lbl">문제</div></div>
-            <div class="quiz-stat"><div class="quiz-stat-num" style="color:#2A9D8F;">H&E</div><div class="quiz-stat-lbl">유형</div></div>
-            <div class="quiz-stat"><div class="quiz-stat-num" style="color:rgba(255,255,255,0.6);">★★</div><div class="quiz-stat-lbl">난이도</div></div>
+            <div class="quiz-stat"><div class="quiz-stat-num" style="color:#2A9D8F;">{stain}</div><div class="quiz-stat-lbl">유형</div></div>
+            <div class="quiz-stat"><div class="quiz-stat-num" style="color:#9B9490;">★★</div><div class="quiz-stat-lbl">난이도</div></div>
           </div>
           <button class="quiz-start-btn" onclick="startQuiz()">퀴즈 시작 →</button>
         </div>
@@ -640,7 +606,7 @@ body{{background:#0d1219;font-family:"SUIT Variable","SUIT",sans-serif;overflow:
           <div class="quiz-progress">
             <span class="qprog-label" id="q-num">1 / 3</span>
             <div class="qprog-bar"><div class="qprog-fill" id="q-prog" style="width:33%;"></div></div>
-            <span class="qprog-label">소화기계</span>
+            <span class="qprog-label">{system}</span>
           </div>
           <div class="quiz-q" id="q-text"></div>
           <div class="quiz-options" id="q-opts"></div>
@@ -649,77 +615,21 @@ body{{background:#0d1219;font-family:"SUIT Variable","SUIT",sans-serif;overflow:
         </div>
         <div id="quiz-result-view" style="display:none;text-align:center;padding-top:24px;">
           <div style="font-size:32px;font-weight:800;color:#E9C46A;margin-bottom:8px;" id="result-score"></div>
-          <div style="font-size:14px;color:rgba(255,255,255,0.6);margin-bottom:20px;">문제를 맞혔습니다</div>
+          <div style="font-size:14px;color:#6B6560;margin-bottom:20px;">문제를 맞혔습니다</div>
           <button class="quiz-start-btn" onclick="resetQuiz()">다시 풀기</button>
         </div>
       </div>
     </div>
   </div>
 </div>
-
 <script>
-// ── 퀴즈 데이터 ──
-var QUIZ = [
-  {{
-    q: "소장 H&E 슬라이드에서 배상세포(Goblet cell)를 구별하는 가장 중요한 특징은?",
-    opts: ["진한 보라색 핵을 가진다", "밝고 투명한 세포질 (점액 미염색)", "세포 크기가 현저히 크다", "기저막에 붙어있지 않다"],
-    ans: 1,
-    exp: "배상세포는 점액을 분비하며 H&E에서 점액이 염색되지 않아 세포질이 밝고 투명하게 보입니다."
-  }},
-  {{
-    q: "소장 융모(Villus)의 주요 기능은?",
-    opts: ["소화효소 분비", "흡수 면적 증가", "점액층 형성", "연동운동 조절"],
-    ans: 1,
-    exp: "융모는 소장 점막이 손가락 모양으로 돌출된 구조로, 표면적을 크게 늘려 영양소 흡수 효율을 높입니다."
-  }},
-  {{
-    q: "H&E 염색에서 핵이 진한 보라색으로 보이는 이유는?",
-    opts: ["헤마톡실린이 DNA와 결합하기 때문", "에오신이 핵에 침착하기 때문", "핵의 지질 성분 때문", "산성 단백질 때문"],
-    ans: 0,
-    exp: "헤마톡실린은 염기성 색소로 음전하를 띤 핵산(DNA, RNA)과 결합하여 핵을 청자색으로 염색합니다."
-  }}
-];
+var QUIZ = [];
 var qIdx = 0, score = 0;
 
-// ── 구조 가이드 데이터 ──
-var GUIDE = {{
-  low: {{
-    label: "전체 배율 · 슬라이드 개요",
-    main: "전체 슬라이드를 보고 있습니다. 소장(small intestine)의 단면으로, 중앙의 내강(lumen)을 향해 <strong>융모(villus)</strong>가 돌출된 구조가 특징적입니다. 배율을 높여보세요.",
-    structs: [
-      {{dot:"#2A9D8F", name:"점막층 (Mucosa)", desc:"융모와 장샘이 위치하는 최내층."}},
-      {{dot:"#E9C46A", name:"점막하층 (Submucosa)", desc:"결합조직, 혈관, 신경총."}},
-      {{dot:"rgba(255,255,255,0.3)", name:"근육층 (Muscularis)", desc:"내윤상근 + 외종주근."}}
-    ],
-    observe: "H&E 염색에서 핵은 <strong style='color:#b4a0e8;'>진한 보라색</strong>, 세포질과 기저막은 <strong style='color:#f0b8c8;'>분홍색</strong>으로 관찰됩니다. 10× 이상으로 확대하면 융모 구조가 선명하게 보입니다."
-  }},
-  mid: {{
-    label: "10× 배율 · 융모 구조 분석",
-    main: "10× 배율에서 소장의 <strong>융모(Villus) 구조</strong>가 선명하게 보입니다. 손가락 모양으로 돌출된 구조물이 소장의 표면적을 극대화합니다.",
-    structs: [
-      {{dot:"#2A9D8F", name:"융모 (Villus)", desc:"점막 상피가 돌출된 구조. 흡수 면적 약 10배 증가."}},
-      {{dot:"#E9C46A", name:"배상세포 (Goblet cell)", desc:"점액 분비세포. H&E에서 밝은 투명한 세포질."}},
-      {{dot:"rgba(255,255,255,0.3)", name:"장샘 (Crypt of Lieberkühn)", desc:"융모 사이 오목한 부분. 세포 재생 담당."}}
-    ],
-    observe: "융모 표면의 단층 원주상피세포가 규칙적으로 배열되어 있습니다. 세포 사이 <strong style='color:#E9C46A;'>배상세포</strong>가 밝게 보입니다."
-  }},
-  high: {{
-    label: "40× 배율 · 세포 수준 관찰",
-    main: "40× 고배율에서 <strong>단층 원주상피세포</strong>의 핵과 미세융모(brush border)를 확인할 수 있습니다.",
-    structs: [
-      {{dot:"#2A9D8F", name:"미세융모 (Microvilli)", desc:"세포 정단면의 솔경계. 흡수 면적 추가 증가."}},
-      {{dot:"#E9C46A", name:"상피세포 핵", desc:"기저부에 위치. H&E에서 진한 보라색 타원형."}},
-      {{dot:"rgba(255,255,255,0.3)", name:"고유층 (Lamina propria)", desc:"융모 중심부. 모세혈관과 유미관 포함."}}
-    ],
-    observe: "세포 정단면의 <strong style='color:#2A9D8F;'>솔경계(brush border)</strong>가 희미한 분홍색 선으로 보입니다. 핵은 기저부에 규칙적으로 배열됩니다."
-  }}
-}};
-
-// ── OpenSeadragon ──
 var osd = OpenSeadragon({{
   id: "viewer",
   prefixUrl: "https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/images/",
-  tileSources: "/dzi/{slide_id}.dzi",
+  tileSources: "{tile_source_url}",
   showNavigationControl: false,
   animationTime: 0.3,
   blendTime: 0.1,
@@ -734,7 +644,6 @@ var osd = OpenSeadragon({{
   defaultZoomLevel: 0,
 }});
 
-var lastMagLevel = '';
 osd.addHandler('zoom', updViewer);
 osd.addHandler('open', function() {{ osd.viewport.goHome(true); setTimeout(updViewer, 400); }});
 
@@ -746,30 +655,14 @@ function updViewer() {{
     document.getElementById('md').textContent = magText;
     document.getElementById('hdr-mag').textContent = magText;
     document.getElementById('mag-badge').textContent = magText;
-    document.getElementById('ctx-label').textContent = '소장 H&E · ' + magText + ' 배율 컨텍스트 포함';
-
+    document.getElementById('ctx-label').textContent = '{title_ko} · ' + magText + ' 배율';
     var vw = osd.viewport.getBounds().width;
     var umW = vw * {W} * 0.121;
     var sc = Math.round(umW / 5);
     document.getElementById('scale').textContent =
       sc >= 1000000 ? (sc/1000000).toFixed(1)+' m' :
       sc >= 1000 ? (sc/1000).toFixed(2)+' mm' : sc+' μm';
-
-    // 구조 가이드 자동 업데이트
-    var level = mag < 2 ? 'low' : mag < 15 ? 'mid' : 'high';
-    if(level !== lastMagLevel) {{ lastMagLevel = level; updateGuide(level); }}
   }} catch(e) {{}}
-}}
-
-function updateGuide(level) {{
-  var g = GUIDE[level];
-  document.getElementById('guide-mag-label').textContent = g.label;
-  document.getElementById('guide-main-text').innerHTML = g.main;
-  document.getElementById('observe-text').innerHTML = g.observe;
-  var sl = document.getElementById('structure-list');
-  sl.innerHTML = g.structs.map(function(s) {{
-    return '<div class="struct-item"><div class="struct-dot" style="background:'+s.dot+';"></div><div class="struct-text"><strong>'+s.name+'</strong> — '+s.desc+'</div></div>';
-  }}).join('');
 }}
 
 function fit() {{ osd.viewport.goHome(false); setTimeout(updViewer,200); }}
@@ -777,13 +670,11 @@ function zi() {{ osd.viewport.zoomBy(1/1.8); setTimeout(updViewer,100); }}
 function zo() {{ osd.viewport.zoomBy(1.8); setTimeout(updViewer,100); }}
 function sm(m) {{ osd.viewport.zoomTo(m/40); setTimeout(updViewer,100); }}
 
-// ── 탭 전환 ──
 function switchTab(idx) {{
   document.querySelectorAll('.tab').forEach(function(t,i){{ t.classList.toggle('active', i===idx); }});
   document.querySelectorAll('.tab-content').forEach(function(c,i){{ c.classList.toggle('active', i===idx); }});
 }}
 
-// ── AI 패널 토글 ──
 function togglePanel() {{
   var panel = document.getElementById('ai-panel');
   var main = document.getElementById('main');
@@ -799,34 +690,24 @@ function togglePanel() {{
   }}
 }}
 
-// ── 채팅 ──
 function sendChat() {{
   var input = document.getElementById('chat-input');
   var msg = input.value.trim();
   if(!msg) return;
   input.value = '';
-
   var z = osd.viewport.getZoom(true);
   var mag = (z * 40);
   var magText = mag >= 1 ? Math.round(mag*10)/10 + '×' : mag.toFixed(3) + '×';
-
   var msgs = document.getElementById('chat-messages');
   msgs.innerHTML += '<div class="msg-user"><div class="msg-user-bubble">'+escHtml(msg)+'</div></div>';
-
   var typingId = 'typing-' + Date.now();
   msgs.innerHTML += '<div class="msg-ai" id="'+typingId+'"><div class="msg-ai-icon"><svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 6v6l4 2"/></svg></div><div class="msg-ai-bubble"><div class="typing-indicator"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div></div></div>';
   msgs.scrollTop = msgs.scrollHeight;
-
-  var SLIDE_INFO = "Small Intestine H&E slide, 3DHISTECH scanner, current magnification: " + magText;
-  var SYSTEM = "You are SlideAtlas AI tutor. Current slide: " + SLIDE_INFO + ". Please answer in Korean, as a histology education expert. Keep answers to 3-5 sentences.";
-
+  var SYSTEM = "You are SlideAtlas AI tutor. Current slide: {title_ko} ({title_en}), {stain} stain, {system}. Current magnification: " + magText + ". Answer in Korean, as a histology/pathology education expert. Keep answers to 3-5 sentences.";
   fetch("/api/chat", {{
     method: "POST",
     headers: {{"Content-Type": "application/json"}},
-    body: JSON.stringify({{
-      message: msg,
-      system: SYSTEM
-    }})
+    body: JSON.stringify({{ message: msg, system: SYSTEM }})
   }})
   .then(function(r){{ return r.json(); }})
   .then(function(data) {{
@@ -837,41 +718,54 @@ function sendChat() {{
   }})
   .catch(function() {{
     var el = document.getElementById(typingId);
-    if(el) el.querySelector('.msg-ai-bubble').textContent = "연결 오류가 발생했습니다. 잠시 후 다시 시도해주세요.";
+    if(el) el.querySelector('.msg-ai-bubble').textContent = "연결 오류가 발생했습니다.";
   }});
 }}
 
-function escHtml(s) {{
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}}
+function escHtml(s) {{ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }}
 
 function renderMd(s) {{
   var h = escHtml(s);
-  // 제목: # 으로 시작하는 줄 - split 방식으로 정규식 회피
   var lines = h.split('\\n');
   for(var i=0; i<lines.length; i++) {{
-    if(lines[i].indexOf('# ') === 0) {{
-      lines[i] = '<strong style="font-size:13px;color:#0F1F3D;display:block;margin-bottom:4px;">' + lines[i].slice(2) + '</strong>';
-    }} else if(lines[i].indexOf('## ') === 0) {{
-      lines[i] = '<strong style="font-size:13px;color:#0F1F3D;display:block;margin-bottom:4px;">' + lines[i].slice(3) + '</strong>';
-    }}
+    if(lines[i].indexOf('# ') === 0) {{ lines[i] = '<strong style="font-size:13px;color:#0F1F3D;display:block;margin-bottom:4px;">' + lines[i].slice(2) + '</strong>'; }}
+    else if(lines[i].indexOf('## ') === 0) {{ lines[i] = '<strong style="font-size:13px;color:#0F1F3D;display:block;margin-bottom:4px;">' + lines[i].slice(3) + '</strong>'; }}
   }}
   h = lines.join('<br>');
-  // 굵게: **텍스트** - split 방식
   var parts = h.split('**');
   var result = '';
-  for(var i=0; i<parts.length; i++) {{
-    result += i%2===1 ? '<strong>'+parts[i]+'</strong>' : parts[i];
-  }}
+  for(var i=0; i<parts.length; i++) {{ result += i%2===1 ? '<strong>'+parts[i]+'</strong>' : parts[i]; }}
   return result;
 }}
 
-// ── 퀴즈 ──
 function startQuiz() {{
-  qIdx = 0; score = 0;
-  document.getElementById('quiz-start-view').style.display = 'none';
-  document.getElementById('quiz-result-view').style.display = 'none';
-  document.getElementById('quiz-play-view').style.display = 'block';
+  if(QUIZ.length === 0) {{
+    fetch("/api/chat", {{
+      method: "POST",
+      headers: {{"Content-Type": "application/json"}},
+      body: JSON.stringify({{
+        message: "{title_ko} ({title_en}) {stain} 슬라이드에 대한 조직학/병리학 퀴즈 3문제를 JSON 형식으로만 생성해주세요. 형식: [{{\\"q\\":\\"질문\\",\\"opts\\":[\\"A\\",\\"B\\",\\"C\\",\\"D\\"],\\"ans\\":0,\\"exp\\":\\"해설\\"}}]",
+        system: "당신은 의과대학 조직학/병리학 교수입니다. 요청한 JSON 형식으로만 응답하세요. 다른 텍스트는 절대 포함하지 마세요."
+      }})
+    }})
+    .then(function(r){{ return r.json(); }})
+    .then(function(data) {{
+      try {{
+        var txt = data.reply.replace(/```json|```/g,'').trim();
+        QUIZ = JSON.parse(txt);
+      }} catch(e) {{
+        QUIZ = [{{q:"{title_ko}의 주요 특징은?",opts:["세포 구조 변화","염색 반응","조직 배열","모두 해당"],ans:3,exp:"H&E 염색에서 다양한 특징을 관찰할 수 있습니다."}}];
+      }}
+      qIdx=0; score=0;
+      document.getElementById('quiz-start-view').style.display='none';
+      document.getElementById('quiz-play-view').style.display='block';
+      renderQuestion();
+    }});
+    return;
+  }}
+  qIdx=0; score=0;
+  document.getElementById('quiz-start-view').style.display='none';
+  document.getElementById('quiz-play-view').style.display='block';
   renderQuestion();
 }}
 
@@ -880,9 +774,9 @@ function renderQuestion() {{
   document.getElementById('q-num').textContent = (qIdx+1) + ' / ' + QUIZ.length;
   document.getElementById('q-prog').style.width = ((qIdx+1)/QUIZ.length*100) + '%';
   document.getElementById('q-text').textContent = q.q;
-  document.getElementById('q-exp').style.display = 'none';
-  document.getElementById('q-exp').textContent = q.exp;
-  document.getElementById('q-next').style.display = 'none';
+  document.getElementById('q-exp').style.display='none';
+  document.getElementById('q-exp').textContent=q.exp;
+  document.getElementById('q-next').style.display='none';
   var opts = document.getElementById('q-opts');
   var letters = ['A','B','C','D'];
   opts.innerHTML = q.opts.map(function(o,i) {{
@@ -893,30 +787,26 @@ function renderQuestion() {{
 function answerQ(el, idx) {{
   var q = QUIZ[qIdx];
   document.querySelectorAll('.quiz-opt').forEach(function(o){{ o.onclick=null; }});
-  if(idx === q.ans) {{
-    el.classList.add('correct');
-    score++;
-  }} else {{
-    el.classList.add('wrong');
-    document.querySelectorAll('.quiz-opt')[q.ans].classList.add('correct');
-  }}
-  document.getElementById('q-exp').style.display = 'block';
-  document.getElementById('q-next').style.display = 'block';
-  document.getElementById('q-next').textContent = qIdx < QUIZ.length-1 ? '다음 문제 →' : '결과 보기 →';
+  if(idx===q.ans){{ el.classList.add('correct'); score++; }}
+  else {{ el.classList.add('wrong'); document.querySelectorAll('.quiz-opt')[q.ans].classList.add('correct'); }}
+  document.getElementById('q-exp').style.display='block';
+  document.getElementById('q-next').style.display='block';
+  document.getElementById('q-next').textContent = qIdx<QUIZ.length-1 ? '다음 문제 →' : '결과 보기 →';
 }}
 
 function nextQuestion() {{
   qIdx++;
-  if(qIdx >= QUIZ.length) {{
-    document.getElementById('quiz-play-view').style.display = 'none';
-    document.getElementById('quiz-result-view').style.display = 'block';
-    document.getElementById('result-score').textContent = score + ' / ' + QUIZ.length;
+  if(qIdx>=QUIZ.length) {{
+    document.getElementById('quiz-play-view').style.display='none';
+    document.getElementById('quiz-result-view').style.display='block';
+    document.getElementById('result-score').textContent = score+' / '+QUIZ.length;
   }} else {{ renderQuestion(); }}
 }}
 
 function resetQuiz() {{
-  document.getElementById('quiz-result-view').style.display = 'none';
-  document.getElementById('quiz-start-view').style.display = 'block';
+  QUIZ=[];
+  document.getElementById('quiz-result-view').style.display='none';
+  document.getElementById('quiz-start-view').style.display='block';
 }}
 </script>
 </body>
@@ -926,20 +816,13 @@ function resetQuiz() {{
 def slides():
     data = load_slides()
     all_slides = [s for s in data.get('slides', []) if s.get('active')]
-
-    # 필터 데이터 동적 생성
     systems = {}
     stains = {}
-    categories = {}
     for s in all_slides:
         sys = s.get('system', '기타')
         stain = s.get('stain', '기타')
-        cat = s.get('category', '기타')
         systems[sys] = systems.get(sys, 0) + 1
         stains[stain] = stains.get(stain, 0) + 1
-        categories[cat] = categories.get(cat, 0) + 1
-
-    # 카드 HTML 생성
     stain_class = {'H&E': 'he', 'PAS': 'pas', 'Masson Trichrome': 'masson', 'Silver': 'silver'}
     cards_html = ''
     for s in all_slides:
@@ -963,21 +846,9 @@ def slides():
           </div>
         </div>
       </a>'''
-
-    system_filters = ''.join([f'''
-      <div class="filter-item">
-        <div class="filter-item-left"><div class="filter-cb"></div><span class="filter-label">{sys}</span></div>
-        <span class="filter-count">{cnt}</span>
-      </div>''' for sys, cnt in systems.items()])
-
-    stain_filters = ''.join([f'''
-      <div class="filter-item">
-        <div class="filter-item-left"><div class="filter-cb"></div><span class="filter-label">{st}</span></div>
-        <span class="filter-count">{cnt}</span>
-      </div>''' for st, cnt in stains.items()])
-
+    system_filters = ''.join([f'<div class="filter-item"><div class="filter-item-left"><div class="filter-cb"></div><span class="filter-label">{sys}</span></div><span class="filter-count">{cnt}</span></div>' for sys, cnt in systems.items()])
+    stain_filters = ''.join([f'<div class="filter-item"><div class="filter-item-left"><div class="filter-cb"></div><span class="filter-label">{st}</span></div><span class="filter-count">{cnt}</span></div>' for st, cnt in stains.items()])
     total = len(all_slides)
-
     return f'''<!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -996,32 +867,16 @@ nav{{background:#0F1F3D;padding:0 40px;height:58px;display:flex;align-items:cent
 .nav-right{{display:flex;gap:10px;align-items:center;}}
 .nav-badge{{font-size:11px;color:#2A9D8F;border:1px solid rgba(42,157,143,0.3);padding:4px 12px;border-radius:20px;font-weight:500;}}
 .btn-nav{{background:#2A9D8F;color:#fff;border:none;padding:7px 18px;border-radius:6px;font-size:13px;font-family:"SUIT Variable",sans-serif;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block;}}
-.breadcrumb{{padding:16px 40px;display:flex;align-items:center;gap:8px;border-bottom:1px solid #E5E0D8;background:#fff;}}
-.bc-item{{font-size:13px;color:#9B9490;text-decoration:none;}}
-.bc-item:hover{{color:#0F1F3D;}}
-.bc-sep{{font-size:13px;color:#C8C4BC;}}
-.bc-current{{font-size:13px;color:#0F1F3D;font-weight:600;}}
 .page-header{{padding:28px 40px 20px;background:#fff;border-bottom:1px solid #E5E0D8;}}
-.page-header-top{{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px;}}
 .page-title{{font-size:26px;font-weight:800;letter-spacing:-0.03em;margin-bottom:4px;}}
 .page-desc{{font-size:14px;color:#6B6560;font-weight:300;}}
-.search-bar{{display:flex;align-items:center;gap:10px;background:#F7F4EF;border:1px solid #E5E0D8;border-radius:8px;padding:10px 16px;width:340px;}}
-.search-icon{{width:16px;height:16px;stroke:#9B9490;fill:none;stroke-width:2;flex-shrink:0;}}
-.search-input{{border:none;background:transparent;font-size:14px;color:#0F1F3D;font-family:"SUIT Variable",sans-serif;outline:none;width:100%;}}
-.search-input::placeholder{{color:#9B9490;}}
-.search-kbd{{font-size:10px;color:#C8C4BC;font-family:"DM Mono",monospace;border:1px solid #E5E0D8;padding:2px 6px;border-radius:4px;flex-shrink:0;}}
-.filter-tags{{display:flex;gap:8px;flex-wrap:wrap;}}
-.ftag{{display:inline-flex;align-items:center;gap:5px;background:#EBF6F5;color:#0F6E56;font-size:12px;font-weight:600;padding:5px 12px;border-radius:20px;cursor:pointer;}}
-.ftag-x{{color:#2A9D8F;}}
-.ftag-clear{{background:transparent;border:1px solid #E5E0D8;color:#9B9490;font-size:12px;padding:5px 12px;border-radius:20px;cursor:pointer;}}
 .layout{{display:grid;grid-template-columns:220px 1fr;align-items:start;}}
 .sidebar{{padding:24px 20px;border-right:1px solid #E5E0D8;background:#fff;position:sticky;top:58px;min-height:calc(100vh - 58px);}}
 .filter-group{{margin-bottom:22px;}}
 .filter-group-title{{font-size:10px;font-weight:700;letter-spacing:0.1em;color:#9B9490;text-transform:uppercase;margin-bottom:10px;font-family:"DM Mono",monospace;}}
-.filter-item{{display:flex;align-items:center;justify-content:space-between;padding:5px 0;cursor:pointer;}}
+.filter-item{{display:flex;align-items:center;justify-content:space-between;padding:5px 0;}}
 .filter-item-left{{display:flex;align-items:center;gap:8px;}}
-.filter-cb{{width:14px;height:14px;border:1.5px solid #C8C4BC;border-radius:3px;flex-shrink:0;}}
-.filter-cb.checked{{background:#2A9D8F;border-color:#2A9D8F;}}
+.filter-cb{{width:14px;height:14px;border:1.5px solid #C8C4BC;border-radius:3px;}}
 .filter-label{{font-size:13px;color:#0F1F3D;}}
 .filter-count{{font-size:11px;color:#9B9490;font-family:"DM Mono",monospace;}}
 .filter-divider{{height:1px;background:#E5E0D8;margin:14px 0;}}
@@ -1029,23 +884,20 @@ nav{{background:#0F1F3D;padding:0 40px;height:58px;display:flex;align-items:cent
 .main-top{{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;}}
 .result-count{{font-size:13px;color:#6B6560;}}
 .result-count strong{{color:#0F1F3D;font-weight:700;}}
-.sort-select{{background:#fff;border:1px solid #E5E0D8;border-radius:6px;padding:7px 12px;font-size:13px;font-family:"SUIT Variable",sans-serif;color:#0F1F3D;cursor:pointer;outline:none;}}
 .slides-grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;}}
-.slide-card{{background:#fff;border:1px solid #E5E0D8;border-radius:12px;overflow:hidden;cursor:pointer;transition:all 0.2s;text-decoration:none;display:block;color:inherit;position:relative;}}
+.slide-card{{background:#fff;border:1px solid #E5E0D8;border-radius:12px;overflow:hidden;cursor:pointer;transition:all 0.2s;text-decoration:none;display:block;color:inherit;}}
 .slide-card:hover{{border-color:#2A9D8F;transform:translateY(-2px);box-shadow:0 8px 24px rgba(15,31,61,0.08);}}
-.slide-card.locked{{opacity:0.55;cursor:default;pointer-events:none;}}
 .card-thumb{{height:140px;position:relative;overflow:hidden;}}
-.thumb-he{{background:radial-gradient(ellipse 80px 60px at 40% 45%,rgba(220,150,170,0.7) 0%,transparent 65%),radial-gradient(ellipse 50px 50px at 65% 40%,rgba(200,120,145,0.65) 0%,transparent 60%),radial-gradient(ellipse 40px 45px at 48% 68%,rgba(210,135,160,0.55) 0%,transparent 55%),linear-gradient(135deg,#f5e8ee,#f0dce6,#e8d0dc);}}
-.thumb-pas{{background:radial-gradient(ellipse 70px 50px at 35% 50%,rgba(150,200,220,0.6) 0%,transparent 60%),radial-gradient(ellipse 40px 40px at 68% 38%,rgba(130,180,210,0.55) 0%,transparent 55%),linear-gradient(135deg,#e8f4f8,#d4eaf4,#c8e0ee);}}
-.thumb-masson{{background:radial-gradient(ellipse 60px 50px at 42% 48%,rgba(100,160,220,0.6) 0%,transparent 60%),radial-gradient(ellipse 50px 40px at 65% 42%,rgba(220,80,80,0.4) 0%,transparent 55%),linear-gradient(135deg,#e8eef8,#d8e4f4,#e8daea);}}
-.thumb-silver{{background:radial-gradient(ellipse 60px 45px at 40% 50%,rgba(180,180,160,0.7) 0%,transparent 60%),linear-gradient(135deg,#f2f0ea,#e8e6de,#dedad0);}}
-.card-thumb-badge{{position:absolute;top:10px;left:10px;font-size:9px;font-weight:600;padding:3px 8px;border-radius:4px;font-family:"DM Mono",monospace;letter-spacing:0.06em;}}
+.thumb-he{{background:radial-gradient(ellipse 80px 60px at 40% 45%,rgba(220,150,170,0.7) 0%,transparent 65%),linear-gradient(135deg,#f5e8ee,#f0dce6,#e8d0dc);}}
+.thumb-pas{{background:radial-gradient(ellipse 70px 50px at 35% 50%,rgba(150,200,220,0.6) 0%,transparent 60%),linear-gradient(135deg,#e8f4f8,#d4eaf4);}}
+.thumb-masson{{background:radial-gradient(ellipse 60px 50px at 42% 48%,rgba(100,160,220,0.6) 0%,transparent 60%),linear-gradient(135deg,#e8eef8,#d8e4f4);}}
+.thumb-silver{{background:radial-gradient(ellipse 60px 45px at 40% 50%,rgba(180,180,160,0.7) 0%,transparent 60%),linear-gradient(135deg,#f2f0ea,#e8e6de);}}
+.card-thumb-badge{{position:absolute;top:10px;left:10px;font-size:9px;font-weight:600;padding:3px 8px;border-radius:4px;font-family:"DM Mono",monospace;}}
 .badge-he{{background:rgba(42,157,143,0.9);color:#fff;}}
 .badge-pas{{background:rgba(52,120,180,0.9);color:#fff;}}
 .badge-masson{{background:rgba(100,70,160,0.9);color:#fff;}}
 .badge-silver{{background:rgba(100,100,90,0.9);color:#fff;}}
 .card-sample-badge{{position:absolute;top:10px;right:10px;background:rgba(233,196,106,0.95);color:#633806;font-size:9px;font-weight:700;padding:3px 8px;border-radius:4px;font-family:"DM Mono",monospace;}}
-.card-coming-badge{{position:absolute;top:10px;right:10px;background:rgba(0,0,0,0.3);color:rgba(255,255,255,0.65);font-size:9px;font-weight:600;padding:3px 8px;border-radius:4px;font-family:"DM Mono",monospace;}}
 .card-scale{{position:absolute;bottom:10px;left:10px;font-size:9px;font-family:"DM Mono",monospace;color:rgba(255,255,255,0.85);background:rgba(0,0,0,0.45);padding:2px 8px;border-radius:3px;}}
 .card-body{{padding:14px 16px;}}
 .card-system{{font-size:10px;color:#2A9D8F;font-weight:600;letter-spacing:0.05em;margin-bottom:4px;font-family:"DM Mono",monospace;}}
@@ -1054,7 +906,6 @@ nav{{background:#0F1F3D;padding:0 40px;height:58px;display:flex;align-items:cent
 .card-meta{{display:flex;align-items:center;justify-content:space-between;}}
 .card-stain{{font-size:11px;color:#6B6560;}}
 .card-link{{font-size:11px;color:#2A9D8F;font-weight:600;}}
-.card-coming{{font-size:11px;color:#9B9490;}}
 footer{{background:#0F1F3D;padding:28px 52px;display:flex;align-items:center;justify-content:space-between;margin-top:40px;}}
 .footer-logo{{font-weight:800;font-size:16px;color:#fff;}}
 .footer-copy{{font-size:12px;color:rgba(255,255,255,0.28);}}
@@ -1063,45 +914,17 @@ footer{{background:#0F1F3D;padding:28px 52px;display:flex;align-items:center;jus
 </style>
 </head>
 <body>
-
 <nav>
-  <a class="logo" href="/">
-    <span class="logo-slide">SLIDE</span>
-    <span class="logo-atlas">ATLAS</span>
-  </a>
+  <a class="logo" href="/"><span class="logo-slide">SLIDE</span><span class="logo-atlas">ATLAS</span></a>
   <div class="nav-right">
     <span class="nav-badge">Beta</span>
     <a class="btn-nav" href="/">홈으로</a>
   </div>
 </nav>
-
-<div class="breadcrumb">
-  <a class="bc-item" href="/">홈</a>
-  <span class="bc-sep">/</span>
-  <a class="bc-item" href="/slides">조직학</a>
-  <span class="bc-sep">/</span>
-  <span class="bc-current">슬라이드 목록</span>
-</div>
-
 <div class="page-header">
-  <div class="page-header-top">
-    <div>
-      <h1 class="page-title">슬라이드 라이브러리</h1>
-      <p class="page-desc">고해상도 디지털 WSI 슬라이드 아카이브&nbsp;|&nbsp;{total}개 슬라이드 열람 가능</p>
-    </div>
-    <div class="search-bar">
-      <svg class="search-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-      <input class="search-input" placeholder="조직명 · 염색법 · 장기 검색" />
-      <span class="search-kbd">⌘K</span>
-    </div>
-  </div>
-  <div class="filter-tags">
-    <div class="ftag">소화기계 <span class="ftag-x">×</span></div>
-    <div class="ftag">H&amp;E <span class="ftag-x">×</span></div>
-    <span class="ftag-clear">필터 초기화</span>
-  </div>
+  <h1 class="page-title">슬라이드 라이브러리</h1>
+  <p class="page-desc">고해상도 디지털 WSI 슬라이드 아카이브&nbsp;|&nbsp;{total}개 슬라이드 열람 가능</p>
 </div>
-
 <div class="layout">
   <div class="sidebar">
     <div class="filter-group">
@@ -1113,84 +936,47 @@ footer{{background:#0F1F3D;padding:28px 52px;display:flex;align-items:center;jus
       <div class="filter-group-title">염색법 · Stain</div>
       {stain_filters}
     </div>
-    <div class="filter-divider"></div>
-    <div class="filter-group">
-      <div class="filter-group-title">배율 · Magnification</div>
-      <div class="filter-item">
-        <div class="filter-item-left"><div class="filter-cb"></div><span class="filter-label">4×</span></div>
-        <span class="filter-count">6</span>
-      </div>
-      <div class="filter-item">
-        <div class="filter-item-left"><div class="filter-cb"></div><span class="filter-label">10×</span></div>
-        <span class="filter-count">6</span>
-      </div>
-      <div class="filter-item">
-        <div class="filter-item-left"><div class="filter-cb checked"></div><span class="filter-label">40×</span></div>
-        <span class="filter-count">6</span>
-      </div>
-    </div>
   </div>
-
   <div class="main">
     <div class="main-top">
       <span class="result-count"><strong>{total}개</strong> 슬라이드</span>
-      <select class="sort-select">
-        <option>최신 등록순</option>
-        <option>이름순</option>
-        <option>계통별</option>
-      </select>
     </div>
-
-    <div class="slides-grid">
-      {cards_html}
-    </div>
+    <div class="slides-grid">{cards_html}</div>
   </div>
 </div>
-
 <footer>
   <span class="footer-logo">SlideAtlas</span>
   <span class="footer-copy">© 2026 Lami International Co., Ltd.</span>
   <div class="footer-links">
     <a href="mailto:mcmajo@naver.com">문의</a>
     <a href="#">기관 구독</a>
-    <a href="/viewer">슬라이드 체험</a>
   </div>
 </footer>
 </body>
 </html>'''
 
-# ── Claude API 중계 엔드포인트 ──
 @app.route('/api/chat', methods=['POST'])
 def api_chat():
     import urllib.request
     import json as json_mod
-
     api_key = os.environ.get('ANTHROPIC_API_KEY', '')
     if not api_key:
-        return jsonify({'reply': '서버에 API 키가 설정되지 않았습니다. 관리자에게 문의하세요.'}), 500
-
+        return jsonify({'reply': '서버에 API 키가 설정되지 않았습니다.'}), 500
     data = request.get_json()
     user_msg = data.get('message', '')
     system_prompt = data.get('system', '당신은 병리학 교육 AI 튜터입니다. 한국어로 답변하세요.')
-
     if not user_msg:
         return jsonify({'reply': '메시지가 없습니다.'}), 400
-
     payload = json_mod.dumps({
         'model': 'claude-sonnet-4-5',
         'max_tokens': 600,
         'system': system_prompt,
         'messages': [{'role': 'user', 'content': user_msg}]
     }).encode('utf-8')
-
     req = urllib.request.Request(
         'https://api.anthropic.com/v1/messages',
         data=payload,
-        headers={
-            'Content-Type': 'application/json',
-            'x-api-key': api_key,
-            'anthropic-version': '2023-06-01'
-        },
+        headers={'Content-Type': 'application/json', 'x-api-key': api_key, 'anthropic-version': '2023-06-01'},
         method='POST'
     )
     try:
@@ -1206,6 +992,8 @@ def dzi_descriptor(slide_id):
     if slide_id not in SLIDE_CACHE:
         return Response("Loading...", status=503)
     cache = SLIDE_CACHE[slide_id]
+    if cache.get('ec2'):
+        return Response("Use EC2 tileserver", status=404)
     dz = cache["dz"]
     w, h = dz.level_dimensions[-1]
     xml = f'''<?xml version="1.0" encoding="UTF-8"?>
@@ -1238,10 +1026,6 @@ def dzi_tile(slide_id, level, col, row):
         buf.seek(0)
         return send_file(buf, mimetype='image/jpeg')
 
-# ════════════════════════════════════════
-# ── 관리자 페이지 ──
-# ════════════════════════════════════════
-
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'slideatlas2026')
 
 @app.route('/admin/login', methods=['GET', 'POST'])
@@ -1255,45 +1039,29 @@ def admin_login():
         else:
             error = '비밀번호가 올바르지 않습니다.'
     return f'''<!DOCTYPE html>
-<html lang="ko">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SlideAtlas Admin</title>
-<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<html lang="ko"><head><meta charset="UTF-8"><title>SlideAtlas Admin</title>
 <style>
-@import url('https://cdn.jsdelivr.net/gh/sunn-us/SUIT/fonts/variable/woff2/SUIT-Variable.css');
-* {{ margin:0; padding:0; box-sizing:border-box; }}
-body {{ font-family:"SUIT Variable","SUIT",sans-serif; background:#0F1F3D; display:flex; align-items:center; justify-content:center; min-height:100vh; }}
-.login-box {{ background:#fff; border-radius:12px; padding:48px 40px; width:360px; box-shadow:0 20px 60px rgba(0,0,0,0.3); }}
-.logo {{ text-align:center; margin-bottom:32px; }}
-.logo-slide {{ font-size:9px; letter-spacing:0.22em; color:#2A9D8F; font-family:"DM Mono",monospace; }}
-.logo-atlas {{ font-size:24px; font-weight:800; color:#0F1F3D; }}
-.logo-admin {{ font-size:11px; color:#9B9490; letter-spacing:0.08em; margin-top:4px; font-family:"DM Mono",monospace; }}
-label {{ font-size:13px; font-weight:600; color:#0F1F3D; display:block; margin-bottom:8px; }}
-input[type=password] {{ width:100%; padding:11px 14px; border:1.5px solid #E5E0D8; border-radius:7px; font-size:14px; font-family:"SUIT Variable",sans-serif; outline:none; transition:border 0.2s; }}
-input[type=password]:focus {{ border-color:#2A9D8F; }}
-.btn {{ width:100%; padding:12px; background:#2A9D8F; color:#fff; border:none; border-radius:7px; font-size:14px; font-weight:600; font-family:"SUIT Variable",sans-serif; cursor:pointer; margin-top:16px; }}
-.btn:hover {{ background:#238b7f; }}
-.error {{ color:#e76f51; font-size:13px; margin-top:12px; text-align:center; }}
-</style>
-</head>
-<body>
-<div class="login-box">
-  <div class="logo">
-    <div class="logo-slide">SLIDE</div>
-    <div class="logo-atlas">ATLAS</div>
-    <div class="logo-admin">ADMIN CONSOLE</div>
-  </div>
-  <form method="POST">
-    <label>관리자 비밀번호</label>
-    <input type="password" name="password" placeholder="비밀번호 입력" autofocus>
-    <button class="btn" type="submit">로그인</button>
-    {f'<div class="error">{error}</div>' if error else ''}
-  </form>
-</div>
-</body>
-</html>'''
+*{{margin:0;padding:0;box-sizing:border-box;}}
+body{{font-family:sans-serif;background:#0F1F3D;display:flex;align-items:center;justify-content:center;min-height:100vh;}}
+.box{{background:#fff;border-radius:12px;padding:48px 40px;width:360px;}}
+.logo{{text-align:center;margin-bottom:32px;}}
+.ls{{font-size:9px;letter-spacing:0.22em;color:#2A9D8F;}}
+.la{{font-size:24px;font-weight:800;color:#0F1F3D;}}
+.lad{{font-size:11px;color:#9B9490;letter-spacing:0.08em;margin-top:4px;}}
+label{{font-size:13px;font-weight:600;color:#0F1F3D;display:block;margin-bottom:8px;}}
+input[type=password]{{width:100%;padding:11px 14px;border:1.5px solid #E5E0D8;border-radius:7px;font-size:14px;outline:none;}}
+input[type=password]:focus{{border-color:#2A9D8F;}}
+.btn{{width:100%;padding:12px;background:#2A9D8F;color:#fff;border:none;border-radius:7px;font-size:14px;font-weight:600;cursor:pointer;margin-top:16px;}}
+.err{{color:#e76f51;font-size:13px;margin-top:12px;text-align:center;}}
+</style></head>
+<body><div class="box">
+<div class="logo"><div class="ls">SLIDE</div><div class="la">ATLAS</div><div class="lad">ADMIN CONSOLE</div></div>
+<form method="POST">
+<label>관리자 비밀번호</label>
+<input type="password" name="password" autofocus>
+<button class="btn" type="submit">로그인</button>
+{f'<div class="err">{error}</div>' if error else ''}
+</form></div></body></html>'''
 
 @app.route('/admin/logout')
 def admin_logout():
@@ -1308,205 +1076,105 @@ def admin_dashboard():
     slides = data.get('slides', [])
     institutions = inst_data.get('institutions', [])
     subjects = inst_data.get('subjects', [])
-
     inst_options = ''.join([f'<option value="{i["code"]}">{i["code"]} · {i["name_ko"]}</option>' for i in institutions])
     subj_options = ''.join([f'<option value="{s["code"]}">{s["code"]} · {s["name_ko"]}</option>' for s in subjects])
-
     slide_rows = ''
     for s in slides:
         status_badge = '<span class="badge-active">활성</span>' if s.get('active') else '<span class="badge-inactive">비활성</span>'
-        slide_rows += f'''
-        <tr>
-          <td><code>{s["id"]}</code></td>
-          <td>{s["title_ko"]}</td>
-          <td>{s.get("system","")}</td>
-          <td><span class="stain-badge">{s.get("stain","")}</span></td>
-          <td>{s.get("institution","")}</td>
-          <td>{status_badge}</td>
-          <td>
-            <button class="btn-edit" onclick="openEdit({json.dumps(s)})">수정</button>
-            <button class="btn-del" onclick="deleteSlide('{s["id"]}')">삭제</button>
-          </td>
-        </tr>'''
-
+        slide_rows += f'<tr><td><code>{s["id"]}</code></td><td>{s["title_ko"]}</td><td>{s.get("system","")}</td><td><span class="stain-badge">{s.get("stain","")}</span></td><td>{s.get("institution","")}</td><td>{status_badge}</td><td><button class="btn-edit" onclick="openEdit({json.dumps(s)})">수정</button><button class="btn-del" onclick="deleteSlide(\'{s["id"]}\')">삭제</button></td></tr>'
     return f'''<!DOCTYPE html>
-<html lang="ko">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SlideAtlas Admin</title>
-<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<html lang="ko"><head><meta charset="UTF-8"><title>SlideAtlas Admin</title>
 <style>
-@import url('https://cdn.jsdelivr.net/gh/sunn-us/SUIT/fonts/variable/woff2/SUIT-Variable.css');
 *{{margin:0;padding:0;box-sizing:border-box;}}
-body{{font-family:"SUIT Variable","SUIT",sans-serif;background:#F7F4EF;color:#0F1F3D;min-height:100vh;}}
+body{{font-family:sans-serif;background:#F7F4EF;color:#0F1F3D;}}
 nav{{background:#0F1F3D;padding:0 32px;height:54px;display:flex;align-items:center;justify-content:space-between;}}
-.logo{{display:flex;flex-direction:column;line-height:1;gap:1px;}}
-.logo-slide{{font-size:7px;letter-spacing:0.22em;color:#2A9D8F;font-family:"DM Mono",monospace;}}
 .logo-atlas{{font-size:18px;font-weight:800;color:#fff;}}
-.nav-right{{display:flex;align-items:center;gap:12px;}}
-.nav-badge{{font-size:10px;color:#2A9D8F;border:1px solid rgba(42,157,143,0.4);padding:3px 10px;border-radius:20px;font-family:"DM Mono",monospace;}}
 .nav-logout{{color:rgba(255,255,255,0.45);font-size:12px;text-decoration:none;}}
-.nav-logout:hover{{color:#fff;}}
 .container{{max-width:1100px;margin:0 auto;padding:32px 24px;}}
 .page-header{{display:flex;align-items:center;justify-content:space-between;margin-bottom:28px;}}
-.page-title{{font-size:22px;font-weight:800;letter-spacing:-0.02em;}}
-.page-sub{{font-size:13px;color:#9B9490;margin-top:3px;font-family:"DM Mono",monospace;}}
-.btn-add{{background:#2A9D8F;color:#fff;border:none;padding:10px 20px;border-radius:7px;font-size:13px;font-weight:600;font-family:"SUIT Variable",sans-serif;cursor:pointer;}}
-.btn-add:hover{{background:#238b7f;}}
+.page-title{{font-size:22px;font-weight:800;}}
+.btn-add{{background:#2A9D8F;color:#fff;border:none;padding:10px 20px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;}}
 .card{{background:#fff;border:1px solid #E5E0D8;border-radius:12px;overflow:hidden;}}
 .card-header{{padding:18px 24px;border-bottom:1px solid #E5E0D8;display:flex;align-items:center;justify-content:space-between;}}
 .card-title{{font-size:14px;font-weight:700;}}
-.slide-count{{font-size:11px;color:#9B9490;font-family:"DM Mono",monospace;}}
 table{{width:100%;border-collapse:collapse;}}
-th{{text-align:left;padding:11px 16px;font-size:11px;letter-spacing:0.06em;color:#9B9490;font-weight:600;border-bottom:1px solid #E5E0D8;font-family:"DM Mono",monospace;}}
+th{{text-align:left;padding:11px 16px;font-size:11px;color:#9B9490;font-weight:600;border-bottom:1px solid #E5E0D8;}}
 td{{padding:13px 16px;font-size:13px;border-bottom:1px solid #F0EDE8;vertical-align:middle;}}
 tr:last-child td{{border-bottom:none;}}
-code{{background:#F0EDE8;padding:2px 7px;border-radius:4px;font-size:12px;font-family:"DM Mono",monospace;}}
-.stain-badge{{background:#EBF6F5;color:#0F6E56;font-size:11px;padding:2px 8px;border-radius:12px;font-weight:600;font-family:"DM Mono",monospace;}}
+code{{background:#F0EDE8;padding:2px 7px;border-radius:4px;font-size:12px;}}
+.stain-badge{{background:#EBF6F5;color:#0F6E56;font-size:11px;padding:2px 8px;border-radius:12px;font-weight:600;}}
 .badge-active{{background:#EBF6F5;color:#0F6E56;font-size:11px;padding:2px 8px;border-radius:12px;font-weight:600;}}
 .badge-inactive{{background:#F5F0E8;color:#9B9490;font-size:11px;padding:2px 8px;border-radius:12px;font-weight:600;}}
-.btn-edit{{background:#F0EDE8;color:#0F1F3D;border:none;padding:5px 12px;border-radius:5px;font-size:12px;cursor:pointer;font-family:"SUIT Variable",sans-serif;font-weight:600;margin-right:4px;}}
-.btn-del{{background:#fde8e4;color:#c0392b;border:none;padding:5px 12px;border-radius:5px;font-size:12px;cursor:pointer;font-family:"SUIT Variable",sans-serif;font-weight:600;}}
-.btn-edit:hover{{background:#E5E0D8;}}
-.btn-del:hover{{background:#f5c6c0;}}
-
-/* 모달 */
+.btn-edit{{background:#F0EDE8;color:#0F1F3D;border:none;padding:5px 12px;border-radius:5px;font-size:12px;cursor:pointer;font-weight:600;margin-right:4px;}}
+.btn-del{{background:#fde8e4;color:#c0392b;border:none;padding:5px 12px;border-radius:5px;font-size:12px;cursor:pointer;font-weight:600;}}
 .modal-overlay{{display:none;position:fixed;inset:0;background:rgba(15,31,61,0.6);z-index:1000;align-items:center;justify-content:center;}}
 .modal-overlay.open{{display:flex;}}
 .modal{{background:#fff;border-radius:12px;width:540px;max-height:85vh;overflow-y:auto;padding:32px;}}
 .modal-title{{font-size:18px;font-weight:800;margin-bottom:24px;}}
 .form-row{{margin-bottom:16px;}}
-.form-row label{{font-size:12px;font-weight:600;color:#0F1F3D;display:block;margin-bottom:6px;letter-spacing:0.02em;}}
-.form-row input,.form-row select,.form-row textarea{{width:100%;padding:9px 12px;border:1.5px solid #E5E0D8;border-radius:7px;font-size:13px;font-family:"SUIT Variable",sans-serif;outline:none;}}
-.form-row input:focus,.form-row select:focus,.form-row textarea:focus{{border-color:#2A9D8F;}}
-.form-row textarea{{resize:vertical;min-height:72px;}}
+.form-row label{{font-size:12px;font-weight:600;display:block;margin-bottom:6px;}}
+.form-row input,.form-row select,.form-row textarea{{width:100%;padding:9px 12px;border:1.5px solid #E5E0D8;border-radius:7px;font-size:13px;font-family:sans-serif;outline:none;}}
+.form-row input:focus,.form-row select:focus{{border-color:#2A9D8F;}}
 .form-grid{{display:grid;grid-template-columns:1fr 1fr;gap:12px;}}
 .modal-footer{{display:flex;gap:10px;justify-content:flex-end;margin-top:24px;}}
-.btn-cancel{{background:#F0EDE8;color:#0F1F3D;border:none;padding:10px 20px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;font-family:"SUIT Variable",sans-serif;}}
-.btn-save{{background:#2A9D8F;color:#fff;border:none;padding:10px 20px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;font-family:"SUIT Variable",sans-serif;}}
-.hint{{font-size:11px;color:#9B9490;margin-top:4px;font-family:"DM Mono",monospace;}}
-</style>
-</head>
+.btn-cancel{{background:#F0EDE8;color:#0F1F3D;border:none;padding:10px 20px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;}}
+.btn-save{{background:#2A9D8F;color:#fff;border:none;padding:10px 20px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;}}
+</style></head>
 <body>
-<nav>
-  <div class="logo">
-    <span class="logo-slide">SLIDE</span>
-    <span class="logo-atlas">ATLAS</span>
-  </div>
-  <div class="nav-right">
-    <span class="nav-badge">ADMIN CONSOLE</span>
-    <a class="nav-logout" href="/admin/logout">로그아웃</a>
-  </div>
-</nav>
-
+<nav><span class="logo-atlas">ATLAS ADMIN</span><a class="nav-logout" href="/admin/logout">로그아웃</a></nav>
 <div class="container">
   <div class="page-header">
-    <div>
-      <div class="page-title">슬라이드 관리</div>
-      <div class="page-sub">Slide Management · {len(slides)} slides total</div>
-    </div>
+    <div><div class="page-title">슬라이드 관리</div></div>
     <button class="btn-add" onclick="openAdd()">+ 슬라이드 추가</button>
   </div>
-
   <div class="card">
-    <div class="card-header">
-      <span class="card-title">전체 슬라이드</span>
-      <span class="slide-count">{len(slides)} TOTAL</span>
-    </div>
+    <div class="card-header"><span class="card-title">전체 슬라이드</span><span>{len(slides)} TOTAL</span></div>
     <table>
-      <thead>
-        <tr>
-          <th>ID</th>
-          <th>슬라이드명</th>
-          <th>계통</th>
-          <th>염색</th>
-          <th>기관</th>
-          <th>상태</th>
-          <th>작업</th>
-        </tr>
-      </thead>
+      <thead><tr><th>ID</th><th>슬라이드명</th><th>계통</th><th>염색</th><th>기관</th><th>상태</th><th>작업</th></tr></thead>
       <tbody>{slide_rows if slide_rows else '<tr><td colspan="7" style="text-align:center;color:#9B9490;padding:32px;">등록된 슬라이드가 없습니다.</td></tr>'}</tbody>
     </table>
   </div>
 </div>
-
-<!-- 추가/수정 모달 -->
 <div class="modal-overlay" id="modal">
   <div class="modal">
     <div class="modal-title" id="modal-title">슬라이드 추가</div>
     <input type="hidden" id="edit-id">
     <div class="form-grid">
-      <div class="form-row">
-        <label>기관 코드</label>
-        <select id="f-institution">{inst_options}</select>
-      </div>
-      <div class="form-row">
-        <label>과목 코드</label>
-        <select id="f-subject">{subj_options}</select>
-      </div>
+      <div class="form-row"><label>기관 코드</label><select id="f-institution">{inst_options}</select></div>
+      <div class="form-row"><label>과목 코드</label><select id="f-subject">{subj_options}</select></div>
     </div>
-    <div class="form-row">
-      <label>슬라이드 ID <span style="color:#9B9490;font-weight:400">(자동생성 또는 직접 입력)</span></label>
-      <input type="text" id="f-id" placeholder="예: SA-HST-0002">
-      <div class="hint">기관코드-과목코드-순번 형식</div>
+    <div class="form-row"><label>슬라이드 ID</label><input type="text" id="f-id" placeholder="예: SA-HST-0002"></div>
+    <div class="form-grid">
+      <div class="form-row"><label>슬라이드명 (한글)</label><input type="text" id="f-title-ko"></div>
+      <div class="form-row"><label>슬라이드명 (영문)</label><input type="text" id="f-title-en"></div>
     </div>
     <div class="form-grid">
-      <div class="form-row">
-        <label>슬라이드명 (한글)</label>
-        <input type="text" id="f-title-ko" placeholder="예: 소장 · 융모 구조">
-      </div>
-      <div class="form-row">
-        <label>슬라이드명 (영문)</label>
-        <input type="text" id="f-title-en" placeholder="예: Small Intestine, Villi">
-      </div>
+      <div class="form-row"><label>계통</label><input type="text" id="f-system"></div>
+      <div class="form-row"><label>염색법</label><input type="text" id="f-stain"></div>
     </div>
-    <div class="form-grid">
-      <div class="form-row">
-        <label>계통</label>
-        <input type="text" id="f-system" placeholder="예: 소화기계">
-      </div>
-      <div class="form-row">
-        <label>염색법</label>
-        <input type="text" id="f-stain" placeholder="예: H&E">
-      </div>
-    </div>
-    <div class="form-row">
-      <label>S3 진입 파일명 (dcm_entry)</label>
-      <input type="text" id="f-entry" placeholder="예: 000001.dcm">
-      <div class="hint">OpenSlide가 처음 읽을 DCM 파일명</div>
-    </div>
-    <div class="form-row">
-      <label>DCM 파일 목록 (쉼표로 구분)</label>
-      <textarea id="f-files" placeholder="000001.dcm, 000002.dcm, 000003.dcm ..."></textarea>
-    </div>
-    <div class="form-row">
-      <label>설명</label>
-      <textarea id="f-desc" placeholder="슬라이드 설명 입력"></textarea>
-    </div>
-    <div class="form-row">
-      <label>상태</label>
-      <select id="f-active">
-        <option value="true">활성</option>
-        <option value="false">비활성</option>
-      </select>
-    </div>
+    <div class="form-row"><label>포맷</label><select id="f-format"><option value="dcm">DCM</option><option value="svs">SVS</option></select></div>
+    <div class="form-row"><label>S3 키 (s3_key)</label><input type="text" id="f-s3key" placeholder="예: SA-PATH-0002/SA-PATH-0002.svs"></div>
+    <div class="form-row"><label>타일서버</label><select id="f-tileserver"><option value="">Render (기본)</option><option value="ec2">EC2</option></select></div>
+    <div class="form-row"><label>DCM 진입 파일</label><input type="text" id="f-entry" placeholder="예: 000001.dcm"></div>
+    <div class="form-row"><label>DCM 파일 목록 (쉼표 구분)</label><textarea id="f-files"></textarea></div>
+    <div class="form-row"><label>설명</label><textarea id="f-desc"></textarea></div>
+    <div class="form-row"><label>상태</label><select id="f-active"><option value="true">활성</option><option value="false">비활성</option></select></div>
     <div class="modal-footer">
       <button class="btn-cancel" onclick="closeModal()">취소</button>
       <button class="btn-save" onclick="saveSlide()">저장</button>
     </div>
   </div>
 </div>
-
 <script>
 function openAdd() {{
   document.getElementById('modal-title').textContent = '슬라이드 추가';
   document.getElementById('edit-id').value = '';
-  ['f-id','f-title-ko','f-title-en','f-system','f-stain','f-entry','f-files','f-desc'].forEach(id => document.getElementById(id).value = '');
+  ['f-id','f-title-ko','f-title-en','f-system','f-stain','f-s3key','f-entry','f-files','f-desc'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('f-active').value = 'true';
+  document.getElementById('f-format').value = 'dcm';
+  document.getElementById('f-tileserver').value = '';
   document.getElementById('modal').classList.add('open');
 }}
-
 function openEdit(slide) {{
   document.getElementById('modal-title').textContent = '슬라이드 수정';
   document.getElementById('edit-id').value = slide.id;
@@ -1515,18 +1183,17 @@ function openEdit(slide) {{
   document.getElementById('f-title-en').value = slide.title_en || '';
   document.getElementById('f-system').value = slide.system || '';
   document.getElementById('f-stain').value = slide.stain || '';
+  document.getElementById('f-format').value = slide.format || 'dcm';
+  document.getElementById('f-s3key').value = slide.s3_key || '';
+  document.getElementById('f-tileserver').value = slide.tileserver || '';
   document.getElementById('f-entry').value = slide.dcm_entry || '';
   document.getElementById('f-files').value = (slide.dcm_files || []).join(', ');
   document.getElementById('f-desc').value = slide.description || '';
   document.getElementById('f-active').value = slide.active ? 'true' : 'false';
-  document.getElementById('f-institution').value = slide.institution || 'SA';
+  if(slide.institution) document.getElementById('f-institution').value = slide.institution;
   document.getElementById('modal').classList.add('open');
 }}
-
-function closeModal() {{
-  document.getElementById('modal').classList.remove('open');
-}}
-
+function closeModal() {{ document.getElementById('modal').classList.remove('open'); }}
 async function saveSlide() {{
   const payload = {{
     id: document.getElementById('f-id').value.trim(),
@@ -1536,32 +1203,30 @@ async function saveSlide() {{
     stain: document.getElementById('f-stain').value.trim(),
     institution: document.getElementById('f-institution').value,
     category: document.getElementById('f-subject').value.toLowerCase(),
+    format: document.getElementById('f-format').value,
+    s3_key: document.getElementById('f-s3key').value.trim(),
+    tileserver: document.getElementById('f-tileserver').value,
     dcm_entry: document.getElementById('f-entry').value.trim(),
-    dcm_files: document.getElementById('f-files').value.split(',').map(s => s.trim()).filter(Boolean),
+    dcm_files: document.getElementById('f-files').value.split(',').map(s=>s.trim()).filter(Boolean),
     description: document.getElementById('f-desc').value.trim(),
     active: document.getElementById('f-active').value === 'true',
     edit_id: document.getElementById('edit-id').value
   }};
-  const res = await fetch('/admin/api/slide', {{method:'POST', headers:{{'Content-Type':'application/json'}}, body: JSON.stringify(payload)}});
+  if(!payload.tileserver) delete payload.tileserver;
+  const res = await fetch('/admin/api/slide', {{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(payload)}});
   const result = await res.json();
-  if (result.ok) {{ location.reload(); }} else {{ alert('오류: ' + result.error); }}
+  if(result.ok) {{ location.reload(); }} else {{ alert('오류: ' + result.error); }}
 }}
-
 async function deleteSlide(id) {{
-  if (!confirm(id + ' 슬라이드를 삭제하시겠습니까?')) return;
-  const res = await fetch('/admin/api/slide/' + id, {{method:'DELETE'}});
+  if(!confirm(id+' 슬라이드를 삭제하시겠습니까?')) return;
+  const res = await fetch('/admin/api/slide/'+id, {{method:'DELETE'}});
   const result = await res.json();
-  if (result.ok) {{ location.reload(); }} else {{ alert('오류: ' + result.error); }}
+  if(result.ok) {{ location.reload(); }} else {{ alert('오류: '+result.error); }}
 }}
-
-document.getElementById('modal').addEventListener('click', function(e) {{
-  if (e.target === this) closeModal();
-}});
+document.getElementById('modal').addEventListener('click', function(e) {{ if(e.target===this) closeModal(); }});
 </script>
-</body>
-</html>'''
+</body></html>'''
 
-# ── Admin API ──
 @app.route('/admin/api/slide', methods=['POST'])
 @admin_required
 def admin_save_slide():
@@ -1570,7 +1235,6 @@ def admin_save_slide():
         data = load_slides()
         slides = data.get('slides', [])
         edit_id = payload.pop('edit_id', None)
-
         if edit_id:
             for i, s in enumerate(slides):
                 if s['id'] == edit_id:
@@ -1580,7 +1244,6 @@ def admin_save_slide():
             if any(s['id'] == payload['id'] for s in slides):
                 return jsonify({'ok': False, 'error': '이미 존재하는 ID입니다.'})
             slides.append(payload)
-
         data['slides'] = slides
         save_slides(data)
         return jsonify({'ok': True})
@@ -1600,6 +1263,5 @@ def admin_delete_slide(slide_id):
 
 if __name__ == '__main__':
     print(f"\n✅ SlideAtlas 서버 시작!")
-    print(f"   http://localhost:5000\n")
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, threaded=True)
