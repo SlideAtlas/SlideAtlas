@@ -77,9 +77,11 @@ def init_slide(slide_id):
 
             # EC2 타일서버를 쓰는 SVS는 Render에서 로드하지 않음
             if slide_info.get('tileserver') == 'ec2':
-                SLIDE_CACHE[slide_id] = {"ec2": True, "W": 83663, "H": 13119, "levels": 18}
+                ec2_w = slide_info.get("width", 83663)
+                ec2_h = slide_info.get("height", 60416)
+                SLIDE_CACHE[slide_id] = {"ec2": True, "W": ec2_w, "H": ec2_h, "levels": 18}
                 SLIDE_STATUS[slide_id]["done"] = True
-                print(f"✅ [{slide_id}] EC2 타일서버 모드")
+                print(f"✅ [{slide_id}] EC2 타일서버 모드 {ec2_w}x{ec2_h}")
                 return True
 
             bucket = os.environ.get('AWS_S3_BUCKET', 'slideatlas-slides')
@@ -400,6 +402,9 @@ small {{ color:rgba(255,255,255,0.25); font-size:12px; margin-top:8px; display:b
 
     if use_ec2:
         tile_source_url = f"/ec2tile/dzi/{slide_id}.dzi"
+        # slides.json에서 실제 크기 가져오기
+        W = slide_info.get("width", W)
+        H = slide_info.get("height", H)
     else:
         tile_source_url = f"/dzi/{slide_id}.dzi"
 
