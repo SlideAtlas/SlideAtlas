@@ -163,7 +163,7 @@ nav { background: #0F1F3D; padding: 0 40px; height: 58px; display: flex; align-i
 .hero-tag { display: inline-flex; align-items: center; gap: 7px; margin-bottom: 28px; }
 .hero-dot { width: 7px; height: 7px; border-radius: 50%; background: #2A9D8F; animation: pulse 2s infinite; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-.hero-tag-text { font-size: 11px; letter-spacing: 0.12em; color: rgba(255,255,255,0.7); text-transform: uppercase; font-family: "DM Mono", monospace; }
+.hero-tag-text { font-size: 12px; letter-spacing: 0.12em; color: rgba(255,255,255,0.9); text-transform: uppercase; font-family: "DM Mono", monospace; }
 .hero-title { font-weight: 800; font-size: 46px; line-height: 1.15; color: #fff; margin-bottom: 18px; letter-spacing: -0.03em; word-break: keep-all; }
 .hero-title .accent { color: #2A9D8F; }
 .hero-desc { font-size: 15px; line-height: 1.7; color: rgba(255,255,255,0.78); margin-bottom: 36px; max-width: 380px; font-weight: 400; word-break: keep-all; }
@@ -180,17 +180,17 @@ nav { background: #0F1F3D; padding: 0 40px; height: 58px; display: flex; align-i
 .viewer-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: space-between; padding: 14px; }
 .viewer-top { display: flex; align-items: center; justify-content: space-between; }
 .viewer-badge { background: rgba(42,157,143,0.9); color: #fff; font-size: 10px; padding: 4px 10px; border-radius: 4px; letter-spacing: 0.08em; font-weight: 600; font-family: "DM Mono", monospace; }
-.viewer-info-badge { background: rgba(15,31,61,0.85); color: rgba(255,255,255,0.85); font-size: 11px; padding: 4px 10px; border-radius: 4px; font-family: "DM Mono", monospace; }
+.viewer-info-badge { background: rgba(15,31,61,0.92); color: rgba(255,255,255,0.95); font-size: 12px; padding: 5px 12px; border-radius: 4px; font-family: "DM Mono", monospace; }
 .viewer-bottom { display: flex; align-items: flex-end; justify-content: space-between; }
 .viewer-meta { background: rgba(15,31,61,0.88); border-radius: 7px; padding: 10px 14px; }
-.viewer-meta-title { font-size: 12px; font-weight: 700; color: #fff; margin-bottom: 3px; letter-spacing: -0.01em; }
-.viewer-meta-sub { font-size: 11px; color: rgba(255,255,255,0.65); font-family: "DM Mono", monospace; }
+.viewer-meta-title { font-size: 13px; font-weight: 700; color: #fff; margin-bottom: 4px; letter-spacing: -0.01em; }
+.viewer-meta-sub { font-size: 12px; color: rgba(255,255,255,0.8); font-family: "DM Mono", monospace; }
 .viewer-magnify { display: flex; gap: 4px; }
 .mag-btn { background: rgba(15,31,61,0.85); color: rgba(255,255,255,0.65); border: none; width: 32px; height: 26px; border-radius: 4px; font-size: 11px; cursor: pointer; font-family: "DM Mono", monospace; }
 .mag-btn.active { background: #2A9D8F; color: #fff; }
 .hero-right-info { background: #0a1628; padding: 18px 24px; display: flex; align-items: center; justify-content: space-between; }
-.hri-label { font-size: 11px; color: rgba(255,255,255,0.55); letter-spacing: 0.06em; font-family: "DM Mono", monospace; margin-bottom: 3px; }
-.hri-value { font-size: 13px; color: rgba(255,255,255,0.8); font-weight: 500; }
+.hri-label { font-size: 12px; color: rgba(255,255,255,0.7); letter-spacing: 0.05em; font-family: "DM Mono", monospace; margin-bottom: 4px; }
+.hri-value { font-size: 14px; color: #fff; font-weight: 600; }
 .hri-divider { width: 1px; height: 32px; background: rgba(255,255,255,0.08); }
 .mvp-notice { margin: 40px 52px 0; background: #fff; border: 1px solid #E5E0D8; border-left: 3px solid #E9C46A; border-radius: 8px; padding: 14px 20px; display: flex; align-items: center; gap: 12px; }
 .mvp-dot { width: 7px; height: 7px; border-radius: 50%; background: #E9C46A; flex-shrink: 0; }
@@ -221,9 +221,12 @@ footer { background: #0F1F3D; padding: 28px 52px; display: flex; align-items: ce
 </head>
 <body>
 <nav>
-  <div class="logo">
-    <span class="logo-slide">SLIDE</span>
-    <span class="logo-atlas">ATLAS</span>
+  <div style="display:flex;align-items:center;gap:14px;">
+    <div class="logo">
+      <span class="logo-slide">SLIDE</span>
+      <span class="logo-atlas">ATLAS</span>
+    </div>
+    <span style="background:#E9C46A;color:#0F1F3D;font-size:11px;font-weight:800;padding:4px 10px;border-radius:5px;letter-spacing:0.12em;font-family:'DM Mono',monospace;">BETA</span>
   </div>
   <div class="nav-right">
     <span class="nav-badge">Beta · 무료 체험 중</span>
