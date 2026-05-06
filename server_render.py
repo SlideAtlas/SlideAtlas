@@ -746,7 +746,6 @@ function sendChat() {{
   var msg = input.value.trim();
   if(!msg) return;
   input.value = '';
-  var z = osd.viewport.getZoom(true);
   var containerW2 = osd.container ? osd.container.clientWidth : 1000;
   var vw2 = osd.viewport.getBounds().width;
   var umPerPx2 = vw2 * SLIDE_W * SLIDE_MPP / containerW2;
@@ -758,17 +757,48 @@ function sendChat() {{
   msgs.innerHTML += '<div class="msg-ai" id="'+typingId+'"><div class="msg-ai-icon"><svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 6v6l4 2"/></svg></div><div class="msg-ai-bubble"><div class="typing-indicator"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div></div></div>';
   msgs.scrollTop = msgs.scrollHeight;
   var SYSTEM = "You are SlideAtlas AI tutor. Current slide: {title_ko} ({title_en}), {stain} stain, {system}. Current magnification: " + magText + ". Answer in Korean, as a histology/pathology education expert. Keep answers to 3-5 sentences.";
+  var bubble = null;
+  var fullText = '';
   fetch("/api/chat", {{
     method: "POST",
     headers: {{"Content-Type": "application/json"}},
     body: JSON.stringify({{ message: msg, system: SYSTEM }})
   }})
-  .then(function(r){{ return r.json(); }})
-  .then(function(data) {{
-    var reply = data.reply || "응답을 받지 못했습니다.";
-    var el = document.getElementById(typingId);
-    if(el) el.querySelector('.msg-ai-bubble').innerHTML = renderMd(reply);
-    msgs.scrollTop = msgs.scrollHeight;
+  .then(function(r) {{
+    var reader = r.body.getReader();
+    var decoder = new TextDecoder();
+    var buffer = '';
+    function read() {{
+      reader.read().then(function(result) {{
+        if(result.done) return;
+        buffer += decoder.decode(result.value, {{stream: true}});
+        var lines = buffer.split('\\n');
+        buffer = lines.pop();
+        for(var i=0; i<lines.length; i++) {{
+          var line = lines[i].trim();
+          if(line.indexOf('data: ') === 0) {{
+            try {{
+              var obj = JSON.parse(line.slice(6));
+              if(obj.text) {{
+                fullText += obj.text;
+                var el = document.getElementById(typingId);
+                if(el) {{
+                  if(!bubble) {{ bubble = el.querySelector('.msg-ai-bubble'); }}
+                  bubble.innerHTML = renderMd(fullText);
+                  msgs.scrollTop = msgs.scrollHeight;
+                }}
+              }}
+              if(obj.error) {{
+                var el = document.getElementById(typingId);
+                if(el) el.querySelector('.msg-ai-bubble').textContent = 'API 오류: ' + obj.error;
+              }}
+            }} catch(e) {{}}
+          }}
+        }}
+        read();
+      }});
+    }}
+    read();
   }})
   .catch(function() {{
     var el = document.getElementById(typingId);
@@ -1021,25 +1051,73 @@ def api_chat():
     system_prompt = data.get('system', '당신은 병리학 교육 AI 튜터입니다. 한국어로 답변하세요.')
     if not user_msg:
         return jsonify({'reply': '메시지가 없습니다.'}), 400
+
+    # 퀴즈 요청은 JSON 파싱이 필요하므로 스트리밍 없이 처리
+    if 'JSON' in system_prompt or '형식으로만 응답' in system_prompt:
+        payload = json_mod.dumps({
+            'model': 'claude-sonnet-4-5',
+            'max_tokens': 800,
+            'system': system_prompt,
+            'messages': [{'role': 'user', 'content': user_msg}]
+        }).encode('utf-8')
+        req = urllib.request.Request(
+            'https://api.anthropic.com/v1/messages',
+            data=payload,
+            headers={'Content-Type': 'application/json', 'x-api-key': api_key, 'anthropic-version': '2023-06-01'},
+            method='POST'
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                result = json_mod.loads(resp.read().decode('utf-8'))
+                reply = result['content'][0]['text'] if result.get('content') else '응답 없음'
+                return jsonify({'reply': reply})
+        except Exception as e:
+            return jsonify({'reply': f'API 오류: {str(e)}'}), 500
+
+    # 일반 채팅은 스트리밍 응답
     payload = json_mod.dumps({
         'model': 'claude-sonnet-4-5',
         'max_tokens': 600,
+        'stream': True,
         'system': system_prompt,
         'messages': [{'role': 'user', 'content': user_msg}]
     }).encode('utf-8')
     req = urllib.request.Request(
         'https://api.anthropic.com/v1/messages',
         data=payload,
-        headers={'Content-Type': 'application/json', 'x-api-key': api_key, 'anthropic-version': '2023-06-01'},
+        headers={
+            'Content-Type': 'application/json',
+            'x-api-key': api_key,
+            'anthropic-version': '2023-06-01'
+        },
         method='POST'
     )
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            result = json_mod.loads(resp.read().decode('utf-8'))
-            reply = result['content'][0]['text'] if result.get('content') else '응답 없음'
-            return jsonify({'reply': reply})
-    except Exception as e:
-        return jsonify({'reply': f'API 오류: {str(e)}'}), 500
+
+    def generate():
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                for line in resp:
+                    line = line.decode('utf-8').strip()
+                    if line.startswith('data: '):
+                        chunk = line[6:]
+                        if chunk == '[DONE]':
+                            break
+                        try:
+                            obj = json_mod.loads(chunk)
+                            if obj.get('type') == 'content_block_delta':
+                                text = obj.get('delta', {}).get('text', '')
+                                if text:
+                                    yield f"data: {json_mod.dumps({'text': text})}\n\n"
+                        except Exception:
+                            pass
+        except Exception as e:
+            yield f"data: {json_mod.dumps({'error': str(e)})}\n\n"
+
+    return Response(
+        generate(),
+        mimetype='text/event-stream',
+        headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'}
+    )
 
 @app.route('/dzi/<slide_id>.dzi')
 def dzi_descriptor(slide_id):
