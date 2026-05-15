@@ -8,6 +8,13 @@
       "type": "platform"
     },
     {
+      "code": "HS",
+      "name_ko": "Happy Science",
+      "name_en": "Happy Science",
+      "country": "CN",
+      "type": "manufacturer"
+    },
+    {
       "code": "YU",
       "name_ko": "연세대학교",
       "name_en": "Yonsei University",
