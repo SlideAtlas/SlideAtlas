@@ -65,6 +65,57 @@
       "height": 13119,
       "description": "HCM-BROD 유방암 H&E 슬라이드. 침윤성 관암종의 세포 구조를 관찰합니다.",
       "active": true
+    },
+    {
+      "id": "HS-PATH-004",
+      "title_ko": "림프절 · 정상",
+      "title_en": "Lymphoid Node",
+      "system": "면역계",
+      "stain": "H&E",
+      "category": "pathology",
+      "institution": "HS",
+      "format": "svs",
+      "tileserver": "ec2",
+      "s3_key": "HS-PATH-004.svs",
+      "mpp": 0.2627,
+      "width": 48441,
+      "height": 51559,
+      "description": "Happy Science 제공 림프절 H&E 슬라이드. 피질, 수질, 림프소절 구조를 관찰합니다.",
+      "active": true
+    },
+    {
+      "id": "HS-PATH-005",
+      "title_ko": "충수돌기 · 정상",
+      "title_en": "Vermiform Appendix",
+      "system": "소화기계",
+      "stain": "H&E",
+      "category": "pathology",
+      "institution": "HS",
+      "format": "svs",
+      "tileserver": "ec2",
+      "s3_key": "HS-PATH-005.svs",
+      "mpp": null,
+      "width": 21600,
+      "height": 31064,
+      "description": "Happy Science 제공 충수돌기 H&E 슬라이드.",
+      "active": true
+    },
+    {
+      "id": "HS-PATH-006",
+      "title_ko": "급성 간울혈",
+      "title_en": "Acute Liver Congestion",
+      "system": "소화기계",
+      "stain": "H&E",
+      "category": "pathology",
+      "institution": "HS",
+      "format": "svs",
+      "tileserver": "ec2",
+      "s3_key": "HS-PATH-006.svs",
+      "mpp": null,
+      "width": 41172,
+      "height": 41675,
+      "description": "Happy Science 제공 급성 간울혈 H&E 슬라이드.",
+      "active": true
     }
   ]
 }
