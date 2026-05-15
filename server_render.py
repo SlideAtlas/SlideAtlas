@@ -128,7 +128,7 @@ def ec2_proxy(subpath):
     import urllib.request
     url = f"{EC2_TILESERVER}/{subpath}"
     try:
-        with urllib.request.urlopen(url, timeout=30) as resp:
+        with urllib.request.urlopen(url, timeout=120) as resp:
             data = resp.read()
             ct = resp.headers.get('Content-Type', 'image/jpeg')
             return Response(data, mimetype=ct)
