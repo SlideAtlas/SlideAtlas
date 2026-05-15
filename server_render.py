@@ -401,7 +401,7 @@ small {{ color:rgba(255,255,255,0.25); font-size:12px; margin-top:8px; display:b
     title_en = slide_info.get("title_en", "")
     system = slide_info.get("system", "")
     stain = slide_info.get("stain", "H&E")
-    mpp = slide_info.get("mpp", 0.25)
+    mpp = slide_info.get("mpp") or 0.25
 
     if use_ec2:
         tile_source_url = f"/ec2tile/dzi/{slide_id}.dzi"
