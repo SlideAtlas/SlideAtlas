@@ -10,8 +10,8 @@
 - **서비스명**: SlideAtlas
 - **URL**: https://slideatlas.onrender.com
 - **목적**: 의과대학용 디지털 병리·조직학 WSI(Whole Slide Image) 뷰잉 + AI 튜터링 플랫폼
-- **법인**: 아틀라스랩(Atlas Lab Co., Ltd.) — 대표 David Kim(보람)
-- **연계 법인**: 라미인터내셔널(기존 운영 법인), 보람바이오텍(부친, 20년 의대 슬라이드 납품)
+- **법인**: 아틀라스랩 주식회사(Atlas Lab Co., Ltd.) — 대표이사 김보람 (Boram Kim)
+- **연계 법인**: 라미인터네셔널(기존 운영 법인), 보람바이오텍(부친, 20년 의대 슬라이드 납품)
 - **GitHub**: https://github.com/SlideAtlas/SlideAtlas
 
 ---
