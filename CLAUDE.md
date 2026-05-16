@@ -9,7 +9,7 @@
 
 **제품명**: SlideAtlas  
 **운영사**: 아틀라스랩 주식회사 (Atlas Lab Co., Ltd.)  
-**대표**: 김보람  
+**대표**: 김보람 (Boram Kim)  
 **URL**: slideatlas.onrender.com  
 **도메인**: atlaslab.co.kr (가비아)  
 **이메일**: boram@atlaslab.co.kr  
