@@ -47,7 +47,7 @@ TILE_SIZE = 256
 OVERLAP = 1
 SLIDES_DIR = "/tmp/slides"
 
-EC2_TILESERVER = "http://ec2-13-209-99-51.ap-northeast-2.compute.amazonaws.com:8000"
+EC2_TILESERVER = "http://43.200.171.90:8000"
 
 def get_s3_client():
     import boto3
