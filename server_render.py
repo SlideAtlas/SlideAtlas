@@ -223,7 +223,7 @@ footer { background: #0F1F3D; padding: 28px 52px; display: flex; align-items: ce
 <nav>
   <div style="display:flex;align-items:center;gap:14px;">
     <a href="/" style="display:flex;align-items:center;text-decoration:none;">
-      <img src="/static/slideatlas_logo.png" alt="SlideAtlas" style="height:44px;width:auto;">
+      <img src="/static/slideatlas_logo.png" alt="SlideAtlas" style="height:72px;width:auto;">
     </a>
     <span style="background:#E9C46A;color:#0F1F3D;font-size:11px;font-weight:800;padding:4px 10px;border-radius:5px;letter-spacing:0.12em;font-family:'DM Mono',monospace;">BETA</span>
   </div>
@@ -531,7 +531,7 @@ body{{background:#0d1219;font-family:"SUIT Variable","SUIT",sans-serif;overflow:
   <div style="display:flex;align-items:center;gap:12px;">
     <a href="/slides" class="hdr-back">← 목록</a>
     <a href="/" style="display:flex;align-items:center;text-decoration:none;">
-      <img src="/static/slideatlas_logo.png" alt="SlideAtlas" style="height:44px;width:auto;">
+      <img src="/static/slideatlas_logo.png" alt="SlideAtlas" style="height:72px;width:auto;">
     </a>
   </div>
   <span id="hdr-center">{title_ko} &nbsp;/&nbsp; {stain} &nbsp;/&nbsp; <span id="hdr-mag">전체</span></span>
@@ -999,7 +999,7 @@ footer{{background:#0F1F3D;padding:28px 52px;display:flex;align-items:center;jus
 <body>
 <nav>
   <a href="/" style="display:flex;align-items:center;text-decoration:none;">
-    <img src="/static/slideatlas_logo.png" alt="SlideAtlas" style="height:44px;width:auto;">
+    <img src="/static/slideatlas_logo.png" alt="SlideAtlas" style="height:72px;width:auto;">
   </a>
   <div class="nav-right">
     <span class="nav-badge">Beta</span>
