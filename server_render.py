@@ -151,7 +151,7 @@ def landing():
 @import url('https://cdn.jsdelivr.net/gh/sunn-us/SUIT/fonts/variable/woff2/SUIT-Variable.css');
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: "SUIT Variable", "SUIT", sans-serif; background: #F7F4EF; color: #0F1F3D; min-height: 100vh; overflow-x: hidden; }
-nav { background: #0F1F3D; padding: 0 40px; height: 84px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; }
+nav { background: #0F1F3D; padding: 0 40px; height: 58px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; }
 .logo { display: flex; flex-direction: column; line-height: 1; gap: 1px; }
 .logo-slide { font-size: 8px; font-weight: 500; letter-spacing: 0.22em; color: #2A9D8F; text-transform: uppercase; font-family: "DM Mono", monospace; }
 .logo-atlas { font-size: 20px; font-weight: 800; color: #fff; letter-spacing: 0.04em; }
@@ -223,7 +223,7 @@ footer { background: #0F1F3D; padding: 28px 52px; display: flex; align-items: ce
 <nav>
   <div style="display:flex;align-items:center;gap:14px;">
     <a href="/" style="display:flex;align-items:center;text-decoration:none;">
-      <img src="/static/slideatlas_logo.png" alt="SlideAtlas" style="height:72px;width:auto;">
+      <img src="/static/slideatlas_logo_hor.png" alt="SlideAtlas" style="height:44px;width:auto;">
     </a>
     <span style="background:#E9C46A;color:#0F1F3D;font-size:11px;font-weight:800;padding:4px 10px;border-radius:5px;letter-spacing:0.12em;font-family:'DM Mono',monospace;">BETA</span>
   </div>
@@ -319,8 +319,8 @@ footer { background: #0F1F3D; padding: 28px 52px; display: flex; align-items: ce
   </div>
 </section>
 <footer>
-  <span class="footer-logo">SlideAtlas</span>
-  <span class="footer-copy">© 2026 Lami International Co., Ltd.</span>
+  <img src="/static/slideatlas_logo_hor.png" alt="SlideAtlas" style="height:36px;width:auto;">
+  <span class="footer-copy">© 2026 AtlasLab Co., Ltd.</span>
   <div class="footer-links">
     <a href="mailto:mcmajo@naver.com">문의</a>
     <a href="#">기관 구독</a>
@@ -422,7 +422,7 @@ small {{ color:rgba(255,255,255,0.25); font-size:12px; margin-top:8px; display:b
 @import url('https://cdn.jsdelivr.net/gh/sunn-us/SUIT/fonts/variable/woff2/SUIT-Variable.css');
 *{{margin:0;padding:0;box-sizing:border-box;}}
 body{{background:#0d1219;font-family:"SUIT Variable","SUIT",sans-serif;overflow:hidden;height:100vh;display:flex;flex-direction:column;}}
-#header{{background:rgba(15,31,61,0.97);border-bottom:1px solid rgba(255,255,255,0.08);padding:0 20px;height:84px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;z-index:100;}}
+#header{{background:rgba(15,31,61,0.97);border-bottom:1px solid rgba(255,255,255,0.08);padding:0 20px;height:50px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;z-index:100;}}
 .logo{{display:flex;flex-direction:column;line-height:1;gap:1px;text-decoration:none;}}
 .logo-slide{{font-size:7px;letter-spacing:0.22em;color:#2A9D8F;font-family:"DM Mono",monospace;font-weight:500;}}
 .logo-atlas{{font-size:18px;font-weight:800;color:#fff;}}
@@ -531,7 +531,7 @@ body{{background:#0d1219;font-family:"SUIT Variable","SUIT",sans-serif;overflow:
   <div style="display:flex;align-items:center;gap:12px;">
     <a href="/slides" class="hdr-back">← 목록</a>
     <a href="/" style="display:flex;align-items:center;text-decoration:none;">
-      <img src="/static/slideatlas_logo.png" alt="SlideAtlas" style="height:72px;width:auto;">
+      <img src="/static/slideatlas_logo_hor.png" alt="SlideAtlas" style="height:44px;width:auto;">
     </a>
   </div>
   <span id="hdr-center">{title_ko} &nbsp;/&nbsp; {stain} &nbsp;/&nbsp; <span id="hdr-mag">전체</span></span>
@@ -943,7 +943,7 @@ def slides():
 @import url('https://cdn.jsdelivr.net/gh/sunn-us/SUIT/fonts/variable/woff2/SUIT-Variable.css');
 *{{margin:0;padding:0;box-sizing:border-box;}}
 body{{font-family:"SUIT Variable","SUIT",sans-serif;background:#F7F4EF;color:#0F1F3D;min-height:100vh;}}
-nav{{background:#0F1F3D;padding:0 40px;height:84px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}}
+nav{{background:#0F1F3D;padding:0 40px;height:58px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}}
 .logo{{display:flex;flex-direction:column;line-height:1;gap:1px;text-decoration:none;}}
 .logo-slide{{font-size:8px;font-weight:500;letter-spacing:0.22em;color:#2A9D8F;text-transform:uppercase;font-family:"DM Mono",monospace;}}
 .logo-atlas{{font-size:20px;font-weight:800;color:#fff;letter-spacing:0.04em;}}
@@ -999,7 +999,7 @@ footer{{background:#0F1F3D;padding:28px 52px;display:flex;align-items:center;jus
 <body>
 <nav>
   <a href="/" style="display:flex;align-items:center;text-decoration:none;">
-    <img src="/static/slideatlas_logo.png" alt="SlideAtlas" style="height:72px;width:auto;">
+    <img src="/static/slideatlas_logo_hor.png" alt="SlideAtlas" style="height:44px;width:auto;">
   </a>
   <div class="nav-right">
     <span class="nav-badge">Beta</span>
@@ -1030,8 +1030,8 @@ footer{{background:#0F1F3D;padding:28px 52px;display:flex;align-items:center;jus
   </div>
 </div>
 <footer>
-  <span class="footer-logo">SlideAtlas</span>
-  <span class="footer-copy">© 2026 Lami International Co., Ltd.</span>
+  <img src="/static/slideatlas_logo_hor.png" alt="SlideAtlas" style="height:36px;width:auto;">
+  <span class="footer-copy">© 2026 AtlasLab Co., Ltd.</span>
   <div class="footer-links">
     <a href="mailto:mcmajo@naver.com">문의</a>
     <a href="#">기관 구독</a>
