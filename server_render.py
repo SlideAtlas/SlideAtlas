@@ -222,10 +222,9 @@ footer { background: #0F1F3D; padding: 28px 52px; display: flex; align-items: ce
 <body>
 <nav>
   <div style="display:flex;align-items:center;gap:14px;">
-    <div class="logo">
-      <span class="logo-slide">SLIDE</span>
-      <span class="logo-atlas">ATLAS</span>
-    </div>
+    <a href="/" style="display:flex;align-items:center;text-decoration:none;">
+      <img src="/static/slideatlas_logo.png" alt="SlideAtlas" style="height:36px;width:auto;">
+    </a>
     <span style="background:#E9C46A;color:#0F1F3D;font-size:11px;font-weight:800;padding:4px 10px;border-radius:5px;letter-spacing:0.12em;font-family:'DM Mono',monospace;">BETA</span>
   </div>
   <div class="nav-right">
@@ -371,23 +370,24 @@ def viewer(slide_id):
 <meta http-equiv="refresh" content="3">
 <style>
 * {{ margin:0; padding:0; box-sizing:border-box; }}
-body {{ background:#0d1219; color:white; font-family:"Segoe UI",sans-serif;
+body {{ background:#0F1F3D; color:white; font-family:"Segoe UI",sans-serif;
   display:flex; align-items:center; justify-content:center; height:100vh; }}
-.logo-slide {{ font-size:9px; letter-spacing:0.25em; color:#2A9D8F; }}
-.logo-atlas {{ font-size:28px; font-weight:700; margin-bottom:32px; }}
-.spinner {{ width:40px; height:40px; border:3px solid rgba(255,255,255,0.1);
-  border-top-color:#2A9D8F; border-radius:50%;
-  animation:spin 1s linear infinite; margin:0 auto 20px; }}
-@keyframes spin {{ to {{ transform:rotate(360deg); }} }}
+.splash {{ text-align:center; }}
+.splash img {{ height:80px; width:auto; margin-bottom:32px; }}
+.progress-bar {{ width:160px; height:2px; background:rgba(91,184,212,0.2);
+  border-radius:2px; overflow:hidden; margin:0 auto 20px; }}
+.progress-bar::after {{ content:''; display:block; height:100%;
+  width:40%; background:#5BB8D4; border-radius:2px;
+  animation:progress 1.2s ease-in-out infinite; }}
+@keyframes progress {{ 0% {{ transform:translateX(-100%); }} 100% {{ transform:translateX(350%); }} }}
 p {{ color:rgba(255,255,255,0.45); font-size:14px; }}
 small {{ color:rgba(255,255,255,0.25); font-size:12px; margin-top:8px; display:block; }}
 </style>
 </head>
 <body>
-<div style="text-align:center">
-  <div class="logo-slide">SLIDE</div>
-  <div class="logo-atlas">ATLAS</div>
-  <div class="spinner"></div>
+<div class="splash">
+  <img src="/static/slideatlas_logo.png" alt="SlideAtlas">
+  <div class="progress-bar"></div>
   <p>{slide_info.get("title_ko", slide_id)} 로딩 중...</p>
   <small>처음 접속 시 잠시 소요됩니다. 페이지가 자동으로 새로고침됩니다.</small>
 </div>
@@ -530,9 +530,8 @@ body{{background:#0d1219;font-family:"SUIT Variable","SUIT",sans-serif;overflow:
 <div id="header">
   <div style="display:flex;align-items:center;gap:12px;">
     <a href="/slides" class="hdr-back">← 목록</a>
-    <a href="/" class="logo">
-      <span class="logo-slide">SLIDE</span>
-      <span class="logo-atlas">ATLAS</span>
+    <a href="/" style="display:flex;align-items:center;text-decoration:none;">
+      <img src="/static/slideatlas_logo.png" alt="SlideAtlas" style="height:32px;width:auto;">
     </a>
   </div>
   <span id="hdr-center">{title_ko} &nbsp;/&nbsp; {stain} &nbsp;/&nbsp; <span id="hdr-mag">전체</span></span>
@@ -999,7 +998,9 @@ footer{{background:#0F1F3D;padding:28px 52px;display:flex;align-items:center;jus
 </head>
 <body>
 <nav>
-  <a class="logo" href="/"><span class="logo-slide">SLIDE</span><span class="logo-atlas">ATLAS</span></a>
+  <a href="/" style="display:flex;align-items:center;text-decoration:none;">
+    <img src="/static/slideatlas_logo.png" alt="SlideAtlas" style="height:32px;width:auto;">
+  </a>
   <div class="nav-right">
     <span class="nav-badge">Beta</span>
     <a class="btn-nav" href="/">홈으로</a>
