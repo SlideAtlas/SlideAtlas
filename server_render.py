@@ -151,7 +151,7 @@ def landing():
 @import url('https://cdn.jsdelivr.net/gh/sunn-us/SUIT/fonts/variable/woff2/SUIT-Variable.css');
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: "SUIT Variable", "SUIT", sans-serif; background: #F7F4EF; color: #0F1F3D; min-height: 100vh; overflow-x: hidden; }
-nav { background: #0F1F3D; padding: 0 40px; height: 58px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; }
+nav { background: #0F1F3D; padding: 0 40px; height: 84px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; }
 .logo { display: flex; flex-direction: column; line-height: 1; gap: 1px; }
 .logo-slide { font-size: 8px; font-weight: 500; letter-spacing: 0.22em; color: #2A9D8F; text-transform: uppercase; font-family: "DM Mono", monospace; }
 .logo-atlas { font-size: 20px; font-weight: 800; color: #fff; letter-spacing: 0.04em; }
@@ -422,7 +422,7 @@ small {{ color:rgba(255,255,255,0.25); font-size:12px; margin-top:8px; display:b
 @import url('https://cdn.jsdelivr.net/gh/sunn-us/SUIT/fonts/variable/woff2/SUIT-Variable.css');
 *{{margin:0;padding:0;box-sizing:border-box;}}
 body{{background:#0d1219;font-family:"SUIT Variable","SUIT",sans-serif;overflow:hidden;height:100vh;display:flex;flex-direction:column;}}
-#header{{background:rgba(15,31,61,0.97);border-bottom:1px solid rgba(255,255,255,0.08);padding:0 20px;height:50px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;z-index:100;}}
+#header{{background:rgba(15,31,61,0.97);border-bottom:1px solid rgba(255,255,255,0.08);padding:0 20px;height:84px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;z-index:100;}}
 .logo{{display:flex;flex-direction:column;line-height:1;gap:1px;text-decoration:none;}}
 .logo-slide{{font-size:7px;letter-spacing:0.22em;color:#2A9D8F;font-family:"DM Mono",monospace;font-weight:500;}}
 .logo-atlas{{font-size:18px;font-weight:800;color:#fff;}}
@@ -943,7 +943,7 @@ def slides():
 @import url('https://cdn.jsdelivr.net/gh/sunn-us/SUIT/fonts/variable/woff2/SUIT-Variable.css');
 *{{margin:0;padding:0;box-sizing:border-box;}}
 body{{font-family:"SUIT Variable","SUIT",sans-serif;background:#F7F4EF;color:#0F1F3D;min-height:100vh;}}
-nav{{background:#0F1F3D;padding:0 40px;height:58px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}}
+nav{{background:#0F1F3D;padding:0 40px;height:84px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}}
 .logo{{display:flex;flex-direction:column;line-height:1;gap:1px;text-decoration:none;}}
 .logo-slide{{font-size:8px;font-weight:500;letter-spacing:0.22em;color:#2A9D8F;text-transform:uppercase;font-family:"DM Mono",monospace;}}
 .logo-atlas{{font-size:20px;font-weight:800;color:#fff;letter-spacing:0.04em;}}
