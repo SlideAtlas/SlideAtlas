@@ -223,7 +223,7 @@ footer { background: #0F1F3D; padding: 28px 52px; display: flex; align-items: ce
 <nav>
   <div style="display:flex;align-items:center;gap:14px;">
     <a href="/" style="display:flex;align-items:center;text-decoration:none;">
-      <img src="/static/slideatlas_logo_hor.png" alt="SlideAtlas" style="height:44px;width:auto;">
+      <img src="/static/slideatlas_logo_hor.png" alt="SlideAtlas" style="height:72px;width:auto;">
     </a>
     <span style="background:#E9C46A;color:#0F1F3D;font-size:11px;font-weight:800;padding:4px 10px;border-radius:5px;letter-spacing:0.12em;font-family:'DM Mono',monospace;">BETA</span>
   </div>
@@ -319,7 +319,7 @@ footer { background: #0F1F3D; padding: 28px 52px; display: flex; align-items: ce
   </div>
 </section>
 <footer>
-  <img src="/static/slideatlas_logo_hor.png" alt="SlideAtlas" style="height:36px;width:auto;">
+  <img src="/static/slideatlas_logo_hor.png" alt="SlideAtlas" style="height:60px;width:auto;">
   <span class="footer-copy">© 2026 AtlasLab Co., Ltd.</span>
   <div class="footer-links">
     <a href="mailto:mcmajo@naver.com">문의</a>
@@ -370,9 +370,8 @@ def viewer(slide_id):
 <meta http-equiv="refresh" content="3">
 <style>
 * {{ margin:0; padding:0; box-sizing:border-box; }}
-body {{ background:#0F1F3D; color:white; font-family:"Segoe UI",sans-serif;
+body {{ background:#0d1219; color:white; font-family:"Segoe UI",sans-serif;
   display:flex; align-items:center; justify-content:center; height:100vh; }}
-.splash {{ text-align:center; }}
 .splash img {{ height:160px; width:auto; margin-bottom:32px; }}
 .progress-bar {{ width:160px; height:2px; background:rgba(91,184,212,0.2);
   border-radius:2px; overflow:hidden; margin:0 auto 20px; }}
@@ -385,9 +384,8 @@ small {{ color:rgba(255,255,255,0.25); font-size:12px; margin-top:8px; display:b
 </style>
 </head>
 <body>
-<div class="splash">
-  <img src="/static/slideatlas_logo.png" alt="SlideAtlas">
-  <div class="progress-bar"></div>
+<div style="text-align:center">
+  <img src="/static/slideatlas_logo.png" alt="SlideAtlas" style="height:160px;width:auto;margin-bottom:32px;">
   <p>{slide_info.get("title_ko", slide_id)} 로딩 중...</p>
   <small>처음 접속 시 잠시 소요됩니다. 페이지가 자동으로 새로고침됩니다.</small>
 </div>
@@ -531,7 +529,7 @@ body{{background:#0d1219;font-family:"SUIT Variable","SUIT",sans-serif;overflow:
   <div style="display:flex;align-items:center;gap:12px;">
     <a href="/slides" class="hdr-back">← 목록</a>
     <a href="/" style="display:flex;align-items:center;text-decoration:none;">
-      <img src="/static/slideatlas_logo_hor.png" alt="SlideAtlas" style="height:44px;width:auto;">
+      <img src="/static/slideatlas_logo.png" alt="SlideAtlas" style="height:72px;width:auto;">
     </a>
   </div>
   <span id="hdr-center">{title_ko} &nbsp;/&nbsp; {stain} &nbsp;/&nbsp; <span id="hdr-mag">전체</span></span>
@@ -999,7 +997,7 @@ footer{{background:#0F1F3D;padding:28px 52px;display:flex;align-items:center;jus
 <body>
 <nav>
   <a href="/" style="display:flex;align-items:center;text-decoration:none;">
-    <img src="/static/slideatlas_logo_hor.png" alt="SlideAtlas" style="height:44px;width:auto;">
+    <img src="/static/slideatlas_logo_hor.png" alt="SlideAtlas" style="height:72px;width:auto;">
   </a>
   <div class="nav-right">
     <span class="nav-badge">Beta</span>
@@ -1030,7 +1028,7 @@ footer{{background:#0F1F3D;padding:28px 52px;display:flex;align-items:center;jus
   </div>
 </div>
 <footer>
-  <img src="/static/slideatlas_logo_hor.png" alt="SlideAtlas" style="height:36px;width:auto;">
+  <img src="/static/slideatlas_logo_hor.png" alt="SlideAtlas" style="height:60px;width:auto;">
   <span class="footer-copy">© 2026 AtlasLab Co., Ltd.</span>
   <div class="footer-links">
     <a href="mailto:mcmajo@naver.com">문의</a>
