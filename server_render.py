@@ -403,11 +403,12 @@ small {{ color:rgba(255,255,255,0.25); font-size:12px; margin-top:8px; display:b
 
     if use_ec2:
         tile_source_url = f"/ec2tile/dzi/{slide_id}.dzi"
-        # slides.json에서 실제 크기 가져오기
+        thumbnail_url = f"/ec2tile/thumbnail/{slide_id}"
         W = slide_info.get("width", W)
         H = slide_info.get("height", H)
     else:
         tile_source_url = f"/dzi/{slide_id}.dzi"
+        thumbnail_url = f"/thumbnail/{slide_id}"
 
     return f'''<!DOCTYPE html>
 <html lang="ko">
@@ -667,6 +668,7 @@ var osd = OpenSeadragon({{
   navigatorPosition: "BOTTOM_RIGHT",
   navigatorHeight: 100,
   navigatorWidth: 140,
+  navigatorThumbnailUrl: "{thumbnail_url}",
   defaultZoomLevel: 0,
 }});
 
@@ -676,21 +678,11 @@ osd.addHandler('open', function() {{ osd.viewport.goHome(true); setTimeout(updVi
 function updViewer() {{
   try {{
     var z = osd.viewport.getZoom(true);
-    // 정확한 배율: 화면픽셀 기준 계산
-    // zoom=1이면 슬라이드 전체폭=뷰포트폭
-    // 실제 배율 = (화면에서 1mm당 슬라이드픽셀수) / (기준 10x에서 1mm당 픽셀수)
     var tiledImageW = osd.world.getItemAt(0) ? osd.world.getItemAt(0).getContentSize().x : SLIDE_W;
     var viewportW = osd.viewport.getBounds().width;
-    // viewportW는 0~1 정규화 기준, 1=슬라이드폭
-    // 화면에 보이는 슬라이드 폭(픽셀) = SLIDE_W / viewportW * (containerW/SLIDE_W)
-    // 더 단순하게: 1픽셀당 실제 크기(um) = viewportW * SLIDE_W * SLIDE_MPP / containerW
     var containerW = osd.container ? osd.container.clientWidth : 1000;
     var umPerScreenPx = viewportW * SLIDE_W * SLIDE_MPP / containerW;
-    // 10x 기준: 1μm = 1화면픽셀 (표준 현미경 기준)
-    var mag = 10 / umPerScreenPx / 10;
-    // 실제 현미경 배율 = 1/umPerScreenPx * SCALE_FACTOR
-    // 40x objective에서 1px = 0.25μm이므로
-    mag = 1 / umPerScreenPx * 0.25 * 40;
+    var mag = 1 / umPerScreenPx * 0.25 * 40;
     var magText = mag >= 1 ? (Math.round(mag*10)/10)+'×' : mag.toFixed(3)+'×';
     document.getElementById('md').textContent = magText;
     document.getElementById('hdr-mag').textContent = magText;
@@ -709,8 +701,6 @@ function fit() {{ osd.viewport.goHome(false); setTimeout(updViewer,200); }}
 function zi() {{ osd.viewport.zoomBy(1/1.8); setTimeout(updViewer,100); }}
 function zo() {{ osd.viewport.zoomBy(1.8); setTimeout(updViewer,100); }}
 function sm(m) {{
-  // 원하는 배율(m)에서의 umPerScreenPx = 0.25*40/m
-  // viewportW = umPerScreenPx * containerW / (SLIDE_W * SLIDE_MPP)
   var containerW = osd.container ? osd.container.clientWidth : 1000;
   var umPerPx = (0.25 * 40 / m);
   var targetViewportW = umPerPx * containerW / (SLIDE_W * SLIDE_MPP);
@@ -1051,7 +1041,6 @@ def api_chat():
     if not user_msg:
         return jsonify({'reply': '메시지가 없습니다.'}), 400
 
-    # 퀴즈 요청은 JSON 파싱이 필요하므로 스트리밍 없이 처리
     if 'JSON' in system_prompt or '형식으로만 응답' in system_prompt:
         payload = json_mod.dumps({
             'model': 'claude-sonnet-4-5',
@@ -1073,7 +1062,6 @@ def api_chat():
         except Exception as e:
             return jsonify({'reply': f'API 오류: {str(e)}'}), 500
 
-    # 일반 채팅은 스트리밍 응답
     payload = json_mod.dumps({
         'model': 'claude-sonnet-4-5',
         'max_tokens': 600,
@@ -1152,6 +1140,28 @@ def dzi_tile(slide_id, level, col, row):
         return send_file(buf, mimetype='image/jpeg')
     except Exception as e:
         img = Image.new('RGB', (TILE_SIZE, TILE_SIZE), (255, 255, 255))
+        buf = io.BytesIO()
+        img.save(buf, 'JPEG')
+        buf.seek(0)
+        return send_file(buf, mimetype='image/jpeg')
+
+# ── Render용 썸네일 엔드포인트 (DCM 슬라이드용) ──
+@app.route('/thumbnail/<slide_id>')
+def thumbnail(slide_id):
+    if slide_id not in SLIDE_CACHE:
+        return Response("Not loaded", status=503)
+    cache = SLIDE_CACHE[slide_id]
+    if cache.get('ec2'):
+        return Response("Use EC2 thumbnail", status=404)
+    try:
+        slide_obj = cache["slide"]
+        thumb = slide_obj.get_thumbnail((280, 200))
+        buf = io.BytesIO()
+        thumb.save(buf, format='JPEG', quality=80)
+        buf.seek(0)
+        return send_file(buf, mimetype='image/jpeg')
+    except Exception as e:
+        img = Image.new('RGB', (280, 200), (245, 240, 235))
         buf = io.BytesIO()
         img.save(buf, 'JPEG')
         buf.seek(0)
