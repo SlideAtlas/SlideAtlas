@@ -55,7 +55,7 @@
 | 뷰어 | OpenSeadragon |
 | 배포 | Render Starter ($7/월) |
 | 저장소 | AWS S3 (ap-northeast-2, 버킷: slideatlas-slides) |
-| 타일서버 | AWS EC2 t3.medium (slideatlas-tileserver, ec2-13-209-99-51.ap-northeast-2) |
+| 타일서버 | AWS EC2 t3.large (slideatlas-tileserver, ec2-13-209-99-51.ap-northeast-2) — 동적 워터마킹 처리 포함 (~$60/월) |
 | 타일엔진 | titiler + 커스텀 타일서버 (~/tileserver/main.py, rasterio 기반) |
 | 파이프라인 | SVS/DCM/TIFF → COG TIFF → S3 → titiler |
 | 데이터 관리 | slides.json + institutions.json → **RDS PostgreSQL 마이그레이션 예정** |
@@ -288,6 +288,9 @@ CREATE TABLE access_logs (
 ## 8. 보안 아키텍처
 
 - **Presigned URL**: TTL 5분, 만료 후 타일 접근 불가, S3 버킷 퍼블릭 접근 전면 차단
+- **동적 워터마킹**: v1.0 런칭 시 포함. 사용자 ID·기관명을 타일마다 투명하게 삽입 (Pillow, 투명도 15~20%, 대각선 반복 패턴). Happy Science 등 라이선스 콘텐츠 유출 시 추적 가능.
+- **브라우저 캐시 완전 차단**: 타일 응답 헤더에 `Cache-Control: no-store, no-cache` 적용. 고객 로컬에 타일 파일 저장 불가. 뷰어 종료 시 메모리에서도 소멸.
+- **서버사이드 캐시**: EC2 메모리 캐시로 동일 유저·동일 타일 재처리 방지 (보안 위험 없음, 서버에만 존재)
 - **동시접속 제어**: 새 기기 로그인 시 기존 session_token 무효화 (기관 해약 아닌 세션 종료만)
 - **도메인 기반 자가인증**: 기관 이메일 도메인 검증 + 6개월 재인증
 - **멀티테넌시**: institution_id 기반 Row Level 격리
