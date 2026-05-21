@@ -217,29 +217,53 @@ slide_id | title_ko | title_en | organ | stain | species | subject_code | descri
 
 형식: `{기관코드}-{과목코드}-{순번}`
 
-**기관코드** (ICAO식):
+**설계 원칙**: 기관코드·과목코드는 코드에 하드코딩하지 않는다. 모두 DB 테이블로 관리하여 관리자 페이지에서 개발자 개입 없이 추가 가능.
+
+**기관코드** → `institutions.id` 컬럼이 곧 기관코드 (관리자 페이지에서 추가)
 - SA: SlideAtlas 자체
-- HS: Happy Science (라이선스 콘텐츠)
+- HS: Happy Science
 - YU: 연세대학교
 - SNU: 서울대학교
 - KU: 고려대학교
 - MU: Mahidol University
 - AJOU: 아주대학교
+- *(신규 기관 계약 시 /admin에서 추가 → 즉시 사용 가능)*
 
-**과목코드**:
+**과목코드** → `subject_codes` 테이블로 관리 (관리자 페이지에서 행 추가)
 - HST: 조직학 (Histology)
 - PATH: 병리학 (Pathology)
 - PARA: 기생충학 (Parasitology)
 - ANAT: 해부학 (Anatomy)
 - EMBRY: 발생학 (Embryology)
+- *(신규 과목 추가 시 /admin에서 행 추가 → 즉시 사용 가능)*
 
-예시: `HS-HST-001`, `HS-PATH-004`
+**순번**: 기관+과목 조합별 독립 카운터 (자동 채번)
+```sql
+SELECT COUNT(*) + 1 FROM slides
+WHERE institution_id = 'MU' AND subject_code = 'HST'
+-- → MU-HST-001, MU-HST-002 순으로 자동 생성
+```
+
+**기관코드 자동 제안**: 관리자가 기관명 입력 시 ICAO식으로 자동 제안, 충돌 시 숫자 suffix 추가
+```
+"Liverpool School of Tropical Medicine" → "LSTM" 제안
+충돌 시 → "LSTM2" 자동 변형 후 확인 요청
+```
+
+예시: `HS-HST-001`, `MU-PARA-003`, `LSTM-PARA-001`
 
 ---
 
 ## 7. DB 스키마 (v1.0 기준)
 
 ```sql
+CREATE TABLE subject_codes (
+  code VARCHAR(10) PRIMARY KEY,  -- 'HST', 'PATH', 'PARA'
+  name_ko VARCHAR(50),           -- '조직학'
+  name_en VARCHAR(50),           -- 'Histology'
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
 CREATE TABLE institutions (
   id VARCHAR(20) PRIMARY KEY,
   name_ko VARCHAR(100),
