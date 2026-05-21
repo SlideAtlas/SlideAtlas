@@ -153,9 +153,30 @@ class ConversionResult:
 
 ```
 pending → converting → qc_check → ready
-                    ↘            ↘
-                     failed       failed
+                    ↘            ↘          ↘
+                     failed       failed     ready_no_mpp
 ```
+
+| 상태 | 의미 | 관리자 페이지 표시 |
+|------|------|-------------------|
+| pending | 업로드 완료, 변환 대기 | 🟡 대기 중 |
+| converting | COG 변환 진행 중 | 🔵 변환 중 |
+| qc_check | QC 검증 중 | 🔵 검증 중 |
+| ready | 정상 서빙 가능 | 🟢 정상 |
+| ready_no_mpp | MPP 없음, 배율 기능 제외 서빙 | 🟠 MPP 없음 (경고) |
+| failed | 변환/QC 실패 | 🔴 실패 + 로그 |
+
+**ready_no_mpp 처리 원칙**
+- 슬라이드 열람 자체는 가능 (타일 서빙 정상)
+- 뷰어에서 배율 버튼(10x/20x/40x) 비활성화
+- "배율 정보 없음" 안내 표시
+- 관리자 페이지에서 MPP 수동 입력 후 재처리 가능
+- 기본값(0.5)으로 임의 처리하지 않는다 — 배율 오류가 교육적으로 더 위험
+
+**MPP 확보 전략 (장기)**
+- 공급사 계약 시 MPP 포함 요구사항 명시 (Motic 등 상업용 스캐너는 자동 포함)
+- MPP 없는 파일 수령 시: 유리슬라이드 원본 재수령 → 뷰웍스 유료 스캐닝 서비스 활용 검토
+- 자체 스캐너 도입 시 "스캐닝 서비스 제공"이 공급사 유치 레버리지가 될 수 있음
 
 관리자 페이지에서 각 슬라이드의 현재 상태를 실시간 모니터링. 실패 시 `conversion_log` 컬럼에 오류 내용 보존.
 
@@ -260,7 +281,7 @@ CREATE TABLE slides (
   species VARCHAR(50) DEFAULT 'human',
   license_source VARCHAR(100),
   original_format VARCHAR(20),       -- 원본 포맷 (SVS/DCM/TIFF)
-  conversion_status VARCHAR(20) DEFAULT 'pending',  -- pending/converting/qc_check/ready/failed
+  conversion_status VARCHAR(20) DEFAULT 'pending',  -- pending/converting/qc_check/ready/ready_no_mpp/failed
   conversion_log TEXT,
   qc_passed_at TIMESTAMP,
   is_public BOOLEAN DEFAULT FALSE,
@@ -355,20 +376,62 @@ SlideAtlas 무관 질문에는 답변하지 마세요.
 
 ---
 
-## 12. QA 거버넌스
+## 12. QA 거버넌스 — 3단계 검증 구조
 
-### QA 5대 체크리스트 (하나라도 미통과 시 Reject)
+### 12-1. 전체 워크플로우
+
+```
+Claude Code 내부
+├── Lead Developer 에이전트  → 구현 (Flask + AWS RDS 코드 작성)
+└── QA 에이전트 (레드팀)    → 내부 핑퐁 검증 (섹션당 max 3회)
+         ↓ 내부 QA 통과
+Codex 외부 검증             → 엣지케이스 이중검증
+         ↓ Codex 통과
+CEO (보람) 최종 승인        → 다음 섹션으로
+```
+
+### 12-2. 에이전트 역할 정의
+
+**Lead Developer (개발 에이전트)**
+- 역할: Flask 웹앱 + AWS RDS PostgreSQL 인프라 코드 작성
+- 성향: 기능 구현 중심, 빠른 프로토타이핑
+- 제약: 인프라 변경(RDS, EC2, S3)은 반드시 CEO 승인 후 실행
+
+**Senior QA Engineer (내부 검증 에이전트 — 레드팀)**
+- 역할: 개발 에이전트 결과물을 해커 관점으로 공격, 예외 상황 발굴
+- 성향: 극도로 보수적, 타협 없는 보안 및 상용화 품질 요구
+- 권한: 5대 체크리스트 중 하나라도 미통과 시 무조건 반려
+
+**Codex (외부 이중검증)**
+- 역할: 섹션 완료 후 Claude Code 외부에서 엣지케이스 교차검증
+- 투입 시점: 섹션별 내부 QA 통과 직후
+- 포커스: Claude Code가 놓친 경계값·레이스컨디션·보안 사각지대
+
+### 12-3. 섹션별 Codex 검증 포커스
+
+| 섹션 완료 | Codex 검증 포커스 |
+|------|------|
+| 파이프라인 구축 | MPP 없음·포맷 오류·S3 업로드 실패 각 경로 처리 |
+| JWT 인증 | 토큰 만료 경계값, 동시 로그인 레이스 컨디션 |
+| 동적 워터마킹 | 타일 경계 픽셀 텍스트 잘림, 고배율/저배율 가시성 |
+| 기관 접근제어 | URL 조작으로 타 기관 슬라이드 접근 가능 여부 |
+| 포털 명단 관리 | 동일 이메일 중복 등록, 삭제 직후 세션 유지 여부 |
+| 전체 QA | CLAUDE.md 5대 체크리스트 전항목 최종 점검 |
+
+### 12-4. QA 5대 무조건 체크리스트 (하나라도 미통과 시 Reject)
 
 **① 보안 & 멀티테넌시**
 - YU 계정으로 SNU 슬라이드 URL 조작 접근 차단 확인
 - JWT 토큰 변조 공격 방어
 - session_token 1기기 동시접속 제어
 - Presigned URL TTL 정확히 5분
+- 브라우저 캐시 no-store 헤더 적용 확인
 
 **② 파이프라인 안전성**
 - COG TIFF 처리 시 파일 전체 메모리 로드 금지 (스트리밍 강제)
-- QC 실패 슬라이드가 ready 상태로 전환되지 않는지 확인
+- QC 실패·ready_no_mpp 슬라이드가 ready 상태로 전환되지 않는지 확인
 - 미니맵·썸네일 S3 경로가 DB에 정확히 저장되는지 확인
+- ready_no_mpp 슬라이드에서 배율 버튼 비활성화 확인
 
 **③ 비즈니스 로직**
 - subscription_end 경과 사용자 접근 차단 및 결제 유도 팝업
@@ -382,10 +445,12 @@ SlideAtlas 무관 질문에는 답변하지 마세요.
 - is_public=FALSE 슬라이드 비구독 기관 노출 차단
 - Happy Science 라이선스 콘텐츠 외부 유출 경로 차단
 
-### 워크플로우 규칙
-- Dev ↔ QA 핑퐁 최대 3회, 초과 시 CEO 판단 대기
-- 인프라 변경(RDS, EC2, S3)은 CEO 명시적 승인 후 실행
-- 반복 수정 시 전체 재작성보다 diff 기반 수정 우선
+### 12-5. 워크플로우 통제 규칙
+
+- **내부 핑퐁 max 3회**: Dev ↔ QA 한 이슈당 최대 3회. 초과 시 즉시 중단 → CEO 판단 대기
+- **Codex 검증 후 CEO 승인**: Codex 통과 없이 다음 섹션 진행 금지
+- **인프라 변경 금지**: RDS, EC2, S3 설정 변경은 CEO 명시적 승인 없이 절대 실행 불가
+- **토큰 절약**: 반복 수정 시 전체 재작성보다 diff 기반 수정 우선
 
 ---
 
