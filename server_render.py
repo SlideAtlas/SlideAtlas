@@ -75,7 +75,6 @@ def init_slide(slide_id):
                 SLIDE_STATUS[slide_id]["error"] = "슬라이드 정보를 찾을 수 없습니다."
                 return False
 
-            # EC2 타일서버를 쓰는 SVS는 Render에서 로드하지 않음
             if slide_info.get('tileserver') == 'ec2':
                 ec2_w = slide_info.get("width", 83663)
                 ec2_h = slide_info.get("height", 60416)
@@ -122,7 +121,7 @@ def init_slide(slide_id):
             print(f"❌ [{slide_id}] 오류: {e}")
             return False
 
-# ── EC2 타일서버 프록시 (Mixed Content 해결) ──
+# ── EC2 타일서버 프록시 ──
 @app.route('/ec2tile/<path:subpath>')
 def ec2_proxy(subpath):
     import urllib.request
@@ -136,7 +135,7 @@ def ec2_proxy(subpath):
         print(f"EC2 proxy error {url}: {e}")
         return Response(str(e), status=502)
 
-# ── 랜딩페이지 ──
+# ── 랜딩페이지 ── (변경 없음)
 @app.route('/')
 def landing():
     return '''<!DOCTYPE html>
@@ -372,7 +371,6 @@ def viewer(slide_id):
 * {{ margin:0; padding:0; box-sizing:border-box; }}
 body {{ background:#0d1219; color:white; font-family:"Segoe UI",sans-serif;
   display:flex; align-items:center; justify-content:center; height:100vh; }}
-.splash img {{ height:160px; width:auto; margin-bottom:32px; }}
 .progress-bar {{ width:160px; height:2px; background:rgba(91,184,212,0.2);
   border-radius:2px; overflow:hidden; margin:0 auto 20px; }}
 .progress-bar::after {{ content:''; display:block; height:100%;
@@ -410,6 +408,7 @@ small {{ color:rgba(255,255,255,0.25); font-size:12px; margin-top:8px; display:b
         tile_source_url = f"/dzi/{slide_id}.dzi"
         thumbnail_url = f"/thumbnail/{slide_id}"
 
+    # ── 뷰어 HTML (설계안 반영) ──
     return f'''<!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -421,85 +420,198 @@ small {{ color:rgba(255,255,255,0.25); font-size:12px; margin-top:8px; display:b
 @import url('https://cdn.jsdelivr.net/gh/sunn-us/SUIT/fonts/variable/woff2/SUIT-Variable.css');
 *{{margin:0;padding:0;box-sizing:border-box;}}
 body{{background:#0d1219;font-family:"SUIT Variable","SUIT",sans-serif;overflow:hidden;height:100vh;display:flex;flex-direction:column;}}
-#header{{background:rgba(15,31,61,0.97);border-bottom:1px solid rgba(255,255,255,0.08);padding:0 20px;height:50px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;z-index:100;}}
-.logo{{display:flex;flex-direction:column;line-height:1;gap:1px;text-decoration:none;}}
-.logo-slide{{font-size:7px;letter-spacing:0.22em;color:#2A9D8F;font-family:"DM Mono",monospace;font-weight:500;}}
-.logo-atlas{{font-size:18px;font-weight:800;color:#fff;}}
-#hdr-center{{font-size:11px;color:rgba(255,255,255,0.4);font-family:"DM Mono",monospace;}}
-#hdr-right{{display:flex;align-items:center;gap:8px;}}
-.hdr-back{{color:#2A9D8F;font-size:12px;text-decoration:none;border:1px solid rgba(42,157,143,0.3);padding:4px 10px;border-radius:5px;}}
-.hdr-btn{{background:transparent;color:rgba(255,255,255,0.45);border:1px solid rgba(255,255,255,0.12);padding:4px 10px;border-radius:5px;font-size:12px;cursor:pointer;font-family:"SUIT Variable",sans-serif;}}
-#main{{display:grid;grid-template-columns:1fr 310px;flex:1;overflow:hidden;}}
-#viewer-wrap{{position:relative;overflow:hidden;background:#111824;}}
+
+/* ── 상단 툴바 ── */
+#header{{
+  background:rgba(15,31,61,0.97);
+  border-bottom:1px solid rgba(255,255,255,0.08);
+  padding:0 20px;height:50px;
+  display:flex;align-items:center;justify-content:space-between;
+  flex-shrink:0;z-index:100;
+}}
+.hdr-back{{
+  color:#2A9D8F;font-size:12px;text-decoration:none;
+  border:1px solid rgba(42,157,143,0.3);padding:4px 10px;border-radius:5px;
+  flex-shrink:0;
+}}
+/* 상단 메타데이터 — 가독성 개선 */
+#hdr-meta{{
+  display:flex;align-items:center;gap:10px;
+  font-family:"DM Mono",monospace;
+  flex:1;justify-content:center;
+}}
+#hdr-title{{
+  font-size:15px;font-weight:700;color:#ffffff;letter-spacing:-0.01em;
+}}
+.hdr-sep{{font-size:14px;color:rgba(255,255,255,0.25);}}
+#hdr-stain{{
+  font-size:13px;font-weight:600;color:#5DCAA5;
+}}
+#hdr-mag{{
+  font-size:13px;font-weight:600;color:#EF9F27;
+}}
+#hdr-star{{
+  background:none;border:none;cursor:pointer;
+  font-size:18px;color:rgba(255,255,255,0.4);
+  transition:color 0.2s;flex-shrink:0;padding:0 4px;
+}}
+#hdr-star.active{{color:#EF9F27;}}
+#hdr-star:hover{{color:#EF9F27;}}
+
+/* ── 메인 레이아웃 ── */
+#main{{display:flex;flex:1;overflow:hidden;position:relative;}}
+
+/* ── 뷰어 영역 ── */
+#viewer-wrap{{position:relative;overflow:hidden;background:#111824;flex:1;}}
 #viewer{{position:absolute;inset:0;}}
-#toolbar{{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);background:rgba(15,31,61,0.95);border:1px solid rgba(255,255,255,0.12);border-radius:10px;padding:8px 16px;display:flex;align-items:center;gap:6px;z-index:50;box-shadow:0 8px 32px rgba(0,0,0,0.4);}}
-.mb{{background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.8);padding:5px 12px;border-radius:6px;cursor:pointer;font-size:11px;font-family:"DM Mono",monospace;transition:all 0.15s;}}
-.mb:hover{{background:rgba(42,157,143,0.3);border-color:#2A9D8F;color:white;}}
-.mb.active{{background:#2A9D8F;border-color:#2A9D8F;color:#fff;}}
-#md{{font-family:"DM Mono",monospace;font-size:14px;color:white;min-width:48px;text-align:center;font-weight:500;}}
-#scale{{position:absolute;bottom:16px;left:16px;background:rgba(0,0,0,0.6);color:rgba(255,255,255,0.7);padding:5px 12px;border-radius:6px;font-family:"DM Mono",monospace;font-size:11px;border:1px solid rgba(255,255,255,0.08);z-index:50;}}
-#ai-panel{{background:#F7F4EF;border-left:1px solid #E5E0D8;display:flex;flex-direction:column;overflow:hidden;}}
-.slide-meta{{padding:14px 18px;border-bottom:1px solid #E5E0D8;background:#fff;flex-shrink:0;}}
-.meta-title{{font-size:15px;font-weight:800;letter-spacing:-0.02em;color:#0F1F3D;margin-bottom:3px;}}
-.meta-sub{{font-size:11px;color:#9B9490;font-family:"DM Mono",monospace;}}
-.meta-badges{{display:flex;gap:5px;margin-top:8px;}}
-.mbadge{{font-size:10px;font-weight:600;padding:3px 9px;border-radius:4px;font-family:"DM Mono",monospace;}}
-.mbadge-he{{background:#EBF6F5;color:#0F6E56;border:1px solid rgba(42,157,143,0.2);}}
-.mbadge-sys{{background:#F0EDE8;color:#6B6560;border:1px solid #E5E0D8;}}
-.mbadge-mag{{background:#FEF7E6;color:#8B6010;border:1px solid rgba(233,196,106,0.3);}}
+
+/* 측정 Canvas 오버레이 */
+#measure-canvas{{
+  position:absolute;inset:0;
+  pointer-events:none;
+  z-index:20;
+}}
+#measure-canvas.active{{pointer-events:all;cursor:crosshair;}}
+
+/* 하단 배율 바 */
+#toolbar{{
+  position:absolute;bottom:14px;left:50%;transform:translateX(-50%);
+  background:rgba(13,24,40,0.92);
+  border:1px solid rgba(255,255,255,0.12);
+  border-radius:10px;padding:7px 14px;
+  display:flex;align-items:center;gap:4px;
+  z-index:50;box-shadow:0 8px 32px rgba(0,0,0,0.4);
+}}
+.mb{{
+  background:rgba(255,255,255,0.08);
+  border:1px solid rgba(255,255,255,0.12);
+  color:rgba(255,255,255,0.75);
+  padding:5px 11px;border-radius:6px;cursor:pointer;
+  font-size:11px;font-family:"DM Mono",monospace;
+  transition:all 0.15s;white-space:nowrap;
+}}
+.mb:hover{{background:rgba(42,157,143,0.25);border-color:#2A9D8F;color:#fff;}}
+.mb.active{{background:#1D9E75;border-color:#1D9E75;color:#fff;font-weight:600;}}
+#md{{font-family:"DM Mono",monospace;font-size:13px;color:#EF9F27;min-width:52px;text-align:center;font-weight:600;}}
+.tb-sep{{width:1px;height:16px;background:rgba(255,255,255,0.12);margin:0 2px;}}
+
+/* 스케일 */
+#scale{{
+  position:absolute;bottom:14px;left:14px;
+  background:rgba(0,0,0,0.6);color:rgba(255,255,255,0.65);
+  padding:5px 11px;border-radius:6px;
+  font-family:"DM Mono",monospace;font-size:11px;
+  border:1px solid rgba(255,255,255,0.08);z-index:50;
+}}
+
+/* 패널 토글 화살표 버튼 (패널 좌측 중앙) */
+#panel-toggle{{
+  position:absolute;
+  right:0;top:50%;transform:translateY(-50%);
+  width:18px;height:48px;
+  background:#e8eeee;
+  border:1px solid #d0dada;border-right:none;
+  border-radius:6px 0 0 6px;
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;z-index:60;
+  transition:background 0.2s;
+}}
+#panel-toggle:hover{{background:#d4e4e4;}}
+#toggle-arrow{{
+  font-size:12px;color:#4a6a6a;
+  transition:transform 0.3s;
+  user-select:none;
+}}
+
+/* ── AI 튜터 패널 ── */
+#ai-panel{{
+  width:310px;flex-shrink:0;
+  background:#fff;
+  border-left:1px solid #E5E0D8;
+  display:flex;flex-direction:column;overflow:hidden;
+  transition:width 0.3s ease,opacity 0.3s ease;
+  position:relative;
+}}
+#ai-panel.hidden{{width:0;opacity:0;pointer-events:none;overflow:hidden;}}
+
+/* 패널 메타데이터 */
+.slide-meta{{padding:14px 18px 12px;border-bottom:1px solid #E5E0D8;background:#fff;flex-shrink:0;}}
+.meta-title{{font-size:16px;font-weight:600;letter-spacing:-0.02em;color:#0F1F3D;margin-bottom:3px;line-height:1.3;}}
+.meta-sub{{font-size:11px;color:#9B9490;font-family:"DM Mono",monospace;margin-bottom:8px;}}
+.meta-badges{{display:flex;gap:5px;flex-wrap:wrap;}}
+/* 뱃지 색상 — 의미별 구분 */
+.mbadge{{font-size:11px;font-weight:600;padding:3px 10px;border-radius:20px;font-family:"DM Mono",monospace;}}
+.mbadge-stain{{background:#E1F5EE;color:#085041;}}   /* 염색법 — 초록 */
+.mbadge-sys{{background:#E6F1FB;color:#0C447C;}}     /* 계통 — 파랑 */
+.mbadge-mag{{background:#FAEEDA;color:#633806;}}     /* 배율 — 주황 */
+
+/* 탭 */
 .tabs{{display:flex;border-bottom:1px solid #E5E0D8;background:#fff;flex-shrink:0;}}
-.tab{{flex:1;padding:11px 0;text-align:center;font-size:13px;font-weight:600;color:#9B9490;cursor:pointer;border-bottom:2px solid transparent;transition:all 0.2s;}}
-.tab.active{{color:#2A9D8F;border-bottom-color:#2A9D8F;}}
+.tab{{flex:1;padding:10px 0;text-align:center;font-size:13px;font-weight:600;color:#9B9490;cursor:pointer;border-bottom:2px solid transparent;transition:all 0.2s;}}
+.tab.active{{color:#1D9E75;border-bottom-color:#1D9E75;}}
 .tab:hover:not(.active){{color:#0F1F3D;}}
 .tab-content{{flex:1;overflow:hidden;display:none;flex-direction:column;}}
 .tab-content.active{{display:flex;}}
-.guide-scroll{{flex:1;overflow-y:auto;padding:16px 18px;background:#F7F4EF;}}
+
+/* 구조 가이드 탭 */
+.guide-scroll{{flex:1;overflow-y:auto;padding:14px 16px;background:#F7F4EF;}}
 .guide-scroll::-webkit-scrollbar{{width:3px;}}
 .guide-scroll::-webkit-scrollbar-thumb{{background:#E5E0D8;border-radius:2px;}}
-.guide-mag-header{{display:flex;align-items:center;gap:7px;margin-bottom:14px;}}
-.guide-mag-dot{{width:7px;height:7px;border-radius:50%;background:#2A9D8F;animation:pulse 2s infinite;flex-shrink:0;}}
+.guide-mag-header{{display:flex;align-items:center;gap:7px;margin-bottom:12px;}}
+.guide-mag-dot{{width:8px;height:8px;border-radius:50%;background:#1D9E75;animation:pulse 2s infinite;flex-shrink:0;}}
 @keyframes pulse{{0%,100%{{opacity:1;}}50%{{opacity:0.4;}}}}
-.guide-mag-label{{font-size:11px;color:#2A9D8F;font-family:"DM Mono",monospace;font-weight:600;letter-spacing:0.04em;}}
-.ai-bubble{{background:#fff;border:1px solid #E5E0D8;border-radius:10px;border-top-left-radius:3px;padding:13px 15px;margin-bottom:12px;box-shadow:0 1px 4px rgba(15,31,61,0.05);}}
-.ai-bubble-header{{display:flex;align-items:center;gap:7px;margin-bottom:8px;}}
-.ai-icon{{width:20px;height:20px;background:#2A9D8F;border-radius:5px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}}
+.guide-mag-label{{font-size:12px;color:#0F6E56;font-family:"DM Mono",monospace;font-weight:600;}}
+.ai-bubble{{background:#fff;border:1px solid #E5E0D8;border-radius:10px;border-top-left-radius:3px;padding:12px 14px;margin-bottom:10px;box-shadow:0 1px 4px rgba(15,31,61,0.05);}}
+.ai-bubble-header{{display:flex;align-items:center;gap:7px;margin-bottom:7px;}}
+.ai-icon{{width:22px;height:22px;background:#1D9E75;border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}}
 .ai-icon svg{{width:11px;height:11px;stroke:#fff;fill:none;stroke-width:2;}}
-.ai-label{{font-size:10px;color:#2A9D8F;font-weight:700;letter-spacing:0.06em;font-family:"DM Mono",monospace;}}
+.ai-label{{font-size:11px;color:#0F6E56;font-weight:700;letter-spacing:0.06em;font-family:"DM Mono",monospace;}}
 .ai-text{{font-size:13px;color:#3D3530;line-height:1.7;word-break:keep-all;}}
 .ai-text strong{{color:#0F1F3D;font-weight:700;}}
 .structure-list{{margin-top:8px;display:flex;flex-direction:column;gap:6px;}}
 .struct-item{{display:flex;align-items:flex-start;gap:8px;padding:9px 12px;background:#fff;border-radius:7px;border:1px solid #E5E0D8;}}
-.struct-dot{{width:7px;height:7px;border-radius:50%;background:#2A9D8F;flex-shrink:0;margin-top:5px;}}
+.struct-dot{{width:7px;height:7px;border-radius:50%;background:#1D9E75;flex-shrink:0;margin-top:5px;}}
 .struct-text{{font-size:12px;color:#4A4540;line-height:1.55;word-break:keep-all;}}
 .struct-text strong{{color:#0F1F3D;font-weight:700;}}
-.observe-box{{background:#EBF6F5;border:1px solid rgba(42,157,143,0.2);border-radius:8px;padding:12px 14px;margin-top:12px;}}
-.observe-label{{font-size:10px;color:#2A9D8F;font-weight:700;letter-spacing:0.1em;font-family:"DM Mono",monospace;margin-bottom:6px;}}
-.observe-text{{font-size:12px;color:#2D5A52;line-height:1.65;word-break:keep-all;}}
-.chat-scroll{{flex:1;overflow-y:auto;padding:14px 18px;display:flex;flex-direction:column;gap:10px;background:#F7F4EF;}}
+/* OBSERVE 박스 — 가독성 개선 */
+.observe-box{{
+  background:#E1F5EE;
+  border-left:3px solid #1D9E75;
+  border-radius:0 8px 8px 0;
+  padding:11px 13px;margin-top:10px;
+}}
+.observe-label{{font-size:11px;color:#085041;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:5px;}}
+.observe-text{{font-size:13px;color:#085041;line-height:1.7;word-break:keep-all;}}
+.observe-hl{{color:#0F6E56;font-weight:600;}}
+
+/* 질문하기 탭 */
+.chat-scroll{{flex:1;overflow-y:auto;padding:12px 14px;display:flex;flex-direction:column;gap:9px;background:#F7F4EF;}}
 .chat-scroll::-webkit-scrollbar{{width:3px;}}
 .chat-scroll::-webkit-scrollbar-thumb{{background:#E5E0D8;border-radius:2px;}}
-.msg-ai{{display:flex;gap:8px;align-items:flex-start;}}
-.msg-ai-icon{{width:24px;height:24px;background:#2A9D8F;border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}}
+.msg-ai{{display:flex;gap:7px;align-items:flex-start;}}
+.msg-ai-icon{{width:24px;height:24px;background:#1D9E75;border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}}
 .msg-ai-icon svg{{width:12px;height:12px;stroke:#fff;fill:none;stroke-width:2;}}
-.msg-ai-bubble{{background:#fff;border:1px solid #E5E0D8;border-radius:10px;border-top-left-radius:3px;padding:10px 13px;font-size:13px;color:#3D3530;line-height:1.65;max-width:230px;word-break:keep-all;box-shadow:0 1px 3px rgba(15,31,61,0.05);}}
+.msg-ai-bubble{{background:#fff;border:1px solid #E5E0D8;border-radius:10px;border-top-left-radius:3px;padding:10px 12px;font-size:13px;color:#3D3530;line-height:1.65;max-width:230px;word-break:keep-all;box-shadow:0 1px 3px rgba(15,31,61,0.05);}}
 .msg-user{{display:flex;justify-content:flex-end;}}
-.msg-user-bubble{{background:#0F1F3D;border-radius:10px;border-bottom-right-radius:3px;padding:10px 13px;font-size:13px;color:rgba(255,255,255,0.9);line-height:1.65;max-width:230px;word-break:keep-all;}}
-.typing-indicator{{display:flex;gap:4px;align-items:center;padding:10px 12px;}}
-.typing-dot{{width:6px;height:6px;border-radius:50%;background:#2A9D8F;animation:typing 1.2s infinite;}}
+.msg-user-bubble{{background:#0F1F3D;border-radius:10px;border-bottom-right-radius:3px;padding:10px 12px;font-size:13px;color:rgba(255,255,255,0.9);line-height:1.65;max-width:230px;word-break:keep-all;}}
+.typing-indicator{{display:flex;gap:4px;align-items:center;padding:8px 10px;}}
+.typing-dot{{width:6px;height:6px;border-radius:50%;background:#1D9E75;animation:typing 1.2s infinite;}}
 .typing-dot:nth-child(2){{animation-delay:0.2s;}}
 .typing-dot:nth-child(3){{animation-delay:0.4s;}}
 @keyframes typing{{0%,60%,100%{{opacity:0.3;transform:scale(0.8);}}30%{{opacity:1;transform:scale(1);}}}}
-.chat-input-area{{padding:12px 16px;border-top:1px solid #E5E0D8;background:#fff;flex-shrink:0;}}
-.ctx-tag{{display:flex;align-items:center;gap:5px;margin-bottom:8px;font-size:10px;color:#9B9490;font-family:"DM Mono",monospace;}}
-.ctx-dot{{width:5px;height:5px;border-radius:50%;background:#2A9D8F;}}
-.chat-input-row{{display:flex;gap:7px;}}
-.chat-input{{flex:1;background:#F7F4EF;border:1px solid #E5E0D8;border-radius:8px;padding:9px 13px;font-size:13px;color:#0F1F3D;font-family:"SUIT Variable",sans-serif;outline:none;}}
+.chat-input-area{{padding:10px 14px;border-top:1px solid #E5E0D8;background:#fff;flex-shrink:0;}}
+.ctx-tag{{display:flex;align-items:center;gap:5px;margin-bottom:7px;font-size:10px;color:#9B9490;font-family:"DM Mono",monospace;}}
+.ctx-dot{{width:5px;height:5px;border-radius:50%;background:#1D9E75;}}
+.chat-input-row{{display:flex;gap:6px;}}
+.chat-input{{flex:1;background:#F7F4EF;border:1px solid #E5E0D8;border-radius:8px;padding:8px 12px;font-size:13px;color:#0F1F3D;font-family:"SUIT Variable",sans-serif;outline:none;}}
 .chat-input::placeholder{{color:#B8B4AE;}}
-.chat-input:focus{{border-color:#2A9D8F;}}
-.chat-send{{background:#2A9D8F;border:none;width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;}}
-.chat-send:hover{{background:#238b7f;}}
-.chat-send svg{{width:14px;height:14px;stroke:#fff;fill:none;stroke-width:2;}}
-.quiz-scroll{{flex:1;overflow-y:auto;padding:16px 18px;background:#F7F4EF;}}
+.chat-input:focus{{border-color:#1D9E75;}}
+.chat-send{{background:#1D9E75;border:none;width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;}}
+.chat-send:hover{{background:#178f68;}}
+.chat-send svg{{width:13px;height:13px;stroke:#fff;fill:none;stroke-width:2;}}
+
+/* 퀴즈 탭 (변경 없음) */
+.quiz-scroll{{flex:1;overflow-y:auto;padding:14px 16px;background:#F7F4EF;}}
 .quiz-scroll::-webkit-scrollbar{{width:3px;}}
 .quiz-scroll::-webkit-scrollbar-thumb{{background:#E5E0D8;border-radius:2px;}}
 .quiz-icon-wrap{{width:52px;height:52px;background:#FEF7E6;border:1px solid rgba(233,196,106,0.3);border-radius:14px;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;}}
@@ -513,40 +625,75 @@ body{{background:#0d1219;font-family:"SUIT Variable","SUIT",sans-serif;overflow:
 .quiz-progress{{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}}
 .qprog-label{{font-size:11px;color:#9B9490;font-family:"DM Mono",monospace;}}
 .qprog-bar{{height:4px;background:#E5E0D8;border-radius:2px;flex:1;margin:0 10px;}}
-.qprog-fill{{height:100%;background:#2A9D8F;border-radius:2px;transition:width 0.3s;}}
+.qprog-fill{{height:100%;background:#1D9E75;border-radius:2px;transition:width 0.3s;}}
 .quiz-q{{font-size:14px;font-weight:700;color:#0F1F3D;line-height:1.6;margin-bottom:14px;word-break:keep-all;}}
 .quiz-options{{display:flex;flex-direction:column;gap:7px;}}
-.quiz-opt{{background:#fff;border:1px solid #E5E0D8;border-radius:8px;padding:11px 14px;font-size:13px;color:#3D3530;cursor:pointer;transition:all 0.15s;display:flex;align-items:center;gap:10px;word-break:keep-all;}}
-.quiz-opt:hover{{border-color:#2A9D8F;color:#0F1F3D;background:#F0FAF8;}}
-.quiz-opt.correct{{border-color:#2A9D8F;background:#EBF6F5;color:#0F6E56;pointer-events:none;}}
+.quiz-opt{{background:#fff;border:1px solid #E5E0D8;border-radius:8px;padding:10px 13px;font-size:13px;color:#3D3530;cursor:pointer;transition:all 0.15s;display:flex;align-items:center;gap:9px;word-break:keep-all;}}
+.quiz-opt:hover{{border-color:#1D9E75;color:#0F1F3D;background:#F0FAF8;}}
+.quiz-opt.correct{{border-color:#1D9E75;background:#E1F5EE;color:#0F6E56;pointer-events:none;}}
 .quiz-opt.wrong{{border-color:#F4A58A;background:#FEF0EB;color:#9B5040;pointer-events:none;}}
 .opt-num{{width:22px;height:22px;border-radius:50%;border:1.5px solid #C8C4BC;display:flex;align-items:center;justify-content:center;font-size:11px;font-family:"DM Mono",monospace;flex-shrink:0;color:#6B6560;}}
-.quiz-explanation{{background:#EBF6F5;border:1px solid rgba(42,157,143,0.2);border-radius:8px;padding:11px 13px;margin-top:10px;font-size:12px;color:#2D5A52;line-height:1.65;word-break:keep-all;display:none;}}
+.quiz-explanation{{background:#E1F5EE;border:1px solid rgba(29,158,117,0.2);border-radius:8px;padding:10px 12px;margin-top:10px;font-size:12px;color:#0F6E56;line-height:1.65;word-break:keep-all;display:none;}}
 .quiz-next-btn{{background:#0F1F3D;color:#fff;border:none;padding:10px;border-radius:8px;font-size:13px;font-weight:600;font-family:"SUIT Variable",sans-serif;cursor:pointer;width:100%;margin-top:10px;display:none;}}
+
+/* ── 패널 하단 툴바 ── */
+#panel-tools{{
+  padding:10px 14px;
+  border-top:1px solid #E5E0D8;
+  background:#fff;
+  display:flex;gap:6px;flex-wrap:wrap;
+  flex-shrink:0;
+}}
+.tool-btn{{
+  font-size:12px;color:#4A4540;
+  background:#F7F4EF;
+  border:1px solid #E5E0D8;
+  border-radius:6px;padding:6px 11px;cursor:pointer;
+  display:flex;align-items:center;gap:5px;
+  transition:all 0.15s;font-family:"SUIT Variable",sans-serif;
+}}
+.tool-btn:hover{{background:#eee8e0;border-color:#c8c0b8;}}
+.tool-btn.active{{
+  background:#E1F5EE;color:#0F6E56;
+  border-color:#1D9E75;font-weight:600;
+}}
 </style>
 </head>
 <body>
+<!-- ── 상단 툴바 ── -->
 <div id="header">
-  <div style="display:flex;align-items:center;gap:12px;">
-    <a href="/slides" class="hdr-back">← 목록</a>
-    <a href="/" style="display:flex;align-items:center;text-decoration:none;">
-      <img src="/static/slideatlas_logo.png" alt="SlideAtlas" style="height:72px;width:auto;">
-    </a>
+  <a href="/slides" class="hdr-back">← 목록</a>
+  <div id="hdr-meta">
+    <span id="hdr-title">{title_ko}</span>
+    <span class="hdr-sep">/</span>
+    <span id="hdr-stain">{stain}</span>
+    <span class="hdr-sep">/</span>
+    <span id="hdr-mag">전체</span>
   </div>
-  <span id="hdr-center">{title_ko} &nbsp;/&nbsp; {stain} &nbsp;/&nbsp; <span id="hdr-mag">전체</span></span>
-  <div id="hdr-right">
-    <button class="hdr-btn" id="ai-toggle" onclick="togglePanel()">AI 패널 숨기기</button>
-  </div>
+  <button id="hdr-star" onclick="toggleStar()" title="즐겨찾기">☆</button>
 </div>
+
+<!-- ── 메인 ── -->
 <div id="main">
+
+  <!-- ── 뷰어 영역 ── -->
   <div id="viewer-wrap">
     <div id="viewer"></div>
+    <!-- 측정 오버레이 Canvas -->
+    <canvas id="measure-canvas"></canvas>
     <div id="scale">— mm</div>
+
+    <!-- 패널 토글 화살표 (뷰어 우측 중앙) -->
+    <div id="panel-toggle" onclick="togglePanel()" title="패널 숨기기/열기">
+      <span id="toggle-arrow">▶</span>
+    </div>
+
+    <!-- 하단 배율 바 -->
     <div id="toolbar">
       <button class="mb" onclick="zi()">−</button>
       <div id="md">전체</div>
       <button class="mb" onclick="zo()">+</button>
-      <span style="color:rgba(255,255,255,0.15);font-size:18px;">|</span>
+      <div class="tb-sep"></div>
       <button class="mb" onclick="fit()">전체</button>
       <button class="mb" onclick="sm(1)">1×</button>
       <button class="mb" onclick="sm(4)">4×</button>
@@ -555,21 +702,29 @@ body{{background:#0d1219;font-family:"SUIT Variable","SUIT",sans-serif;overflow:
       <button class="mb" onclick="sm(40)">40×</button>
     </div>
   </div>
+
+  <!-- ── AI 튜터 패널 ── -->
   <div id="ai-panel">
+
+    <!-- 메타데이터 -->
     <div class="slide-meta">
       <div class="meta-title">{title_ko}</div>
       <div class="meta-sub">{slide_id} · {system}</div>
       <div class="meta-badges">
-        <span class="mbadge mbadge-he">{stain}</span>
+        <span class="mbadge mbadge-stain">{stain}</span>
         <span class="mbadge mbadge-sys">{system}</span>
         <span class="mbadge mbadge-mag" id="mag-badge">전체</span>
       </div>
     </div>
+
+    <!-- 탭 -->
     <div class="tabs">
       <div class="tab active" onclick="switchTab(0)">구조 가이드</div>
       <div class="tab" onclick="switchTab(1)">질문하기</div>
       <div class="tab" onclick="switchTab(2)">퀴즈</div>
     </div>
+
+    <!-- 구조 가이드 탭 -->
     <div class="tab-content active" id="tab0">
       <div class="guide-scroll">
         <div class="guide-mag-header">
@@ -585,11 +740,13 @@ body{{background:#0d1219;font-family:"SUIT Variable","SUIT",sans-serif;overflow:
         </div>
         <div class="structure-list" id="structure-list"></div>
         <div class="observe-box">
-          <div class="observe-label">OBSERVE</div>
-          <p class="observe-text" id="observe-text">H&amp;E 염색에서 핵은 <strong style="color:#6B4FA0;">진한 보라색</strong>, 세포질과 기저막은 <strong style="color:#C2607A;">분홍색</strong>으로 관찰됩니다.</p>
+          <div class="observe-label">Observe</div>
+          <p class="observe-text" id="observe-text">H&amp;E 염색에서 핵은 <span class="observe-hl">진한 보라색</span>, 세포질과 기저막은 <span class="observe-hl">분홍색</span>으로 관찰됩니다.</p>
         </div>
       </div>
     </div>
+
+    <!-- 질문하기 탭 -->
     <div class="tab-content" id="tab1">
       <div class="chat-scroll" id="chat-messages">
         <div class="msg-ai">
@@ -608,6 +765,8 @@ body{{background:#0d1219;font-family:"SUIT Variable","SUIT",sans-serif;overflow:
         </div>
       </div>
     </div>
+
+    <!-- 퀴즈 탭 -->
     <div class="tab-content" id="tab2">
       <div class="quiz-scroll">
         <div id="quiz-start-view">
@@ -618,7 +777,7 @@ body{{background:#0d1219;font-family:"SUIT Variable","SUIT",sans-serif;overflow:
           </div>
           <div class="quiz-stats">
             <div class="quiz-stat"><div class="quiz-stat-num" style="color:#E9C46A;">3</div><div class="quiz-stat-lbl">문제</div></div>
-            <div class="quiz-stat"><div class="quiz-stat-num" style="color:#2A9D8F;">{stain}</div><div class="quiz-stat-lbl">유형</div></div>
+            <div class="quiz-stat"><div class="quiz-stat-num" style="color:#1D9E75;">{stain}</div><div class="quiz-stat-lbl">유형</div></div>
             <div class="quiz-stat"><div class="quiz-stat-num" style="color:#9B9490;">★★</div><div class="quiz-stat-lbl">난이도</div></div>
           </div>
           <button class="quiz-start-btn" onclick="startQuiz()">퀴즈 시작 →</button>
@@ -641,18 +800,34 @@ body{{background:#0d1219;font-family:"SUIT Variable","SUIT",sans-serif;overflow:
         </div>
       </div>
     </div>
-  </div>
-</div>
+
+    <!-- 패널 하단 툴바 -->
+    <div id="panel-tools">
+      <button class="tool-btn" id="btn-measure" onclick="toggleMeasure()" title="시작점·끝점 클릭 / 우클릭으로 전체 삭제">
+        📏 거리 측정
+      </button>
+      <button class="tool-btn" id="btn-snapshot" onclick="doSnapshot()" title="측정선+워터마크 포함 PNG 저장">
+        📷 스냅샷
+      </button>
+    </div>
+
+  </div><!-- /ai-panel -->
+</div><!-- /main -->
+
 <script>
-var SLIDE_ID = "{slide_id}";
-var SLIDE_TITLE = "{title_ko}";
-var SLIDE_STAIN = "{stain}";
-var SLIDE_W = {W};
-var SLIDE_H = {H};
-var SLIDE_MPP = {mpp};
+// ── 기본 변수 ──
+var SLIDE_ID   = "{slide_id}";
+var SLIDE_TITLE= "{title_ko}";
+var SLIDE_STAIN= "{stain}";
+var SLIDE_W    = {W};
+var SLIDE_H    = {H};
+var SLIDE_MPP  = {mpp};
 var QUIZ = [];
 var qIdx = 0, score = 0;
+var panelOpen = true;
+var starActive = false;
 
+// ── OpenSeadragon 초기화 ──
 var osd = OpenSeadragon({{
   id: "viewer",
   prefixUrl: "https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/images/",
@@ -675,213 +850,385 @@ var osd = OpenSeadragon({{
 osd.addHandler('zoom', updViewer);
 osd.addHandler('open', function() {{ osd.viewport.goHome(true); setTimeout(updViewer, 400); }});
 
+// ── 뷰어 상태 업데이트 (배율 · 스케일 · 헤더) ──
 function updViewer() {{
   try {{
-    var z = osd.viewport.getZoom(true);
-    var tiledImageW = osd.world.getItemAt(0) ? osd.world.getItemAt(0).getContentSize().x : SLIDE_W;
-    var viewportW = osd.viewport.getBounds().width;
-    var containerW = osd.container ? osd.container.clientWidth : 1000;
-    var umPerScreenPx = viewportW * SLIDE_W * SLIDE_MPP / containerW;
-    var mag = 1 / umPerScreenPx * 0.25 * 40;
+    var vw  = osd.viewport.getBounds().width;
+    var cw  = osd.container ? osd.container.clientWidth : 1000;
+    var umPerPx = vw * SLIDE_W * SLIDE_MPP / cw;
+    var mag = 1 / umPerPx * 0.25 * 40;
     var magText = mag >= 1 ? (Math.round(mag*10)/10)+'×' : mag.toFixed(3)+'×';
-    document.getElementById('md').textContent = magText;
-    document.getElementById('hdr-mag').textContent = magText;
-    document.getElementById('mag-badge').textContent = magText;
-    document.getElementById('ctx-label').textContent = '{title_ko} · ' + magText + ' 배율';
-    var vw = osd.viewport.getBounds().width;
+
+    // 상단 툴바 + 패널 뱃지 동시 업데이트
+    document.getElementById('md').textContent       = magText;
+    document.getElementById('hdr-mag').textContent  = magText;
+    document.getElementById('mag-badge').textContent= magText;
+    document.getElementById('ctx-label').textContent= '{title_ko} · ' + magText + ' 배율';
+
+    // 가이드 헤더
+    var guideLbl = mag < 1 ? '전체 배율 · 슬라이드 개요' :
+                   mag < 5 ? '저배율 · 전체 구조 확인' :
+                   mag < 12? '중배율 · 세포층 구분' : '고배율 · 세포 세부 관찰';
+    document.getElementById('guide-mag-label').textContent = guideLbl;
+
+    // 스케일
     var umW = vw * SLIDE_W * SLIDE_MPP;
-    var sc = Math.round(umW / 5);
+    var sc  = Math.round(umW / 5);
     document.getElementById('scale').textContent =
       sc >= 1000000 ? (sc/1000000).toFixed(1)+' m' :
-      sc >= 1000 ? (sc/1000).toFixed(2)+' mm' : sc+' μm';
+      sc >= 1000    ? (sc/1000).toFixed(2)+' mm' : sc+' μm';
   }} catch(e) {{}}
 }}
 
+// ── 배율 이동 함수 ──
 function fit() {{ osd.viewport.goHome(false); setTimeout(updViewer,200); }}
-function zi() {{ osd.viewport.zoomBy(1/1.8); setTimeout(updViewer,100); }}
-function zo() {{ osd.viewport.zoomBy(1.8); setTimeout(updViewer,100); }}
+function zi()  {{ osd.viewport.zoomBy(1/1.8); setTimeout(updViewer,100); }}
+function zo()  {{ osd.viewport.zoomBy(1.8);   setTimeout(updViewer,100); }}
 function sm(m) {{
-  var containerW = osd.container ? osd.container.clientWidth : 1000;
-  var umPerPx = (0.25 * 40 / m);
-  var targetViewportW = umPerPx * containerW / (SLIDE_W * SLIDE_MPP);
-  osd.viewport.zoomTo(1 / targetViewportW);
+  var cw = osd.container ? osd.container.clientWidth : 1000;
+  var targetVW = (0.25*40/m) * cw / (SLIDE_W * SLIDE_MPP);
+  osd.viewport.zoomTo(1 / targetVW);
   setTimeout(updViewer,100);
 }}
 
+// ── 탭 전환 ──
 function switchTab(idx) {{
   document.querySelectorAll('.tab').forEach(function(t,i){{ t.classList.toggle('active', i===idx); }});
   document.querySelectorAll('.tab-content').forEach(function(c,i){{ c.classList.toggle('active', i===idx); }});
 }}
 
+// ── 패널 토글 (좌측 화살표) ──
 function togglePanel() {{
-  var panel = document.getElementById('ai-panel');
-  var main = document.getElementById('main');
-  var btn = document.getElementById('ai-toggle');
-  if(panel.style.display === 'none') {{
-    panel.style.display = 'flex';
-    main.style.gridTemplateColumns = '1fr 310px';
-    btn.textContent = 'AI 패널 숨기기';
-  }} else {{
-    panel.style.display = 'none';
-    main.style.gridTemplateColumns = '1fr';
-    btn.textContent = 'AI 패널 열기';
+  var panel  = document.getElementById('ai-panel');
+  var arrow  = document.getElementById('toggle-arrow');
+  panelOpen  = !panelOpen;
+  panel.classList.toggle('hidden', !panelOpen);
+  // 화살표 방향 반전
+  arrow.textContent = panelOpen ? '▶' : '◀';
+  document.getElementById('panel-toggle').title = panelOpen ? '패널 숨기기' : '패널 열기';
+  setTimeout(function(){{ resizeCanvas(); }}, 320);
+}}
+
+// ── 즐겨찾기 ──
+function toggleStar() {{
+  starActive = !starActive;
+  var btn = document.getElementById('hdr-star');
+  btn.textContent  = starActive ? '★' : '☆';
+  btn.classList.toggle('active', starActive);
+}}
+
+// ── 거리 측정 ──
+var measuring  = false;
+var phase      = 'start';
+var startPt    = null;
+var mousePt    = null;
+var segments   = [];
+var cvs, ctx2d;
+
+function initCanvas() {{
+  cvs  = document.getElementById('measure-canvas');
+  ctx2d= cvs.getContext('2d');
+  resizeCanvas();
+  window.addEventListener('resize', resizeCanvas);
+}}
+
+function resizeCanvas() {{
+  if(!cvs) return;
+  var wrap = document.getElementById('viewer-wrap');
+  cvs.width  = wrap.clientWidth;
+  cvs.height = wrap.clientHeight;
+  redrawMeasure();
+}}
+
+function toggleMeasure() {{
+  measuring = !measuring;
+  var btn = document.getElementById('btn-measure');
+  var c   = document.getElementById('measure-canvas');
+  btn.classList.toggle('active', measuring);
+  c.classList.toggle('active', measuring);
+  if(!measuring) {{
+    phase = 'start'; startPt = null; mousePt = null;
+  }}
+  redrawMeasure();
+}}
+
+function pxToUnit(px) {{
+  // px는 canvas 픽셀 — 실제 MPP 기반 거리 계산
+  var vw = osd.viewport.getBounds().width;
+  var cw = cvs ? cvs.width : 1000;
+  var umPerCanvasPx = vw * SLIDE_W * SLIDE_MPP / cw;
+  var um = px * umPerCanvasPx;
+  return um < 100 ? um.toFixed(1)+' μm' : (um/1000).toFixed(3)+' mm';
+}}
+
+function dist2(a, b) {{
+  return Math.sqrt(Math.pow(b.x-a.x,2)+Math.pow(b.y-a.y,2));
+}}
+
+function drawPoint2(pt, color) {{
+  ctx2d.beginPath();
+  ctx2d.arc(pt.x, pt.y, 5, 0, Math.PI*2);
+  ctx2d.fillStyle = color; ctx2d.fill();
+  ctx2d.beginPath();
+  ctx2d.arc(pt.x, pt.y, 5, 0, Math.PI*2);
+  ctx2d.strokeStyle='#fff'; ctx2d.lineWidth=1.5; ctx2d.stroke();
+}}
+
+function drawSeg(a, b, label, isPreview) {{
+  ctx2d.beginPath(); ctx2d.moveTo(a.x,a.y); ctx2d.lineTo(b.x,b.y);
+  ctx2d.strokeStyle = isPreview ? '#5BB8D4' : '#1D9E75';
+  ctx2d.lineWidth   = isPreview ? 1.5 : 2;
+  ctx2d.setLineDash(isPreview ? [5,4] : []);
+  ctx2d.stroke(); ctx2d.setLineDash([]);
+
+  var mx=(a.x+b.x)/2, my=(a.y+b.y)/2;
+  var angle=Math.atan2(b.y-a.y,b.x-a.x);
+  var ox=-Math.sin(angle)*14, oy=Math.cos(angle)*14;
+  var lx=mx+ox, ly=my+oy;
+
+  ctx2d.font='500 12px "DM Mono",monospace';
+  var tw=ctx2d.measureText(label).width, pad=6;
+  ctx2d.fillStyle=isPreview?'rgba(10,30,50,0.88)':'rgba(10,40,30,0.92)';
+  ctx2d.beginPath();
+  ctx2d.roundRect(lx-tw/2-pad, ly-10, tw+pad*2, 20, 4);
+  ctx2d.fill();
+  ctx2d.fillStyle=isPreview?'#5BB8D4':'#5DCAA5';
+  ctx2d.textAlign='center'; ctx2d.textBaseline='middle';
+  ctx2d.fillText(label, lx, ly);
+
+  drawPoint2(a, isPreview?'#5BB8D4':'#1D9E75');
+  drawPoint2(b, isPreview?'#5BB8D4':'#1D9E75');
+}}
+
+function drawCross(pt) {{
+  ctx2d.strokeStyle='rgba(91,184,212,0.5)';
+  ctx2d.lineWidth=1; ctx2d.setLineDash([3,3]);
+  ctx2d.beginPath(); ctx2d.moveTo(pt.x,0); ctx2d.lineTo(pt.x,cvs.height); ctx2d.stroke();
+  ctx2d.beginPath(); ctx2d.moveTo(0,pt.y); ctx2d.lineTo(cvs.width,pt.y);  ctx2d.stroke();
+  ctx2d.setLineDash([]);
+}}
+
+function redrawMeasure() {{
+  if(!cvs) return;
+  ctx2d.clearRect(0,0,cvs.width,cvs.height);
+  segments.forEach(function(seg){{ drawSeg(seg.a,seg.b,seg.label,false); }});
+  if(measuring && startPt && mousePt) {{
+    drawSeg(startPt, mousePt, pxToUnit(dist2(startPt,mousePt)), true);
+    drawCross(mousePt);
+  }} else if(measuring && mousePt) {{
+    drawCross(mousePt);
   }}
 }}
 
+function getCanvasPos(e) {{
+  var r=cvs.getBoundingClientRect();
+  var sx=cvs.width/r.width, sy=cvs.height/r.height;
+  return {{x:(e.clientX-r.left)*sx, y:(e.clientY-r.top)*sy}};
+}}
+
+// 이벤트는 initCanvas 이후에 attach
+function attachMeasureEvents() {{
+  cvs.addEventListener('mousemove', function(e) {{
+    if(!measuring) return;
+    mousePt = getCanvasPos(e);
+    redrawMeasure();
+  }});
+  cvs.addEventListener('mouseleave', function() {{
+    mousePt = null; redrawMeasure();
+  }});
+  cvs.addEventListener('click', function(e) {{
+    if(!measuring) return;
+    var pt = getCanvasPos(e);
+    if(phase==='start') {{
+      startPt=pt; phase='end';
+    }} else {{
+      segments.push({{a:startPt, b:pt, label:pxToUnit(dist2(startPt,pt))}});
+      startPt=null; phase='start';
+      redrawMeasure();
+    }}
+  }});
+  // 우클릭 → 전체 삭제
+  cvs.addEventListener('contextmenu', function(e) {{
+    e.preventDefault();
+    segments=[]; startPt=null; phase='start';
+    redrawMeasure();
+  }});
+}}
+
+// ── 스냅샷 (측정선 + 워터마크 포함) ──
+function doSnapshot() {{
+  var wrap = document.getElementById('viewer-wrap');
+  // 뷰어 캔버스 가져오기
+  var viewerCanvas = document.querySelector('#viewer canvas');
+  if(!viewerCanvas) {{ alert('뷰어가 아직 로드되지 않았습니다.'); return; }}
+
+  var snap = document.createElement('canvas');
+  snap.width  = wrap.clientWidth;
+  snap.height = wrap.clientHeight;
+  var sc = snap.getContext('2d');
+
+  // 뷰어 그리기
+  sc.drawImage(viewerCanvas, 0, 0, snap.width, snap.height);
+  // 측정선 오버레이
+  if(cvs) sc.drawImage(cvs, 0, 0);
+
+  // 워터마크
+  sc.save();
+  sc.font = '500 13px "DM Mono",monospace';
+  sc.fillStyle = 'rgba(255,255,255,0.20)';
+  sc.textAlign = 'center'; sc.textBaseline = 'middle';
+  var step=160, angle=-Math.PI/8;
+  for(var x=-step; x<snap.width+step; x+=step) {{
+    for(var y=-step; y<snap.height+step; y+=step) {{
+      sc.save();
+      sc.translate(x+(y%(step*2)===0?0:step/2), y);
+      sc.rotate(angle);
+      sc.fillText('SlideAtlas · {slide_id}', 0, 0);
+      sc.restore();
+    }}
+  }}
+  sc.restore();
+
+  // 다운로드
+  snap.toBlob(function(blob) {{
+    var a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download='SlideAtlas_{slide_id}_snapshot.png';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }}, 'image/png');
+}}
+
+// ── 채팅 ──
 function sendChat() {{
   var input = document.getElementById('chat-input');
-  var msg = input.value.trim();
+  var msg   = input.value.trim();
   if(!msg) return;
   input.value = '';
-  var containerW2 = osd.container ? osd.container.clientWidth : 1000;
-  var vw2 = osd.viewport.getBounds().width;
-  var umPerPx2 = vw2 * SLIDE_W * SLIDE_MPP / containerW2;
-  var mag = 1 / umPerPx2 * 0.25 * 40;
-  var magText = mag >= 1 ? Math.round(mag*10)/10 + '×' : mag.toFixed(3) + '×';
+  var vw = osd.viewport.getBounds().width;
+  var cw = osd.container ? osd.container.clientWidth : 1000;
+  var umPx = vw*SLIDE_W*SLIDE_MPP/cw;
+  var mag  = 1/umPx*0.25*40;
+  var magT = mag>=1 ? Math.round(mag*10)/10+'×' : mag.toFixed(3)+'×';
   var msgs = document.getElementById('chat-messages');
   msgs.innerHTML += '<div class="msg-user"><div class="msg-user-bubble">'+escHtml(msg)+'</div></div>';
-  var typingId = 'typing-' + Date.now();
-  msgs.innerHTML += '<div class="msg-ai" id="'+typingId+'"><div class="msg-ai-icon"><svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 6v6l4 2"/></svg></div><div class="msg-ai-bubble"><div class="typing-indicator"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div></div></div>';
+  var tid = 'typing-'+Date.now();
+  msgs.innerHTML += '<div class="msg-ai" id="'+tid+'"><div class="msg-ai-icon"><svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 6v6l4 2"/></svg></div><div class="msg-ai-bubble"><div class="typing-indicator"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div></div></div>';
   msgs.scrollTop = msgs.scrollHeight;
-  var SYSTEM = "You are SlideAtlas AI tutor. Current slide: {title_ko} ({title_en}), {stain} stain, {system}. Current magnification: " + magText + ". Answer in Korean, as a histology/pathology education expert. Keep answers to 3-5 sentences.";
-  var bubble = null;
-  var fullText = '';
-  fetch("/api/chat", {{
-    method: "POST",
-    headers: {{"Content-Type": "application/json"}},
-    body: JSON.stringify({{ message: msg, system: SYSTEM }})
-  }})
-  .then(function(r) {{
-    var reader = r.body.getReader();
-    var decoder = new TextDecoder();
-    var buffer = '';
-    function read() {{
-      reader.read().then(function(result) {{
-        if(result.done) return;
-        buffer += decoder.decode(result.value, {{stream: true}});
-        var lines = buffer.split('\\n');
-        buffer = lines.pop();
-        for(var i=0; i<lines.length; i++) {{
-          var line = lines[i].trim();
-          if(line.indexOf('data: ') === 0) {{
-            try {{
-              var obj = JSON.parse(line.slice(6));
-              if(obj.text) {{
-                fullText += obj.text;
-                var el = document.getElementById(typingId);
-                if(el) {{
-                  if(!bubble) {{ bubble = el.querySelector('.msg-ai-bubble'); }}
-                  bubble.innerHTML = renderMd(fullText);
-                  msgs.scrollTop = msgs.scrollHeight;
-                }}
+  var SYS = "You are SlideAtlas AI tutor. Current slide: {title_ko} ({title_en}), {stain} stain, {system}. Current magnification: "+magT+". Answer in Korean, as a histology/pathology education expert. Keep answers to 3-5 sentences.";
+  var bubble=null, fullText='';
+  fetch("/api/chat",{{method:"POST",headers:{{"Content-Type":"application/json"}},body:JSON.stringify({{message:msg,system:SYS}})}})
+  .then(function(r){{
+    var reader=r.body.getReader(), decoder=new TextDecoder(), buffer='';
+    function read(){{
+      reader.read().then(function(res){{
+        if(res.done) return;
+        buffer+=decoder.decode(res.value,{{stream:true}});
+        var lines=buffer.split('\\n'); buffer=lines.pop();
+        lines.forEach(function(line){{
+          line=line.trim();
+          if(line.indexOf('data: ')===0){{
+            try{{
+              var obj=JSON.parse(line.slice(6));
+              if(obj.text){{
+                fullText+=obj.text;
+                var el=document.getElementById(tid);
+                if(el){{ if(!bubble) bubble=el.querySelector('.msg-ai-bubble'); bubble.innerHTML=renderMd(fullText); msgs.scrollTop=msgs.scrollHeight; }}
               }}
-              if(obj.error) {{
-                var el = document.getElementById(typingId);
-                if(el) el.querySelector('.msg-ai-bubble').textContent = 'API 오류: ' + obj.error;
-              }}
-            }} catch(e) {{}}
+            }}catch(e){{}}
           }}
-        }}
+        }});
         read();
       }});
     }}
     read();
-  }})
-  .catch(function() {{
-    var el = document.getElementById(typingId);
-    if(el) el.querySelector('.msg-ai-bubble').textContent = "연결 오류가 발생했습니다.";
+  }}).catch(function(){{
+    var el=document.getElementById(tid);
+    if(el) el.querySelector('.msg-ai-bubble').textContent="연결 오류가 발생했습니다.";
   }});
 }}
 
-function escHtml(s) {{ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }}
-
-function renderMd(s) {{
-  var h = escHtml(s);
-  var lines = h.split('\\n');
-  for(var i=0; i<lines.length; i++) {{
-    if(lines[i].indexOf('# ') === 0) {{ lines[i] = '<strong style="font-size:13px;color:#0F1F3D;display:block;margin-bottom:4px;">' + lines[i].slice(2) + '</strong>'; }}
-    else if(lines[i].indexOf('## ') === 0) {{ lines[i] = '<strong style="font-size:13px;color:#0F1F3D;display:block;margin-bottom:4px;">' + lines[i].slice(3) + '</strong>'; }}
+function escHtml(s){{ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }}
+function renderMd(s){{
+  var h=escHtml(s);
+  var lines=h.split('\\n');
+  for(var i=0;i<lines.length;i++){{
+    if(lines[i].indexOf('# ')===0) lines[i]='<strong style="font-size:13px;color:#0F1F3D;display:block;margin-bottom:4px;">'+lines[i].slice(2)+'</strong>';
+    else if(lines[i].indexOf('## ')===0) lines[i]='<strong style="font-size:13px;color:#0F1F3D;display:block;margin-bottom:4px;">'+lines[i].slice(3)+'</strong>';
   }}
-  h = lines.join('<br>');
-  var parts = h.split('**');
-  var result = '';
-  for(var i=0; i<parts.length; i++) {{ result += i%2===1 ? '<strong>'+parts[i]+'</strong>' : parts[i]; }}
+  h=lines.join('<br>');
+  var parts=h.split('**'); var result='';
+  for(var i=0;i<parts.length;i++) result+=i%2===1?'<strong>'+parts[i]+'</strong>':parts[i];
   return result;
 }}
 
+// ── 퀴즈 ──
 function startQuiz() {{
-  if(QUIZ.length === 0) {{
-    fetch("/api/chat", {{
-      method: "POST",
-      headers: {{"Content-Type": "application/json"}},
-      body: JSON.stringify({{
-        message: "{title_ko} ({title_en}) {stain} 슬라이드에 대한 조직학/병리학 퀴즈 3문제를 JSON 형식으로만 생성해주세요. 형식: [{{\\"q\\":\\"질문\\",\\"opts\\":[\\"A\\",\\"B\\",\\"C\\",\\"D\\"],\\"ans\\":0,\\"exp\\":\\"해설\\"}}]",
-        system: "당신은 의과대학 조직학/병리학 교수입니다. 요청한 JSON 형식으로만 응답하세요. 다른 텍스트는 절대 포함하지 마세요."
-      }})
-    }})
-    .then(function(r){{ return r.json(); }})
-    .then(function(data) {{
-      try {{
-        var txt = data.reply.replace(/```json|```/g,'').trim();
-        QUIZ = JSON.parse(txt);
-      }} catch(e) {{
-        QUIZ = [{{q:"{title_ko}의 주요 특징은?",opts:["세포 구조 변화","염색 반응","조직 배열","모두 해당"],ans:3,exp:"H&E 염색에서 다양한 특징을 관찰할 수 있습니다."}}];
-      }}
-      qIdx=0; score=0;
+  if(QUIZ.length===0){{
+    fetch("/api/chat",{{method:"POST",headers:{{"Content-Type":"application/json"}},body:JSON.stringify({{message:"{title_ko} ({title_en}) {stain} 슬라이드에 대한 조직학/병리학 퀴즈 3문제를 JSON 형식으로만 생성해주세요. 형식: [{{\\"q\\":\\"질문\\",\\"opts\\":[\\"A\\",\\"B\\",\\"C\\",\\"D\\"],\\"ans\\":0,\\"exp\\":\\"해설\\"}}]",system:"당신은 의과대학 조직학/병리학 교수입니다. 요청한 JSON 형식으로만 응답하세요. 다른 텍스트는 절대 포함하지 마세요."}})}})
+    .then(function(r){{return r.json();}})
+    .then(function(data){{
+      try{{var txt=data.reply.replace(/```json|```/g,'').trim(); QUIZ=JSON.parse(txt);}}
+      catch(e){{QUIZ=[{{q:"{title_ko}의 주요 특징은?",opts:["세포 구조 변화","염색 반응","조직 배열","모두 해당"],ans:3,exp:"H&E 염색에서 다양한 특징을 관찰할 수 있습니다."}}];}}
+      qIdx=0;score=0;
       document.getElementById('quiz-start-view').style.display='none';
       document.getElementById('quiz-play-view').style.display='block';
       renderQuestion();
     }});
     return;
   }}
-  qIdx=0; score=0;
+  qIdx=0;score=0;
   document.getElementById('quiz-start-view').style.display='none';
   document.getElementById('quiz-play-view').style.display='block';
   renderQuestion();
 }}
-
-function renderQuestion() {{
-  var q = QUIZ[qIdx];
-  document.getElementById('q-num').textContent = (qIdx+1) + ' / ' + QUIZ.length;
-  document.getElementById('q-prog').style.width = ((qIdx+1)/QUIZ.length*100) + '%';
-  document.getElementById('q-text').textContent = q.q;
+function renderQuestion(){{
+  var q=QUIZ[qIdx];
+  document.getElementById('q-num').textContent=(qIdx+1)+' / '+QUIZ.length;
+  document.getElementById('q-prog').style.width=((qIdx+1)/QUIZ.length*100)+'%';
+  document.getElementById('q-text').textContent=q.q;
   document.getElementById('q-exp').style.display='none';
   document.getElementById('q-exp').textContent=q.exp;
   document.getElementById('q-next').style.display='none';
-  var opts = document.getElementById('q-opts');
-  var letters = ['A','B','C','D'];
-  opts.innerHTML = q.opts.map(function(o,i) {{
-    return '<div class="quiz-opt" onclick="answerQ(this,'+i+')"><span class="opt-num">'+letters[i]+'</span>'+escHtml(o)+'</div>';
-  }}).join('');
+  var opts=document.getElementById('q-opts');
+  var letters=['A','B','C','D'];
+  opts.innerHTML=q.opts.map(function(o,i){{return '<div class="quiz-opt" onclick="answerQ(this,'+i+')"><span class="opt-num">'+letters[i]+'</span>'+escHtml(o)+'</div>';}}).join('');
 }}
-
-function answerQ(el, idx) {{
-  var q = QUIZ[qIdx];
-  document.querySelectorAll('.quiz-opt').forEach(function(o){{ o.onclick=null; }});
-  if(idx===q.ans){{ el.classList.add('correct'); score++; }}
-  else {{ el.classList.add('wrong'); document.querySelectorAll('.quiz-opt')[q.ans].classList.add('correct'); }}
+function answerQ(el,idx){{
+  var q=QUIZ[qIdx];
+  document.querySelectorAll('.quiz-opt').forEach(function(o){{o.onclick=null;}});
+  if(idx===q.ans){{el.classList.add('correct');score++;}}
+  else{{el.classList.add('wrong');document.querySelectorAll('.quiz-opt')[q.ans].classList.add('correct');}}
   document.getElementById('q-exp').style.display='block';
   document.getElementById('q-next').style.display='block';
-  document.getElementById('q-next').textContent = qIdx<QUIZ.length-1 ? '다음 문제 →' : '결과 보기 →';
+  document.getElementById('q-next').textContent=qIdx<QUIZ.length-1?'다음 문제 →':'결과 보기 →';
 }}
-
-function nextQuestion() {{
+function nextQuestion(){{
   qIdx++;
-  if(qIdx>=QUIZ.length) {{
+  if(qIdx>=QUIZ.length){{
     document.getElementById('quiz-play-view').style.display='none';
     document.getElementById('quiz-result-view').style.display='block';
-    document.getElementById('result-score').textContent = score+' / '+QUIZ.length;
-  }} else {{ renderQuestion(); }}
+    document.getElementById('result-score').textContent=score+' / '+QUIZ.length;
+  }}else{{renderQuestion();}}
 }}
-
-function resetQuiz() {{
+function resetQuiz(){{
   QUIZ=[];
   document.getElementById('quiz-result-view').style.display='none';
   document.getElementById('quiz-start-view').style.display='block';
 }}
+
+// ── 초기화 ──
+window.addEventListener('load', function() {{
+  initCanvas();
+  attachMeasureEvents();
+}});
 </script>
 </body>
 </html>'''
+
+# ─────────────────────────────────────────────
+# 이하 /slides, /api/chat, /dzi, /thumbnail, /admin 등은 원본과 동일
+# ─────────────────────────────────────────────
 
 @app.route('/slides')
 def slides():
@@ -918,7 +1265,7 @@ def slides():
         </div>
       </a>'''
     system_filters = ''.join([f'<div class="filter-item"><div class="filter-item-left"><div class="filter-cb"></div><span class="filter-label">{sys}</span></div><span class="filter-count">{cnt}</span></div>' for sys, cnt in systems.items()])
-    stain_filters = ''.join([f'<div class="filter-item"><div class="filter-item-left"><div class="filter-cb"></div><span class="filter-label">{st}</span></div><span class="filter-count">{cnt}</span></div>' for st, cnt in stains.items()])
+    stain_filters  = ''.join([f'<div class="filter-item"><div class="filter-item-left"><div class="filter-cb"></div><span class="filter-label">{st}</span></div><span class="filter-count">{cnt}</span></div>' for st, cnt in stains.items()])
     total = len(all_slides)
     return f'''<!DOCTYPE html>
 <html lang="ko">
@@ -1145,7 +1492,6 @@ def dzi_tile(slide_id, level, col, row):
         buf.seek(0)
         return send_file(buf, mimetype='image/jpeg')
 
-# ── Render용 썸네일 엔드포인트 (DCM 슬라이드용) ──
 @app.route('/thumbnail/<slide_id>')
 def thumbnail(slide_id):
     if slide_id not in SLIDE_CACHE:
