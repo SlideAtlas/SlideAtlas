@@ -2,3 +2,5 @@ test_download/
 __pycache__/
 *.pyc
 *.dcm
+.env
+*.pem

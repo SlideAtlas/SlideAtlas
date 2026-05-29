@@ -4,3 +4,4 @@ Pillow==11.2.1
 numpy==2.4.0
 openslide-bin
 boto3
+psycopg2-binary==2.9.9

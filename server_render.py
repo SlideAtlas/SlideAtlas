@@ -8,28 +8,114 @@ from flask import Flask, send_file, Response, request, jsonify, session, redirec
 from PIL import Image
 import io
 
+# -- DB Connection Pool (RDS PostgreSQL) ---------------------------------------
+try:
+    import psycopg2
+    from psycopg2 import pool as pg_pool
+    _PSYCOPG2_AVAILABLE = True
+except ImportError:
+    _PSYCOPG2_AVAILABLE = False
+
+_db_pool = None
+
+def get_db_pool():
+    global _db_pool
+    if _db_pool is None:
+        if not _PSYCOPG2_AVAILABLE:
+            raise RuntimeError("psycopg2 미설치 -- pip install psycopg2-binary")
+        _db_pool = pg_pool.ThreadedConnectionPool(
+            minconn=1,
+            maxconn=5,
+            host=os.environ["DB_HOST"],
+            dbname=os.environ["DB_NAME"],
+            user=os.environ["DB_USER"],
+            password=os.environ["DB_PASSWORD"],
+            port=int(os.environ.get("DB_PORT", "5432")),
+        )
+    return _db_pool
+
+def get_db_conn():
+    return get_db_pool().getconn()
+
+def release_db_conn(conn):
+    get_db_pool().putconn(conn)
+
+CATEGORY_MAP = {
+    "histology":    "HST",
+    "pathology":    "PATH",
+    "parasitology": "PARA",
+    "anatomy":      "ANAT",
+    "embryology":   "EMBRY",
+}
+
 app = Flask(__name__)
 app.secret_key = os.environ.get('ADMIN_SECRET_KEY', 'slideatlas-dev-secret-2026')
 
-# ── JSON 데이터 경로 ──
+# -- JSON 데이터 경로 (롤백용 주석 보존) ----------------------------------------
 SLIDES_JSON = os.path.join(os.path.dirname(__file__), 'slides.json')
 INSTITUTIONS_JSON = os.path.join(os.path.dirname(__file__), 'institutions.json')
 
+# [ROLLBACK] JSON 파일 직접 읽기 -- RDS 전환 전 코드
+# def load_slides():
+#     if os.path.exists(SLIDES_JSON):
+#         with open(SLIDES_JSON, 'r', encoding='utf-8') as f:
+#             return json.load(f)
+#     return {"slides": []}
+
 def load_slides():
-    if os.path.exists(SLIDES_JSON):
-        with open(SLIDES_JSON, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    return {"slides": []}
+    conn = get_db_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, institution_id AS institution, subject_code AS category,
+                       title_ko, title_en, description,
+                       s3_key, s3_minimap_key, s3_thumbnail_key,
+                       mpp, width, height,
+                       stain, organ AS system,
+                       species, original_format AS format,
+                       conversion_status, is_public AS active,
+                       knowledge_base,
+                       'ec2' AS tileserver
+                FROM slides
+                ORDER BY created_at
+            """)
+            cols = [d[0] for d in cur.description]
+            rows = [dict(zip(cols, row)) for row in cur.fetchall()]
+        return {"slides": rows}
+    finally:
+        release_db_conn(conn)
+
+# [ROLLBACK] JSON 파일 직접 쓰기 -- RDS 전환 전 코드
+# def save_slides(data):
+#     with open(SLIDES_JSON, 'w', encoding='utf-8') as f:
+#         json.dump(data, f, ensure_ascii=False, indent=2)
 
 def save_slides(data):
-    with open(SLIDES_JSON, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    # admin_save_slide / admin_delete_slide 가 직접 SQL 처리하므로 no-op.
+    pass
+
+# [ROLLBACK] JSON 파일 직접 읽기 -- RDS 전환 전 코드
+# def load_institutions():
+#     if os.path.exists(INSTITUTIONS_JSON):
+#         with open(INSTITUTIONS_JSON, 'r', encoding='utf-8') as f:
+#             return json.load(f)
+#     return {"institutions": [], "subjects": []}
 
 def load_institutions():
-    if os.path.exists(INSTITUTIONS_JSON):
-        with open(INSTITUTIONS_JSON, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    return {"institutions": [], "subjects": []}
+    conn = get_db_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id AS code, name_ko, name_en FROM institutions ORDER BY id")
+            cols = [d[0] for d in cur.description]
+            institutions = [dict(zip(cols, row)) for row in cur.fetchall()]
+
+            cur.execute("SELECT code, name_ko, name_en FROM subject_codes ORDER BY code")
+            cols = [d[0] for d in cur.description]
+            subjects = [dict(zip(cols, row)) for row in cur.fetchall()]
+
+        return {"institutions": institutions, "subjects": subjects}
+    finally:
+        release_db_conn(conn)
 
 def admin_required(f):
     @wraps(f)
@@ -1717,33 +1803,95 @@ document.getElementById('modal').addEventListener('click', function(e) {{ if(e.t
 @app.route('/admin/api/slide', methods=['POST'])
 @admin_required
 def admin_save_slide():
+    # [ROLLBACK] JSON 방식 -- RDS 전환 전 코드
+    # try:
+    #     payload = request.get_json()
+    #     data = load_slides()
+    #     slides = data.get('slides', [])
+    #     edit_id = payload.pop('edit_id', None)
+    #     if edit_id:
+    #         for i, s in enumerate(slides):
+    #             if s['id'] == edit_id:
+    #                 slides[i] = payload
+    #                 break
+    #     else:
+    #         if any(s['id'] == payload['id'] for s in slides):
+    #             return jsonify({'ok': False, 'error': '이미 존재하는 ID입니다.'})
+    #         slides.append(payload)
+    #     data['slides'] = slides
+    #     save_slides(data)
+    #     return jsonify({'ok': True})
+    # except Exception as e:
+    #     return jsonify({'ok': False, 'error': str(e)})
     try:
         payload = request.get_json()
-        data = load_slides()
-        slides = data.get('slides', [])
         edit_id = payload.pop('edit_id', None)
-        if edit_id:
-            for i, s in enumerate(slides):
-                if s['id'] == edit_id:
-                    slides[i] = payload
-                    break
-        else:
-            if any(s['id'] == payload['id'] for s in slides):
-                return jsonify({'ok': False, 'error': '이미 존재하는 ID입니다.'})
-            slides.append(payload)
-        data['slides'] = slides
-        save_slides(data)
+        subject_code = payload.get('category', '').upper() or None
+        conn = get_db_conn()
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    if edit_id:
+                        cur.execute("""
+                            UPDATE slides SET
+                                title_ko = %s, title_en = %s,
+                                description = %s, stain = %s,
+                                organ = %s, s3_key = %s,
+                                is_public = %s
+                            WHERE id = %s
+                        """, (
+                            payload.get('title_ko'), payload.get('title_en'),
+                            payload.get('description'), payload.get('stain'),
+                            payload.get('system'), payload.get('s3_key'),
+                            bool(payload.get('active', False)),
+                            edit_id,
+                        ))
+                    else:
+                        cur.execute("""
+                            INSERT INTO slides (
+                                id, institution_id, subject_code,
+                                title_ko, title_en, description,
+                                s3_key, stain, organ,
+                                original_format, is_public
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        """, (
+                            payload['id'],
+                            payload.get('institution'),
+                            subject_code,
+                            payload.get('title_ko'), payload.get('title_en'),
+                            payload.get('description'),
+                            payload.get('s3_key'),
+                            payload.get('stain'), payload.get('system'),
+                            (payload.get('format') or '').upper() or None,
+                            bool(payload.get('active', False)),
+                        ))
+        finally:
+            release_db_conn(conn)
         return jsonify({'ok': True})
+    except psycopg2.IntegrityError:
+        return jsonify({'ok': False, 'error': '이미 존재하는 ID입니다.'})
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)})
 
 @app.route('/admin/api/slide/<slide_id>', methods=['DELETE'])
 @admin_required
 def admin_delete_slide(slide_id):
+    # [ROLLBACK] JSON 방식 -- RDS 전환 전 코드
+    # try:
+    #     data = load_slides()
+    #     data['slides'] = [s for s in data.get('slides', []) if s['id'] != slide_id]
+    #     save_slides(data)
+    #     return jsonify({'ok': True})
+    # except Exception as e:
+    #     return jsonify({'ok': False, 'error': str(e)})
     try:
-        data = load_slides()
-        data['slides'] = [s for s in data.get('slides', []) if s['id'] != slide_id]
-        save_slides(data)
+        conn = get_db_conn()
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute("DELETE FROM slides WHERE id = %s", (slide_id,))
+        finally:
+            release_db_conn(conn)
         return jsonify({'ok': True})
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)})
