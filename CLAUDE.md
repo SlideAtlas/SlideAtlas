@@ -1,4 +1,4 @@
-# CLAUDE.md — SlideAtlas 프로젝트 메모리 v2.6
+# CLAUDE.md — SlideAtlas 프로젝트 메모리 v2.7
 
 > 이 파일은 Claude Code 세션 시작 시 반드시 읽어야 하는 프로젝트 컨텍스트 파일입니다.
 > 모든 에이전트(오케스트레이터, 개발, QA)는 이 파일을 기준으로 작업합니다.
@@ -227,9 +227,24 @@ CREATE TABLE users (
   password_hash VARCHAR(255),
   role VARCHAR(20) DEFAULT 'student',
   -- 'student' | 'assistant' | 'professor' | 'institution_admin' | 'super_admin' | 'special'
+  status VARCHAR(20) DEFAULT 'pending_verification',
+  -- 'pending_verification' | 'active' | 'suspended'
+  -- 가입 직후엔 pending_verification, 이메일 인증코드 확인 시 active 전환.
+  -- JWT 발급·서비스 접근은 status='active'일 때만 허용.
   last_login TIMESTAMP,
   session_token VARCHAR(255),
   is_special BOOLEAN DEFAULT FALSE,  -- 특별 계정 (TO 미포함, 무상 무한 접근)
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE email_verifications (
+  id SERIAL PRIMARY KEY,
+  email VARCHAR(200) NOT NULL,
+  code VARCHAR(6) NOT NULL,              -- 6자리 인증코드
+  purpose VARCHAR(20) DEFAULT 'signup',  -- 'signup' | 'password_reset'
+  expires_at TIMESTAMP NOT NULL,         -- 발송 후 10분
+  consumed BOOLEAN DEFAULT FALSE,        -- 사용 완료 시 TRUE (재사용 차단)
+  attempts INT DEFAULT 0,                -- 오입력 횟수 (브루트포스 차단, N회 시 코드 폐기)
   created_at TIMESTAMP DEFAULT NOW()
 );
 
@@ -323,10 +338,14 @@ CREATE TABLE course_assistants (
 
 - **Presigned URL**: TTL 5분, S3 버킷 퍼블릭 접근 전면 차단
 - **동적 워터마킹**: Pillow, 투명도 15~20%, 대각선 반복 패턴, 사용자 ID·기관명 삽입
+- **토큰 저장 방식 (확정)**: JWT는 HttpOnly + Secure + SameSite=Strict 쿠키에 저장. 자바스크립트 접근 차단 → XSS 토큰 탈취 방어. 상태변경 요청은 별도 CSRF 토큰으로 보호. localStorage/sessionStorage 저장 전면 금지.
+- **이메일 인증 (가입 본인 확인)**: 명단 대조 통과 시 해당 이메일로 6자리 코드 발송 → 화면에서 입력·확인 후 계정 활성화. 코드 10분 만료, 1회용, 오입력 횟수 제한. 발송은 Gmail SMTP (보고서 발송과 동일 인프라). email_verifications 테이블로 관리.
 - **브라우저 캐시**: `Cache-Control: no-store, no-cache`
 - **서버사이드 캐시**: 동일 user_id + tile_key 조합, TTL 5분
 - **동시접속 제어**: 새 기기 로그인 시 기존 session_token 무효화 (특별 계정 포함)
 - **멀티테넌시**: institution_id 기반 Row Level 격리
+
+> **보안 = 영업 자산**: 콘텐츠 공급사(Happy Science 등)의 최대 우려는 슬라이드 이미지 탈취. 다층 방어(HttpOnly 쿠키·워터마킹·presigned URL·단일세션)는 사용자 보호인 동시에 라이선스 협상에서 공급사 신뢰를 사는 카드다.
 
 ---
 
@@ -395,6 +414,8 @@ SlideAtlas 무관 질문에는 답변하지 마세요.
 **① 보안 & 멀티테넌시**
 - institution_id 기반 슬라이드 접근 격리 확인
 - JWT 토큰 변조 공격 방어
+- JWT가 HttpOnly+Secure+SameSite 쿠키에만 저장되는지 (localStorage 미사용 확인)
+- CSRF 토큰 검증이 모든 상태변경 요청에 적용되는지
 - session_token 1기기 동시접속 제어 (특별 계정 포함)
 - Presigned URL TTL 정확히 5분
 - 브라우저 캐시 no-store 헤더 확인
@@ -413,6 +434,8 @@ SlideAtlas 무관 질문에는 답변하지 마세요.
 - subscription_end 경과 사용자 접근 차단
 - TO 초과 시 신규 인증 차단 (기관 포털 게이지 연동)
 - 지위 대조: 엑셀 지위와 가입 시 선택 지위 불일치 시 인증 차단
+- 이메일 인증코드 미확인 계정(status=pending_verification)의 토큰 발급·서비스 접근 차단
+- 인증코드 만료(10분)·재사용·브루트포스(오입력 N회 시 폐기) 방어 작동
 - /api/chat 진단·치료 질문 방어벽 작동
 
 **⑤ DB 마이그레이션 & 라이선스 격리**
@@ -504,6 +527,7 @@ SlideAtlas 무관 질문에는 답변하지 마세요.
 - **Render 콜드스타트**: Starter 슬립 모드 → 9월 전 Standard 전환 필수
 - **동적 워터마킹 성능**: Pillow 처리 타일당 ms 반드시 benchmark
 - **educational QC 원칙**: 기술 QC 통과 ≠ 서비스 가능. educational_qc_status passed 필수
+- **민감정보 취급**: Gmail 앱 비밀번호·API 키 등은 코드/저장소에 직접 기재 금지. 환경변수로만 주입.
 
 ---
 
@@ -531,7 +555,7 @@ SlideAtlas 무관 질문에는 답변하지 마세요.
 **지위 3종**: 학생(student) / 조교(assistant) / 교수(professor)
 
 **등록 방식**: 기관 관리자 엑셀 업로드 컬럼: `이메일 | 이름 | 지위(학생/조교/교수)`
-가입 시 본인이 선택한 지위 + 엑셀 지위 대조 → 일치 시 인증 완료, 불일치 시 차단
+가입 시 본인이 선택한 지위 + 엑셀 지위 대조 → 일치 시 이메일 인증코드 발송, 불일치 시 차단
 
 **지위별 권한**:
 
@@ -556,9 +580,13 @@ slideatlas.net 접속
   → 로그인 / 회원가입 선택
       ├── 기존 회원: 이메일 + 비밀번호 → 인증 → 홈
       └── 신규 가입: 정보 입력 + 지위 선택(학생/조교/교수)
-              → 이메일 인증 → 기관 명단 대조 (이메일 + 지위 동시 대조)
-              ├── 일치: 계정 활성화 → 마이페이지 자동 생성 → 홈
-              └── 불일치: "과 사무실 문의" 안내 → 관리자 명단 수정 → 재대조
+              → 기관 명단 대조 (이메일 + 지위 동시 대조)
+              ├── 불일치: "과 사무실 문의" 안내 → 관리자 명단 수정 → 재대조
+              └── 일치: 해당 이메일로 6자리 인증코드 발송
+                      → 가입 화면에서 코드 입력
+                      ├── 코드 일치(10분 내): status=active 전환
+                      │     → 마이페이지 자동 생성 → 홈
+                      └── 코드 불일치/만료: 오류 안내 → 재발송
   → 홈 (수업 탭 / 전체 탭)
   → 슬라이드 뷰어
   → AI 튜터 (구조가이드 / 질문하기 / 퀴즈)
@@ -567,7 +595,12 @@ slideatlas.net 접속
 
 ### 21-5. 회원가입 핵심 정책
 
-- 누구나 가입 시도 가능. 단, 명단 이메일 + 지위 모두 일치해야 계정 활성화.
+- 계정 활성화 조건 2종 동시 충족: ① 명단 이메일+지위 일치 ② 이메일 인증코드 확인.
+- **본인 확인 = 6자리 이메일 인증코드**: 명단에 있는 이메일이라도, 그 메일함을 실제 통제하는 사람만 가입 가능 (이메일 도용·추측 가입 차단).
+  - 유효기간 10분 / 1회용(사용 후 무효) / 오입력 누적 시 코드 폐기 후 재발송 요구.
+  - 명단 대조 통과한 이메일에만 코드 발송 (발송 낭비·탐색 공격 방지).
+  - 발송 인프라: Gmail SMTP (밤샘 보고서 발송과 동일).
+- 인증 전 계정은 status=pending_verification 상태로 생성되며 JWT 발급·서비스 접근 불가. 인증 완료 시 active 전환.
 - **순서 중요**: 기관관리자 명단 업로드 → 학생 가입. 계약 시 기관에 반드시 안내.
 - 소속 기관·지위: 마이페이지에서 읽기 전용. 변경 필요 시 관리자 경유.
 - 명단 수정 후 재가입 불필요 — 이미 입력한 정보로 자동 재대조.
@@ -867,11 +900,6 @@ S3에 TIFF 파일 업로드 (AWS CLI 또는 S3 콘솔)
 
 ---
 
-*최종 업데이트: 2026-05-29 v2.6*
-*주요 변경: 섹션 10(구독 플랜 구조 확정), 섹션 22(기관관리자 포털 전체 설계), 섹션 23(슈퍼관리자 어드민 전체 설계), 섹션 24(뷰어 설계, 구 섹션 23에서 번호 조정), 슬라이드 수급 파이프라인 B+C 방식 확정, 사용자 플로우 지위 체계·홈 화면 구조 확정, DB 스키마 plan_slides·ai_chat_logs 추가*
-
----
-
 ## 25. 교수 수업 페이지 상세 설계 스펙
 
 ### 25-1. 개요 및 구조
@@ -962,5 +990,8 @@ CREATE TABLE course_enrollments (
 | 조교 지정 | ❌ | ❌ | ✅ |
 | 수업 삭제 | ❌ | ❌ | ✅ |
 
-*최종 업데이트: 2026-05-29 v2.6 추가*
-*섹션 25 신규: 교수 수업 페이지 상세 설계 (조교 지정, 학생 수업등록/해지, 내 수업 탭 구조)*
+---
+
+*최종 업데이트: 2026-05-30 v2.7*
+*주요 변경: 가입 시 이메일 인증코드(6자리) 도입 — 이메일 도용·추측 가입 차단(§21-4·§21-5). 토큰 저장 방식 HttpOnly+Secure+SameSite 쿠키+CSRF로 확정(§9). users.status 컬럼·email_verifications 테이블 추가(§8). QA 5대 체크리스트 ①·④ 보강(§13-1). 민감정보 환경변수 주입 원칙 추가(§19). 보안=영업 자산 원칙 명시(§9).*
+*이전(v2.6): 섹션 10(구독 플랜 구조), 섹션 22(기관관리자 포털), 섹션 23(슈퍼관리자 어드민), 섹션 24(뷰어 설계), 섹션 25(교수 수업 페이지), 슬라이드 수급 B+C 방식, 사용자 플로우 지위 체계.*
