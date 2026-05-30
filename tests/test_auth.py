@@ -512,12 +512,14 @@ def test_login_missing_fields(client, mock_db):
 
 
 def test_login_required_no_cookie(client):
-    """login_required: 쿠키 없음 → 401 SESSION_EXPIRED"""
+    """login_required: 쿠키 없음 → 401 TOKEN_INVALID (SESSION_REVOKED 오발동 없음)"""
     resp = client.get("/api/auth/me")
-    
+
     assert resp.status_code == 401
     data = resp.get_json()
-    assert data["error"] == "SESSION_EXPIRED"
+    assert data["error"] == "TOKEN_INVALID"
+    # SESSION_REVOKED가 아님을 명시적으로 검증
+    assert data["error"] != "SESSION_REVOKED"
 
 
 def test_login_required_invalid_token(client):
@@ -530,21 +532,21 @@ def test_login_required_invalid_token(client):
 
 
 def test_login_required_expired_token(client):
-    """login_required: 만료된 JWT → 401 SESSION_EXPIRED"""
+    """login_required: 만료된 JWT → 401 TOKEN_INVALID"""
     with patch("auth.decorators.decode_token") as mock_decode:
         import jwt
         mock_decode.side_effect = jwt.ExpiredSignatureError()
-        
+
         client.set_cookie(COOKIE_NAME, "dummy-token")
         resp = client.get("/api/auth/me")
-        
+
         assert resp.status_code == 401
         data = resp.get_json()
-        assert data["error"] == "SESSION_EXPIRED"
+        assert data["error"] == "TOKEN_INVALID"
 
 
 def test_login_required_session_token_mismatch(client, mock_db):
-    """login_required: DB session_token 불일치 (다른 기기) → 401 SESSION_EXPIRED"""
+    """login_required: DB session_token 불일치 (다른 기기 로그인) → 401 SESSION_REVOKED"""
     with patch("server_render.get_db_conn") as mock_get_db, \
          patch("server_render.release_db_conn"):
         mock_get_db.return_value = mock_db["conn"]
@@ -557,17 +559,17 @@ def test_login_required_session_token_mismatch(client, mock_db):
             "is_special": False,
         }
         token = encode_token(payload)
+        client.set_cookie(COOKIE_NAME, token)
 
         mock_db["cursor"].fetchone.return_value = (
-            "new-session-token",
-            "active"
+            "new-session-token", "active", None  # session_token, status, subscription_end
         )
 
-        resp = client.get("/api/auth/me", headers={"Cookie": f"{COOKIE_NAME}={token}"})
+        resp = client.get("http://localhost/api/auth/me")
 
         assert resp.status_code == 401
         data = resp.get_json()
-        assert data["error"] == "SESSION_EXPIRED"
+        assert data["error"] == "SESSION_REVOKED"
 
 
 def test_login_required_pending_verification(client, mock_db):
@@ -971,3 +973,140 @@ def test_admin_csrf_delete_no_header(client):
 
     resp = client.delete('/admin/api/slide/TEST-001')
     assert resp.status_code == 403
+
+
+# ─────────────────────────────────────────────
+# 401 에러 코드 세분화 신규 테스트
+# ─────────────────────────────────────────────
+
+def test_token_invalid_no_cookie(client):
+    """쿠키 없는 요청 → TOKEN_INVALID (SESSION_REVOKED 오발동 없음)"""
+    resp = client.get("/api/auth/me")
+
+    assert resp.status_code == 401
+    data = resp.get_json()
+    assert data["error"] == "TOKEN_INVALID"
+    # 핵심: SESSION_REVOKED가 반환되어서는 안 됨
+    assert data["error"] != "SESSION_REVOKED"
+
+
+def test_session_revoked_on_db_mismatch(client, mock_db):
+    """유효한 쿠키이지만 DB session_token과 불일치 → SESSION_REVOKED"""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+
+        payload = {
+            "sub": "1",
+            "institution_id": "YU",
+            "role": "student",
+            "session_token": "old-token-from-jwt",
+            "is_special": False,
+        }
+        token = encode_token(payload)
+        # Werkzeug 3.x: set_cookie + full URL for cookie delivery
+        client.set_cookie(COOKIE_NAME, token)
+
+        # DB에는 다른 session_token (다른 기기에서 로그인)
+        mock_db["cursor"].fetchone.return_value = (
+            "different-token-in-db", "active", None
+        )
+
+        resp = client.get("http://localhost/api/auth/me")
+
+        assert resp.status_code == 401
+        data = resp.get_json()
+        assert data["error"] == "SESSION_REVOKED"
+        assert data["error"] != "TOKEN_INVALID"
+
+
+def test_subscription_expired_returns_401(client, mock_db):
+    """active 계정, 구독 만료 → SUBSCRIPTION_EXPIRED (401)"""
+    from datetime import date, timedelta
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+
+        payload = {
+            "sub": "1",
+            "institution_id": "YU",
+            "role": "student",
+            "session_token": "valid-sess",
+            "is_special": False,
+        }
+        token = encode_token(payload)
+        client.set_cookie(COOKIE_NAME, token)
+
+        expired_date = date.today() - timedelta(days=1)
+        mock_db["cursor"].fetchone.return_value = (
+            "valid-sess", "active", expired_date
+        )
+
+        resp = client.get("http://localhost/api/auth/me")
+
+        assert resp.status_code == 401
+        data = resp.get_json()
+        assert data["error"] == "SUBSCRIPTION_EXPIRED"
+
+
+def test_is_special_subscription_expired_passes(client, mock_db):
+    """is_special=True 계정, 구독 만료여도 정상 통과"""
+    from datetime import date, timedelta
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+
+        payload = {
+            "sub": "1",
+            "institution_id": "YU",
+            "role": "admin",
+            "session_token": "valid-sess",
+            "is_special": True,
+        }
+        token = encode_token(payload)
+        client.set_cookie(COOKIE_NAME, token)
+
+        expired_date = date.today() - timedelta(days=30)
+        mock_db["cursor"].fetchone.side_effect = [
+            ("valid-sess", "active", expired_date),   # _authenticate
+            (1, "admin@test.com", "admin", "YU", True, "active", None),  # me()
+        ]
+
+        resp = client.get("http://localhost/api/auth/me")
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["success"] is True
+
+
+def test_tile_token_invalid_returns_correct_code(client, mock_db):
+    """타일 토큰 검증 실패 → TILE_TOKEN_INVALID (SESSION_REVOKED·SUBSCRIPTION_EXPIRED 아님)"""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"), \
+         patch("server_render.get_slide_institution") as mock_inst:
+        mock_get_db.return_value = mock_db["conn"]
+        mock_inst.return_value = ("YU", True)  # inst_id, is_public=True
+
+        payload = {
+            "sub": "1",
+            "institution_id": "YU",
+            "role": "student",
+            "session_token": "valid-sess",
+            "is_special": False,
+        }
+        token = encode_token(payload)
+        # Werkzeug 3.x: set_cookie + full URL for cookie delivery
+        client.set_cookie(COOKIE_NAME, token)
+
+        mock_db["cursor"].fetchone.return_value = (
+            "valid-sess", "active", None
+        )
+
+        # 타일 토큰 없이 DZI 접근 (?t= 미포함)
+        resp = client.get("http://localhost/dzi/SA-HST-001.dzi")
+
+        assert resp.status_code == 401
+        data = resp.get_json()
+        assert data["error"] == "TILE_TOKEN_INVALID"
+        # 프론트 인터셉터가 로그인 세션 에러로 오판하지 않도록 구분
+        assert data["error"] not in ("SESSION_REVOKED", "SUBSCRIPTION_EXPIRED", "TOKEN_INVALID")

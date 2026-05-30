@@ -195,7 +195,10 @@ def _verify_tile_request(slide_id):
         t, str(getattr(g, 'user_id', '')),
         getattr(g, 'institution_id', ''), slide_id
     ):
-        return _tile_err("TOKEN_EXPIRED", "타일 접근 토큰이 만료되었습니다. 뷰어를 새로고침하세요.", 401)
+        # TILE_TOKEN_INVALID: 로그인 세션과 무관한 타일 전용 에러.
+        # 프론트 인터셉터가 SESSION_REVOKED·SUBSCRIPTION_EXPIRED와 오판하지 않도록
+        # 코드 문자열을 명확히 구분한다.
+        return _tile_err("TILE_TOKEN_INVALID", "타일 접근 토큰이 만료되었습니다. 뷰어를 새로고침하세요.", 401)
     return None
 
 # ── 온디맨드 슬라이드 캐시 ──

@@ -576,7 +576,8 @@ def login():
             session_token, payload = _issue_token_payload(
                 user_id, institution_id, role, is_special
             )
-            # 기존 세션 무효화: session_token 덮어쓰기 (1기기 동시접속 제어)
+            # 기존 세션 무효화 — 이 시점부터 구 토큰 요청은 _authenticate()에서
+            # SESSION_REVOKED를 반환함. 단일 동시접속 제어의 핵심 지점.
             # + 로그인 성공 시 실패 카운터 리셋
             cur.execute(
                 """UPDATE users

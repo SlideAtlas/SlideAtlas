@@ -281,3 +281,19 @@ python3 run_tests.py
 [2026-05-30][오케스트레이터][완료] Fix3: dzi_tile/_slide_access_allowed, ec2_proxy/_slide_access_allowed, viewer is_public 검사 추가
 [2026-05-30][test-runner][결과] 40/40 PASSED
 [2026-05-30][오케스트레이터][시작] COMPLETION_REPORT.md v3 작성
+[2026-05-30][오케스트레이터][완료] COMPLETION_REPORT.md v3 작성
+[2026-05-30][오케스트레이터][완료] 이메일 발송 성공 (boram@atlaslab.co.kr)
+[2026-05-30][오케스트레이터][완료] git commit a09fd40 + push origin/main 완료
+
+---
+## 401 에러 코드 세분화 작업 (2026-05-30)
+[2026-05-30][오케스트레이터][완료] _authenticate() SESSION_EXPIRED 전량 제거 완료
+  - TOKEN_INVALID: 쿠키 없음·JWT 만료·수동 삭제·유저 미조회·상태 비활성
+  - SESSION_REVOKED: 타 기기 로그인으로 DB session_token 교체 시
+  - SUBSCRIPTION_EXPIRED: 기관 구독 만료 (is_special 예외)
+  - 분기 순서 고정 (token_session 존재 여부 → 불일치 비교 순서)
+[2026-05-30][오케스트레이터][완료] /api/auth/login 세션 무효화 지점 주석 명문화
+[2026-05-30][오케스트레이터][완료] _verify_tile_request TOKEN_EXPIRED → TILE_TOKEN_INVALID
+[2026-05-30][오케스트레이터][완료] CLAUDE.md §8 업데이트 (SESSION_EXPIRED → 4개 에러코드)
+[2026-05-30][test-runner][결과] 45/45 PASSED (기존 40 + 신규 5)
+  신규: token_invalid_no_cookie, session_revoked_on_db_mismatch, subscription_expired_returns_401, is_special_subscription_expired_passes, tile_token_invalid_returns_correct_code

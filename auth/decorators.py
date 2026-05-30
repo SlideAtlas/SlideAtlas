@@ -111,21 +111,26 @@ def _authenticate():
 
     성공 시 None 을 반환하고 g.* 를 채운다.
     실패 시 (error_code, message) 튜플을 반환한다.
+
+    에러 코드 정의:
+      TOKEN_INVALID        : 쿠키 없음·JWT 만료·수동 삭제·유저 미조회·세션 비활성
+      SESSION_REVOKED      : 타 기기 로그인으로 DB의 session_token이 교체된 상태
+      SUBSCRIPTION_EXPIRED : 기관 구독 만료 (is_special 계정 제외)
     """
     token = request.cookies.get(COOKIE_NAME)
     if not token:
-        return ("SESSION_EXPIRED", "다시 로그인하세요")
+        return ("TOKEN_INVALID", "다시 로그인하세요")  # 쿠키 없음·만료·수동 삭제
     try:
         payload = decode_token(token)
     except jwt.ExpiredSignatureError:
-        return ("SESSION_EXPIRED", "다시 로그인하세요")
+        return ("TOKEN_INVALID", "다시 로그인하세요")  # JWT 만료
     except jwt.InvalidTokenError:
-        return ("INVALID_TOKEN", "다시 로그인하세요")
+        return ("INVALID_TOKEN", "다시 로그인하세요")  # JWT 변조
 
     user_id = payload.get("sub")   # str per PyJWT 2.8+ sub requirement
     token_session = payload.get("session_token")
     if user_id is None or not token_session:
-        return ("INVALID_TOKEN", "다시 로그인하세요")
+        return ("TOKEN_INVALID", "다시 로그인하세요")  # JWT payload 불완전
 
     if not _PSYCOPG2_AVAILABLE:
         return ("DB_UNAVAILABLE", "다시 로그인하세요")
@@ -146,19 +151,30 @@ def _authenticate():
     finally:
         release_db_conn(conn)
 
+    # ① 유저 미조회
     if row is None:
-        return ("SESSION_EXPIRED", "다시 로그인하세요")
+        return ("TOKEN_INVALID", "다시 로그인하세요")
+
     db_session, status, subscription_end = row
-    # 동시접속 제어: DB의 최신 session_token 과 다르면 구 세션 → 즉시 만료.
+
+    # ② 세션 토큰 검증 — 반드시 아래 순서를 지킬 것 (순서 변경 금지)
+    # token_session 존재 여부를 먼저 확인해야 None vs None 비교로
+    # SESSION_REVOKED가 오발동하는 것을 막는다.
+    if not token_session:
+        return ("TOKEN_INVALID", "다시 로그인하세요")
     if db_session != token_session:
-        return ("SESSION_EXPIRED", "다시 로그인하세요")
+        # session에 토큰이 명확히 존재하는데 DB값과 다름 = 타 기기 로그인으로
+        # DB의 session_token이 교체된 상태.
+        return ("SESSION_REVOKED", "다른 기기에서 로그인되어 현재 세션이 무효화되었습니다")
+
     if status != "active":
-        return ("SESSION_EXPIRED", "다시 로그인하세요")
-    # 구독 만료 검사: is_special 계정 제외, 매 요청마다 확인 (만료 후 24h 세션 악용 방지)
+        return ("TOKEN_INVALID", "다시 로그인하세요")  # 비활성·잠금 계정
+
+    # ③ 기관 구독 만료 — is_special 계정 제외, 매 요청마다 확인
     if not payload.get("is_special") and subscription_end is not None:
         from datetime import date
         if subscription_end < date.today():
-            return ("SUBSCRIPTION_EXPIRED", "구독이 만료되었습니다. 갱신 후 다시 로그인하세요")
+            return ("SUBSCRIPTION_EXPIRED", "구독이 만료되었습니다. 과 사무실에 문의하세요")
 
     g.user_id = user_id
     g.institution_id = payload.get("institution_id")
