@@ -1,4 +1,4 @@
-# CLAUDE.md — SlideAtlas 프로젝트 메모리 v2.7
+# CLAUDE.md — SlideAtlas 프로젝트 메모리 v2.9
 
 > 이 파일은 Claude Code 세션 시작 시 반드시 읽어야 하는 프로젝트 컨텍스트 파일입니다.
 > 모든 에이전트(오케스트레이터, 개발, QA)는 이 파일을 기준으로 작업합니다.
@@ -32,7 +32,7 @@
 - **AI 튜터**: 슬라이드 메타데이터 + `knowledge_base` JSON → Claude API (VectorDB 없음)
 - **구독 플랜**: TO 기반 4종 플랜 (Department/Standard/Campus/Institution)
 - **모바일**: 반응형 웹 (OpenSeadragon 터치 기본 지원 + CSS 미디어쿼리)
-- **마일스톤**: 9월 가을학기 2~3개교 구독 확보 → 초창패 추경 신청
+- **마일스톤**: 9월 가을학기 구독 기관 확보 → 초창패 추경 신청
 
 ### v1.5 — 콘텐츠 확장·국내 안착 (2026년 말)
 - **콘텐츠**: 병리·기생충 모듈, Mahidol 열대의학 컬렉션 라이선스
@@ -63,10 +63,10 @@
 | 뷰어 | OpenSeadragon |
 | 배포 | Render Starter ($7/월) → **9월 런칭 전 Standard 전환 필수** (콜드스타트 방지) |
 | 저장소 | AWS S3 (ap-northeast-2, 버킷: slideatlas-slides) |
-| 타일서버 | AWS EC2 t3.large (slideatlas-tileserver, ec2-13-209-99-51.ap-northeast-2) |
+| 타일서버 | AWS EC2 t3.medium (slideatlas-tileserver, ec2-13-209-99-51.ap-northeast-2) |
 | 타일엔진 | titiler + 커스텀 타일서버 (~/tileserver/main.py, rasterio 기반) |
 | 파이프라인 | TIFF/SVS/DCM → COG TIFF → S3 → titiler |
-| 데이터 관리 | slides.json + institutions.json → **RDS PostgreSQL 마이그레이션 예정** |
+| 데이터 관리 | RDS PostgreSQL (slideatlas-db, ap-northeast-2c) — 마이그레이션 완료 |
 | AI 연동 | Claude API (/api/chat), 구조가이드/질문하기/퀴즈 탭 |
 | 버전 관리 | GitHub (SlideAtlas/SlideAtlas) |
 
@@ -220,6 +220,19 @@ CREATE TABLE institutions (
   created_at TIMESTAMP DEFAULT NOW()
 );
 
+CREATE TABLE institution_rosters (
+  id SERIAL PRIMARY KEY,
+  institution_id VARCHAR(20) REFERENCES institutions(id),
+  email VARCHAR(200) NOT NULL,
+  name VARCHAR(100),
+  role VARCHAR(20),                -- 'student'|'assistant'|'professor'
+  is_verified BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(institution_id, email)
+);
+-- 기관 관리자가 업로드한 화이트리스트. users 테이블과 별개.
+-- 가입 시 이 테이블에서 이메일+지위 대조, 통과 시에만 users에 INSERT.
+
 CREATE TABLE users (
   id SERIAL PRIMARY KEY,
   institution_id VARCHAR(20) REFERENCES institutions(id),
@@ -228,12 +241,17 @@ CREATE TABLE users (
   role VARCHAR(20) DEFAULT 'student',
   -- 'student' | 'assistant' | 'professor' | 'institution_admin' | 'super_admin' | 'special'
   status VARCHAR(20) DEFAULT 'pending_verification',
-  -- 'pending_verification' | 'active' | 'suspended'
-  -- 가입 직후엔 pending_verification, 이메일 인증코드 확인 시 active 전환.
+  -- 'pending_verification' | 'active' | 'suspended' | 'locked'
+  -- pending_verification: 이메일 인증 전
+  -- active: 정상 서비스 가능
+  -- locked: 보안 잠금 (24h 내 실패 10회 누적)
   -- JWT 발급·서비스 접근은 status='active'일 때만 허용.
   last_login TIMESTAMP,
   session_token VARCHAR(255),
   is_special BOOLEAN DEFAULT FALSE,  -- 특별 계정 (TO 미포함, 무상 무한 접근)
+  failed_attempts INT DEFAULT 0,     -- 24시간 내 누적 실패 횟수 (비번+인증코드 합산)
+  failed_window_start TIMESTAMP,     -- 실패 카운트 윈도우 시작 시각
+  locked_at TIMESTAMP,               -- 잠금 발생 시각 (24시간 후 자동 해제)
   created_at TIMESTAMP DEFAULT NOW()
 );
 
@@ -244,7 +262,9 @@ CREATE TABLE email_verifications (
   purpose VARCHAR(20) DEFAULT 'signup',  -- 'signup' | 'password_reset'
   expires_at TIMESTAMP NOT NULL,         -- 발송 후 10분
   consumed BOOLEAN DEFAULT FALSE,        -- 사용 완료 시 TRUE (재사용 차단)
-  attempts INT DEFAULT 0,                -- 오입력 횟수 (브루트포스 차단, N회 시 코드 폐기)
+  attempts INT DEFAULT 0,                -- 코드 단위 오입력 횟수 (5회 시 코드 폐기)
+  last_resent_at TIMESTAMP,              -- 재발송 쿨다운 추적 (1분)
+  resend_count INT DEFAULT 0,            -- 24시간 내 재발송 횟수 (5회 한도)
   created_at TIMESTAMP DEFAULT NOW()
 );
 
@@ -330,22 +350,32 @@ CREATE TABLE course_assistants (
   user_id INT REFERENCES users(id),
   PRIMARY KEY (course_id, user_id)
 );
+
+CREATE TABLE course_enrollments (
+  course_id INT REFERENCES courses(id),
+  user_id INT REFERENCES users(id),
+  enrolled_at TIMESTAMP DEFAULT NOW(),
+  PRIMARY KEY (course_id, user_id)
+);
 ```
 
 ---
 
 ## 9. 보안 아키텍처
 
-- **Presigned URL**: TTL 5분, S3 버킷 퍼블릭 접근 전면 차단
+- **타일 접근 토큰**: 타일 URL에 HMAC-SHA256 토큰(TTL 5분) 포함. S3 버킷 퍼블릭 접근 전면 차단. 뷰어 로드 시 토큰 발급 → 모든 타일/DZI/썸네일 URL에 `?t=` 포함하여 검증.
 - **동적 워터마킹**: Pillow, 투명도 15~20%, 대각선 반복 패턴, 사용자 ID·기관명 삽입
-- **토큰 저장 방식 (확정)**: JWT는 HttpOnly + Secure + SameSite=Strict 쿠키에 저장. 자바스크립트 접근 차단 → XSS 토큰 탈취 방어. 상태변경 요청은 별도 CSRF 토큰으로 보호. localStorage/sessionStorage 저장 전면 금지.
-- **이메일 인증 (가입 본인 확인)**: 명단 대조 통과 시 해당 이메일로 6자리 코드 발송 → 화면에서 입력·확인 후 계정 활성화. 코드 10분 만료, 1회용, 오입력 횟수 제한. 발송은 Gmail SMTP (보고서 발송과 동일 인프라). email_verifications 테이블로 관리.
+- **토큰 저장 방식 (확정)**: JWT는 HttpOnly + Secure + SameSite=Strict 쿠키에 저장. 자바스크립트 접근 차단 → XSS 토큰 탈취 방어. 상태변경 요청은 CSRF 토큰(X-CSRF-Token 헤더 ↔ csrf_token 쿠키 대조, secrets.compare_digest 타이밍 공격 방지)으로 보호. localStorage/sessionStorage 저장 전면 금지.
+- **이메일 인증 (가입 본인 확인)**: institution_rosters 대조 통과 시 6자리 코드 발송 → 10분 만료, 1회용, 코드 단위 5회 오입력 시 폐기. 재발송: 1분 쿨다운, 24시간 5회 한도. 발송 인프라: Gmail SMTP.
+- **계정 단위 잠금**: 24시간 내 총 오입력(비밀번호 오류 + 인증코드 오류 합산) 10회 누적 → status='locked'. 잠금 시 "보안상 계정이 잠겼습니다. 과 사무실에 문의하세요" 반환. 해제: 기관 관리자 수동 해제 또는 24시간 후 자동 해제 병행. FOR UPDATE로 동시성 방어.
+- **구독 만료 차단**: 매 요청 institutions.subscription_end 확인. 만료 시 즉시 401 반환. 24시간 세션 악용 차단.
+- **슬라이드·타일 라우트 인증**: 모든 /viewer/, /slides, /dzi/*, /thumbnail/*, /ec2tile/*, /api/chat 라우트에 @login_required 적용. 슬라이드의 institution_id와 g.institution_id 일치 여부 검사(멀티테넌시 격리).
 - **브라우저 캐시**: `Cache-Control: no-store, no-cache`
 - **서버사이드 캐시**: 동일 user_id + tile_key 조합, TTL 5분
 - **동시접속 제어**: 새 기기 로그인 시 기존 session_token 무효화 (특별 계정 포함)
 - **멀티테넌시**: institution_id 기반 Row Level 격리
 
-> **보안 = 영업 자산**: 콘텐츠 공급사(Happy Science 등)의 최대 우려는 슬라이드 이미지 탈취. 다층 방어(HttpOnly 쿠키·워터마킹·presigned URL·단일세션)는 사용자 보호인 동시에 라이선스 협상에서 공급사 신뢰를 사는 카드다.
+> **보안 = 영업 자산**: 콘텐츠 공급사(Happy Science 등)의 최대 우려는 슬라이드 이미지 탈취. 다층 방어(HttpOnly 쿠키·워터마킹·타일 토큰·단일세션·계정 잠금)는 사용자 보호인 동시에 라이선스 협상에서 공급사 신뢰를 사는 카드다.
 
 ---
 
@@ -415,10 +445,14 @@ SlideAtlas 무관 질문에는 답변하지 마세요.
 - institution_id 기반 슬라이드 접근 격리 확인
 - JWT 토큰 변조 공격 방어
 - JWT가 HttpOnly+Secure+SameSite 쿠키에만 저장되는지 (localStorage 미사용 확인)
-- CSRF 토큰 검증이 모든 상태변경 요청에 적용되는지
+- CSRF 토큰 검증이 모든 상태변경 요청에 적용되는지 (secrets.compare_digest)
 - session_token 1기기 동시접속 제어 (특별 계정 포함)
-- Presigned URL TTL 정확히 5분
-- 브라우저 캐시 no-store 헤더 확인
+- 타일 접근 HMAC 토큰 TTL 정확히 5분
+- 브라우저 캐시 no-store, no-cache 헤더 확인
+- 계정 단위 잠금(24시간/10회 합산) 작동 확인
+- 재발송 쿨다운(1분)·횟수 제한(24시간 5회) 작동 확인
+- 구독 만료 계정 매 요청 즉시 차단 확인
+- is_public=FALSE 슬라이드 비인가 접근 차단 확인
 
 **② 파이프라인 안전성**
 - COG TIFF 처리 시 파일 전체 메모리 로드 금지 (스트리밍 강제)
@@ -433,9 +467,9 @@ SlideAtlas 무관 질문에는 답변하지 마세요.
 **④ 비즈니스 로직**
 - subscription_end 경과 사용자 접근 차단
 - TO 초과 시 신규 인증 차단 (기관 포털 게이지 연동)
-- 지위 대조: 엑셀 지위와 가입 시 선택 지위 불일치 시 인증 차단
+- 지위 대조: institution_rosters 지위와 가입 시 선택 지위 불일치 시 인증 차단
 - 이메일 인증코드 미확인 계정(status=pending_verification)의 토큰 발급·서비스 접근 차단
-- 인증코드 만료(10분)·재사용·브루트포스(오입력 N회 시 폐기) 방어 작동
+- 인증코드 만료(10분)·재사용·브루트포스(5회 시 폐기) 방어 작동
 - /api/chat 진단·치료 질문 방어벽 작동
 
 **⑤ DB 마이그레이션 & 라이선스 격리**
@@ -467,11 +501,17 @@ SlideAtlas 무관 질문에는 답변하지 마세요.
 |------|------|
 | ~7월 말 | 개발 완성 (JWT 인증, 기관 포털, 파이프라인, 동적 워터마킹, 교수 수업 페이지) |
 | 7월 말 | locust 부하테스트 1차 실행 |
-| 8월 | 충남대 베타 — 200명 전면 오픈, 무료 1년 |
+| 7~8월 | 여름방학 중 전 타겟(지방의대·치대·수의대·한의대·약대) 동시 홍보·영업 집중 |
+| 8월 | 베타 파트너 기관 확정 시 오픈 (기관·조건 미확정, 확정되면 진행) |
 | 8월 | educational QC 체크리스트 작성, 대학원생 검수 시작 |
 | 8월 말 | Go Criteria 전항목 점검 |
-| 9월 | 전면 오픈 — 지방의대·치대·수의대·한의대 집중 영업 |
+| 9월 | 전면 오픈 — 가을학기 구독 기관 확보 집중 |
 | 10월 | 대한해부학회 추계학술대회 부스 참가 |
+
+**베타 전략 원칙**
+- 특정 기관을 전제로 개발 방향을 잡지 않는다.
+- 여름방학 홍보 결과 먼저 구독 의사를 밝히는 기관이 사실상의 베타 파트너가 된다.
+- 충남대는 가능성 있는 후보 중 하나 (1,800만원 슬라이드 구매 협의 진행 중, 결과에 따라 베타 논의 가능).
 
 ---
 
@@ -479,11 +519,17 @@ SlideAtlas 무관 질문에는 답변하지 마세요.
 
 | 순위 | 타겟 | 규모 | 전략 |
 |------|------|------|------|
-| 1 | 지방 의대 | ~30개교 | 충남대 레퍼런스, 아버지 납품 네트워크 |
+| 1 | 지방 의대 | ~30개교 | 아버지 납품 네트워크 + 직접 홍보 |
 | 1 | 치대·수의대 | ~21개교 | 경쟁자 없는 블루오션 |
 | 2 | 한의대 | 12개교 | 동국대 → 도미노 |
 | 3 | 약대·보건대·간호대 | 250개교+ | 카탈로그 배포 일괄 공략 |
-| 후순위 | 서울 대형 의대 | ~10개교 | 레퍼런스 10개 확보 후 재공략 |
+| 후순위 | 서울 대형 의대 | ~10개교 | 레퍼런스 확보 후 재공략 |
+
+**여름방학 홍보 전략**
+- 특정 레퍼런스 기관을 기다리지 않고 전 타겟에 동시 홍보
+- 먼저 구독 의사를 밝히는 기관이 초기 파트너 → 얼리버드 조건 제공
+- 영업 네트워크: 경희대 의료원 교수(군대 고참), 연세대 소아과 교수(교회 형님), 단국대 서민 교수(기생충학), 아버지 지방의대 납품망
+- 구매의향서(LOI) 3~5개 목표 → 초창패 심사 보완용
 
 ---
 
@@ -505,7 +551,7 @@ SlideAtlas 무관 질문에는 답변하지 마세요.
 - **8월 베타까지**: 보람님 1인 + 자동화 모듈
 - **9월 런칭 시**: 대학원생 파트타임 인턴 1명 (월 150만원, 1개월)
   - 역할: educational QC 검수 + knowledge_base JSON 수정
-  - 채용 루트: 군대 고참 형님 → 서울대 기초조직학 교수 → 대학원생 소개
+  - 채용 루트: 베타 파트너 기관 교수 → 대학원생 소개
 - **정규직 채용**: 구독 5개교 이상 + 초창패 수령 후
 
 ### 자동화 가능 영역
@@ -521,13 +567,18 @@ SlideAtlas 무관 질문에는 답변하지 마세요.
 
 - **AWS 자격증명**: nohup 컨텍스트에서 인라인 치환 실패 → 환경변수 먼저 export 후 실행
 - **Windows SCP**: PEM 권한 설정은 비관리자 PowerShell에서 icacls 처리
+- **RDS 접속**: EC2 Instance Connect → psql로 접근 (로컬 psql 불필요)
+  - 엔드포인트: slideatlas-db.c94iwikwox6l.ap-northeast-2.rds.amazonaws.com
+  - 로컬 `.env`로 Flask가 RDS에 원격 연결하는 구조 (로컬 DB 설치 불필요)
 - **COG 변환 배치**: TIFF 1장당 5~15분, 143장 = 최대 35시간 → EC2 밤새 배치 실행
 - **매출 우선 원칙**: 정부지원보다 9월 매출 데이터 확보 최우선
 - **모듈 경계 원칙**: `ConversionJob` / `ConversionResult` 데이터 계약 변경 금지
 - **Render 콜드스타트**: Starter 슬립 모드 → 9월 전 Standard 전환 필수
 - **동적 워터마킹 성능**: Pillow 처리 타일당 ms 반드시 benchmark
 - **educational QC 원칙**: 기술 QC 통과 ≠ 서비스 가능. educational_qc_status passed 필수
-- **민감정보 취급**: Gmail 앱 비밀번호·API 키 등은 코드/저장소에 직접 기재 금지. 환경변수로만 주입.
+- **민감정보 취급**: Gmail 앱 비밀번호·API 키·DB 비번 등은 코드/저장소에 직접 기재 금지. 환경변수(.env)로만 주입. .env는 .gitignore에 포함.
+- **파이썬 실행**: 항상 python3 사용 (python 명령 없음)
+- **RDS 파괴적 작업**: DROP/DELETE/TRUNCATE는 CEO 명시적 승인 없이 절대 실행 금지
 
 ---
 
@@ -555,7 +606,7 @@ SlideAtlas 무관 질문에는 답변하지 마세요.
 **지위 3종**: 학생(student) / 조교(assistant) / 교수(professor)
 
 **등록 방식**: 기관 관리자 엑셀 업로드 컬럼: `이메일 | 이름 | 지위(학생/조교/교수)`
-가입 시 본인이 선택한 지위 + 엑셀 지위 대조 → 일치 시 이메일 인증코드 발송, 불일치 시 차단
+가입 시 본인이 선택한 지위 + institution_rosters 대조 → 일치 시 인증코드 발송, 불일치 시 차단
 
 **지위별 권한**:
 
@@ -580,13 +631,13 @@ slideatlas.net 접속
   → 로그인 / 회원가입 선택
       ├── 기존 회원: 이메일 + 비밀번호 → 인증 → 홈
       └── 신규 가입: 정보 입력 + 지위 선택(학생/조교/교수)
-              → 기관 명단 대조 (이메일 + 지위 동시 대조)
+              → institution_rosters 명단 대조 (이메일 + 지위 동시 대조)
               ├── 불일치: "과 사무실 문의" 안내 → 관리자 명단 수정 → 재대조
               └── 일치: 해당 이메일로 6자리 인증코드 발송
                       → 가입 화면에서 코드 입력
                       ├── 코드 일치(10분 내): status=active 전환
                       │     → 마이페이지 자동 생성 → 홈
-                      └── 코드 불일치/만료: 오류 안내 → 재발송
+                      └── 코드 불일치/만료: 오류 안내 → 재발송(쿨다운 1분, 24h 5회)
   → 홈 (수업 탭 / 전체 탭)
   → 슬라이드 뷰어
   → AI 튜터 (구조가이드 / 질문하기 / 퀴즈)
@@ -595,13 +646,11 @@ slideatlas.net 접속
 
 ### 21-5. 회원가입 핵심 정책
 
-- 계정 활성화 조건 2종 동시 충족: ① 명단 이메일+지위 일치 ② 이메일 인증코드 확인.
-- **본인 확인 = 6자리 이메일 인증코드**: 명단에 있는 이메일이라도, 그 메일함을 실제 통제하는 사람만 가입 가능 (이메일 도용·추측 가입 차단).
-  - 유효기간 10분 / 1회용(사용 후 무효) / 오입력 누적 시 코드 폐기 후 재발송 요구.
-  - 명단 대조 통과한 이메일에만 코드 발송 (발송 낭비·탐색 공격 방지).
-  - 발송 인프라: Gmail SMTP (밤샘 보고서 발송과 동일).
-- 인증 전 계정은 status=pending_verification 상태로 생성되며 JWT 발급·서비스 접근 불가. 인증 완료 시 active 전환.
-- **순서 중요**: 기관관리자 명단 업로드 → 학생 가입. 계약 시 기관에 반드시 안내.
+- 계정 활성화 조건 2종 동시 충족: ① institution_rosters 이메일+지위 일치 ② 이메일 인증코드 확인.
+- **본인 확인 = 6자리 이메일 인증코드**: 유효기간 10분 / 1회용 / 코드 단위 5회 오입력 시 폐기.
+- **계정 잠금**: 24시간 내 총 실패 10회(비밀번호+인증코드 합산) → status=locked. 기관 관리자 수동 해제 또는 24시간 자동 해제.
+- **재발송**: 1분 쿨다운 / 24시간 5회 한도 / locked·suspended 계정 차단.
+- **순서 중요**: 기관관리자 명단 업로드(institution_rosters) → 학생 가입. 계약 시 기관에 반드시 안내.
 - 소속 기관·지위: 마이페이지에서 읽기 전용. 변경 필요 시 관리자 경유.
 - 명단 수정 후 재가입 불필요 — 이미 입력한 정보로 자동 재대조.
 
@@ -672,6 +721,9 @@ slideatlas.net 접속
 - "명단 다운로드" 버튼 → `{기관명}_명단_{날짜}.csv` 다운로드
 - UTF-8 BOM 처리 (엑셀 한글 깨짐 방지)
 - 컬럼: 번호/이름/이메일/지위/인증상태
+
+**계정 잠금 해제**
+- locked 상태 구성원 표시 + 수동 해제 버튼 (기관 관리자 권한)
 
 **삭제 확인 모달 문구 (확정)**
 ```
@@ -966,16 +1018,7 @@ S3에 TIFF 파일 업로드 (AWS CLI 또는 S3 콘솔)
 - `course_weeks`: 주차 (course_id, week_number, title)
 - `course_week_slides`: 주차별 슬라이드 (course_week_id, slide_id, display_order)
 - `course_assistants`: 수업별 조교 위임 (course_id, user_id)
-- 학생 수업 등록: `course_enrollments` 테이블 추가 필요
-
-```sql
-CREATE TABLE course_enrollments (
-  course_id INT REFERENCES courses(id),
-  user_id INT REFERENCES users(id),
-  enrolled_at TIMESTAMP DEFAULT NOW(),
-  PRIMARY KEY (course_id, user_id)
-);
-```
+- `course_enrollments`: 학생 수업 등록 (course_id, user_id)
 
 ### 25-6. 권한 정리
 
@@ -992,6 +1035,11 @@ CREATE TABLE course_enrollments (
 
 ---
 
-*최종 업데이트: 2026-05-30 v2.7*
-*주요 변경: 가입 시 이메일 인증코드(6자리) 도입 — 이메일 도용·추측 가입 차단(§21-4·§21-5). 토큰 저장 방식 HttpOnly+Secure+SameSite 쿠키+CSRF로 확정(§9). users.status 컬럼·email_verifications 테이블 추가(§8). QA 5대 체크리스트 ①·④ 보강(§13-1). 민감정보 환경변수 주입 원칙 추가(§19). 보안=영업 자산 원칙 명시(§9).*
-*이전(v2.6): 섹션 10(구독 플랜 구조), 섹션 22(기관관리자 포털), 섹션 23(슈퍼관리자 어드민), 섹션 24(뷰어 설계), 섹션 25(교수 수업 페이지), 슬라이드 수급 B+C 방식, 사용자 플로우 지위 체계.*
+*최종 업데이트: 2026-05-30 v2.9*
+*주요 변경:*
+*v2.8 통합 — 계정 단위 잠금(24h/10회 비번+인증코드 합산, status=locked, FOR UPDATE), 이메일 재발송(1분 쿨다운/24h 5회), 타일 접근 HMAC-SHA256 토큰(TTL 5분), CSRF X-CSRF-Token 서버 검증 완성(secrets.compare_digest), 구독 만료 매 요청 차단, 슬라이드·타일 전 라우트 @login_required+institution_id 격리, is_public=FALSE 비인가 차단, /api/chat 탈옥 방어.*
+*DB 스키마 — institution_rosters 테이블 추가, users에 failed_attempts/failed_window_start/locked_at/status=locked 추가, email_verifications에 last_resent_at/resend_count 추가, course_enrollments 본문 포함.*
+*전략 수정 — 충남대 베타 기정사실 표현 전면 수정: 충남대는 가능성 있는 후보 중 하나로 조정. 여름방학 중 전 타겟 동시 홍보·영업 집중 전략으로 변경(§15·§16). 영업 네트워크 §16에 명시.*
+*개발 원칙 — RDS 접속 정보, python3 사용, 파괴적 작업 금지, 채용 루트 일반화(§18·§19).*
+*기술 스택 — EC2 t3.medium 수정, RDS 마이그레이션 완료 표기(§3).*
+*이전(v2.7): 이메일 인증코드 도입, HttpOnly 쿠키 확정, email_verifications 테이블, users.status 컬럼.*
