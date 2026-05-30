@@ -235,15 +235,16 @@ def test_verify_email_code_mismatch(client, mock_db):
                 1, "123456",
                 datetime.now(timezone.utc) + timedelta(minutes=5),
                 False, 3
-            )
+            ),
+            (0, None),   # _check_and_increment_failed: failed_attempts, failed_window_start
         ]
-        
+
         resp = client.post("/api/auth/verify-email",
                           json={
                               "email": "test@example.com",
                               "code": "999999"
                           })
-        
+
         assert resp.status_code == 400
         data = resp.get_json()
         assert data["error"] == "CODE_MISMATCH"
@@ -260,12 +261,13 @@ def test_verify_email_code_mismatch_last_attempt(client, mock_db):
         mock_db["cursor"].fetchone.side_effect = [
             (1, "YU", "student", False),
             (
-                1, "123456", 
+                1, "123456",
                 datetime.now(timezone.utc) + timedelta(minutes=5),
                 False, 4
-            )
+            ),
+            (4, None),   # _check_and_increment_failed: 4 previous failures, new window
         ]
-        
+
         resp = client.post("/api/auth/verify-email",
                           json={
                               "email": "test@example.com",
@@ -364,19 +366,20 @@ def test_login_invalid_credentials_wrong_password(client, mock_db):
         from werkzeug.security import generate_password_hash
         correct_hash = generate_password_hash("correct_password")
         
-        mock_db["cursor"].fetchone.return_value = (
-            1, "YU", "student", False,
-            correct_hash,
-            "active",
-            datetime.now(timezone.utc) + timedelta(days=365)
-        )
-        
+        # Login query: id, institution_id, role, is_special, pw_hash, status, locked_at, subscription_end
+        # Then _check_and_increment_failed queries: failed_attempts, failed_window_start
+        mock_db["cursor"].fetchone.side_effect = [
+            (1, "YU", "student", False, correct_hash, "active", None,
+             datetime.now(timezone.utc) + timedelta(days=365)),
+            (0, None),  # _check_and_increment_failed
+        ]
+
         resp = client.post("/api/auth/login",
                           json={
                               "email": "test@example.com",
                               "password": "wrong_password"
                           })
-        
+
         assert resp.status_code == 401
         data = resp.get_json()
         assert data["error"] == "INVALID_CREDENTIALS"
@@ -394,6 +397,7 @@ def test_login_email_not_verified(client, mock_db):
             1, "YU", "student", False,
             generate_password_hash("password"),
             "pending_verification",
+            None,  # locked_at
             datetime.now(timezone.utc) + timedelta(days=365)
         )
         
@@ -420,15 +424,16 @@ def test_login_subscription_expired_regular_user(client, mock_db):
             1, "YU", "student", False,
             generate_password_hash("password"),
             "active",
+            None,  # locked_at
             datetime.now(timezone.utc).date() - timedelta(days=1)
         )
-        
+
         resp = client.post("/api/auth/login",
                           json={
                               "email": "test@example.com",
                               "password": "password"
                           })
-        
+
         assert resp.status_code == 403
         data = resp.get_json()
         assert data["error"] == "SUBSCRIPTION_EXPIRED"
@@ -446,6 +451,7 @@ def test_login_subscription_expired_but_is_special(client, mock_db):
             1, "YU", "student", True,
             generate_password_hash("password"),
             "active",
+            None,  # locked_at
             datetime.now(timezone.utc).date() - timedelta(days=1)
         )
         
@@ -472,15 +478,16 @@ def test_login_success(client, mock_db):
             1, "YU", "student", False,
             generate_password_hash("password"),
             "active",
+            None,  # locked_at
             datetime.now(timezone.utc).date() + timedelta(days=365)
         )
-        
+
         resp = client.post("/api/auth/login",
                           json={
                               "email": "test@example.com",
                               "password": "password"
                           })
-        
+
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["success"] is True
@@ -660,15 +667,265 @@ def test_logout_success(client, mock_db):
             "is_special": False,
         }
         token = encode_token(payload)
+        csrf_value = "test-csrf-token-1234"
         client.set_cookie(COOKIE_NAME, token)
+        client.set_cookie("csrf_token", csrf_value)
 
         mock_db["cursor"].fetchone.return_value = (
             "valid-session-123", "active"
         )
 
-        # Werkzeug 3.x: set_cookie requires full URL for domain matching
-        resp = client.post("http://localhost/api/auth/logout")
+        # Werkzeug 3.x: full URL for domain matching; X-CSRF-Token required by login_required
+        resp = client.post(
+            "http://localhost/api/auth/logout",
+            headers={"X-CSRF-Token": csrf_value},
+        )
 
         assert resp.status_code == 200
         assert any("Delete" in c or "Max-Age=0" in c
                   for c in resp.headers.getlist("Set-Cookie"))
+
+
+# ─────────────────────────────────────────────
+# 계정 잠금 테스트
+# ─────────────────────────────────────────────
+
+def test_login_account_locked(client, mock_db):
+    """로그인: 잠긴 계정 → 403 ACCOUNT_LOCKED"""
+    from werkzeug.security import generate_password_hash
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+
+        locked_at = datetime.now(timezone.utc) - timedelta(hours=1)  # 잠근지 1시간
+        mock_db["cursor"].fetchone.return_value = (
+            1, "YU", "student", False,
+            generate_password_hash("password"),
+            "locked",
+            locked_at,  # locked_at 1시간 전 (24h 미경과)
+            datetime.now(timezone.utc).date() + timedelta(days=365)
+        )
+
+        resp = client.post("/api/auth/login",
+                          json={"email": "test@example.com", "password": "password"})
+
+        assert resp.status_code == 403
+        data = resp.get_json()
+        assert data["error"] == "ACCOUNT_LOCKED"
+
+
+def test_login_account_auto_unlock(client, mock_db):
+    """로그인: 잠긴 계정이지만 24시간 경과 → 자동 해제 후 로그인 성공"""
+    from werkzeug.security import generate_password_hash
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+
+        locked_at = datetime.now(timezone.utc) - timedelta(hours=25)  # 25시간 전 잠금
+        mock_db["cursor"].fetchone.return_value = (
+            1, "YU", "student", False,
+            generate_password_hash("password"),
+            "locked",
+            locked_at,
+            datetime.now(timezone.utc).date() + timedelta(days=365)
+        )
+
+        resp = client.post("/api/auth/login",
+                          json={"email": "test@example.com", "password": "password"})
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["success"] is True
+
+
+def test_login_wrong_password_locks_account(client, mock_db):
+    """로그인: 10회 비밀번호 오류 누적 → ACCOUNT_LOCKED 반환"""
+    from werkzeug.security import generate_password_hash
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+
+        correct_hash = generate_password_hash("correct")
+        window_start = datetime.now(timezone.utc) - timedelta(hours=1)
+
+        # Login query + _check_and_increment_failed: already at 9, new attempt = 10 → lock
+        mock_db["cursor"].fetchone.side_effect = [
+            (1, "YU", "student", False, correct_hash, "active", None,
+             datetime.now(timezone.utc).date() + timedelta(days=365)),
+            (9, window_start),   # failed_attempts=9, window still active → new=10 → locked
+        ]
+
+        resp = client.post("/api/auth/login",
+                          json={"email": "test@example.com", "password": "wrong"})
+
+        assert resp.status_code == 403
+        data = resp.get_json()
+        assert data["error"] == "ACCOUNT_LOCKED"
+
+
+def test_verify_email_code_mismatch_triggers_lock(client, mock_db):
+    """인증코드 오입력: 카운터 누적으로 계정 잠금 → ACCOUNT_LOCKED"""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+
+        window_start = datetime.now(timezone.utc) - timedelta(hours=1)
+        mock_db["cursor"].fetchone.side_effect = [
+            (1, "YU", "student", False),
+            (1, "123456", datetime.now(timezone.utc) + timedelta(minutes=5), False, 2),
+            (9, window_start),   # 9 previous fails → 10th → locked
+        ]
+
+        resp = client.post("/api/auth/verify-email",
+                          json={"email": "test@example.com", "code": "wrong"})
+
+        assert resp.status_code == 403
+        data = resp.get_json()
+        assert data["error"] == "ACCOUNT_LOCKED"
+
+
+# ─────────────────────────────────────────────
+# 인증코드 재발송 테스트
+# ─────────────────────────────────────────────
+
+def test_resend_code_success(client, mock_db):
+    """인증코드 재발송: 성공 → 200"""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"), \
+         patch("auth.auth.send_verification_email") as mock_send:
+        mock_get_db.return_value = mock_db["conn"]
+
+        now = datetime.now(timezone.utc)
+        mock_db["cursor"].fetchone.side_effect = [
+            (1, "pending_verification"),                      # user lookup
+            (now - timedelta(minutes=5),),                   # last_sent (5분 전, 쿨다운 통과)
+            (1,),                                             # daily_count=1 (한도 미달)
+        ]
+
+        resp = client.post("/api/auth/resend-code",
+                          json={"email": "test@example.com"})
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["success"] is True
+        assert mock_send.called
+
+
+def test_resend_code_cooldown(client, mock_db):
+    """인증코드 재발송: 1분 이내 재발송 → 429 RESEND_TOO_SOON"""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+
+        now = datetime.now(timezone.utc)
+        mock_db["cursor"].fetchone.side_effect = [
+            (1, "pending_verification"),
+            (now - timedelta(seconds=30),),   # 30초 전 발송 → 쿨다운
+        ]
+
+        resp = client.post("/api/auth/resend-code",
+                          json={"email": "test@example.com"})
+
+        assert resp.status_code == 429
+        data = resp.get_json()
+        assert data["error"] == "RESEND_TOO_SOON"
+
+
+def test_resend_code_daily_limit(client, mock_db):
+    """인증코드 재발송: 24시간 5회 초과 → 429 RESEND_LIMIT_EXCEEDED"""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+
+        now = datetime.now(timezone.utc)
+        mock_db["cursor"].fetchone.side_effect = [
+            (1, "pending_verification"),
+            (now - timedelta(minutes=5),),   # 쿨다운 통과
+            (5,),                            # daily_count=5 → 한도 초과
+        ]
+
+        resp = client.post("/api/auth/resend-code",
+                          json={"email": "test@example.com"})
+
+        assert resp.status_code == 429
+        data = resp.get_json()
+        assert data["error"] == "RESEND_LIMIT_EXCEEDED"
+
+
+def test_resend_code_locked_account_blocked(client, mock_db):
+    """인증코드 재발송: 잠긴 계정 → 403 ACCOUNT_LOCKED"""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+
+        mock_db["cursor"].fetchone.return_value = (1, "locked")
+
+        resp = client.post("/api/auth/resend-code",
+                          json={"email": "test@example.com"})
+
+        assert resp.status_code == 403
+        data = resp.get_json()
+        assert data["error"] == "ACCOUNT_LOCKED"
+
+
+def test_resend_code_missing_email(client, mock_db):
+    """인증코드 재발송: 이메일 누락 → 400 MISSING_FIELDS"""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+
+        resp = client.post("/api/auth/resend-code", json={})
+
+        assert resp.status_code == 400
+        data = resp.get_json()
+        assert data["error"] == "MISSING_FIELDS"
+
+
+# ─────────────────────────────────────────────
+# CSRF 검증 테스트
+# ─────────────────────────────────────────────
+
+def test_csrf_missing_header_returns_403(client, mock_db):
+    """login_required POST: X-CSRF-Token 헤더 없음 → 403 CSRF_INVALID"""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+
+        payload = {"sub": "1", "institution_id": "YU", "role": "student",
+                   "session_token": "sess123", "is_special": False}
+        token = encode_token(payload)
+        client.set_cookie(COOKIE_NAME, token)
+        client.set_cookie("csrf_token", "some-csrf-token")
+
+        mock_db["cursor"].fetchone.return_value = ("sess123", "active")
+
+        # No X-CSRF-Token header → 403
+        resp = client.post("http://localhost/api/auth/logout")
+
+        assert resp.status_code == 403
+        data = resp.get_json()
+        assert data["error"] == "CSRF_INVALID"
+
+
+def test_csrf_mismatched_token_returns_403(client, mock_db):
+    """login_required POST: X-CSRF-Token 헤더와 쿠키 불일치 → 403 CSRF_INVALID"""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+
+        payload = {"sub": "1", "institution_id": "YU", "role": "student",
+                   "session_token": "sess123", "is_special": False}
+        token = encode_token(payload)
+        client.set_cookie(COOKIE_NAME, token)
+        client.set_cookie("csrf_token", "correct-csrf-token")
+
+        mock_db["cursor"].fetchone.return_value = ("sess123", "active")
+
+        resp = client.post(
+            "http://localhost/api/auth/logout",
+            headers={"X-CSRF-Token": "wrong-csrf-token"},
+        )
+
+        assert resp.status_code == 403
+        data = resp.get_json()
+        assert data["error"] == "CSRF_INVALID"

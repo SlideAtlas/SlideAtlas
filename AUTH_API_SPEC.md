@@ -139,7 +139,41 @@ CODE_MISMATCH 응답 예:
 | 401 | INVALID_CREDENTIALS | 이메일 없음 또는 비밀번호 불일치 |
 | 403 | EMAIL_NOT_VERIFIED | 이메일 인증 미완료 → "이메일 인증을 완료하세요" |
 | 403 | ACCOUNT_INACTIVE | 비활성 계정 |
+| 403 | ACCOUNT_LOCKED | 누적 인증 실패로 잠금(24h 내 10회) → "보안상 계정이 잠겼습니다. 과 사무실에 문의하세요". 24시간 경과 시 자동 해제 |
 | 403 | SUBSCRIPTION_EXPIRED | 기관 구독 만료 → "구독이 만료되었습니다" (결제 유도 팝업) |
+| 500 | SERVER_ERROR | 서버 오류 |
+
+> **계정 잠금 정책**: 로그인 비밀번호 오류 + 이메일 인증코드 오류가 24시간 윈도우 내 합산 10회 도달 시
+> 계정 status가 `locked`로 전환된다. 마지막 잠금 시각으로부터 24시간 경과 시 다음 로그인 시도에서 자동 해제된다.
+> 로그인/인증 성공 시 실패 카운터는 즉시 0으로 리셋된다.
+
+---
+
+## 2-1. 인증코드 재발송 — `POST /api/auth/resend-code`
+
+요청:
+```json
+{ "email": "kim@yonsei.ac.kr" }
+```
+- `pending_verification` 상태 계정에 대해서만 새 6자리 코드를 발급·발송한다.
+- 기존 미소진 코드는 폐기된다.
+- 쿨다운 60초, 24시간 내 최대 5회.
+
+성공 (200):
+```json
+{ "success": true, "data": { "message": "새 인증코드가 발송되었습니다" } }
+```
+
+에러:
+| HTTP | error | 의미 |
+|------|-------|------|
+| 400 | MISSING_FIELDS | 이메일 누락 |
+| 403 | ACCOUNT_LOCKED | 잠김/정지 계정 → "보안상 계정이 잠겼습니다. 과 사무실에 문의하세요" |
+| 404 | USER_NOT_FOUND | 가입된 계정 없음 |
+| 409 | ALREADY_VERIFIED | 이미 인증된 계정 |
+| 429 | RESEND_TOO_SOON | 60초 쿨다운 중 → "N초 후에 다시 시도하세요" |
+| 429 | RESEND_LIMIT_EXCEEDED | 24시간 5회 한도 초과 |
+| 502 | EMAIL_SEND_FAILED | 발송 실패 |
 | 500 | SERVER_ERROR | 서버 오류 |
 
 ---
@@ -184,6 +218,41 @@ if (res.status === 401 && json.error === "SESSION_EXPIRED") {
 ```
 - 401 `INVALID_TOKEN`도 동일하게 로그인 화면으로 보낸다.
 - 403 `SUBSCRIPTION_EXPIRED`는 로그인 단계에서 발생 → 결제/문의 안내 팝업.
+
+---
+
+## 보호된 콘텐츠 라우트 (server_render.py)
+
+로그인(JWT 쿠키) 필요. 멀티테넌시 격리 + 5분 타일 접근 토큰 적용.
+
+| 라우트 | 보호 | 비고 |
+|--------|------|------|
+| `/slides`, `/viewer`, `/viewer/<id>` | page_login_required | 미인증 시 `/`로 redirect. 타 기관 슬라이드 viewer 접근 시 403 HTML |
+| `/dzi/<id>.dzi` | login_required + 기관격리 + 타일토큰 | descriptor 단계에서 기관 검증 |
+| `/dzi/<id>_files/...` | login_required + 타일토큰 | 개별 타일(기관격리는 descriptor에서 처리) |
+| `/thumbnail/<id>` | login_required + 기관격리 + 타일토큰 | |
+| `/ec2tile/<path>` | login_required + 타일토큰 | subpath에서 slide_id 추출 |
+| `/api/chat` | login_required (CSRF 필요: POST) | |
+
+타일 접근 토큰: 뷰어 페이지 로드 시 발급되는 HMAC-SHA256 서명 토큰(5분). 타일/DZI/썸네일 요청 URL에 `?t=` 로 부착.
+
+| HTTP | error | 의미 |
+|------|-------|------|
+| 401 | TOKEN_EXPIRED | 타일 접근 토큰 만료/위조 → 뷰어 새로고침 필요 |
+| 403 | FORBIDDEN | 타 기관 슬라이드 접근 차단 |
+| 404 | SLIDE_NOT_FOUND | 존재하지 않는 슬라이드 |
+
+## CSRF 보호
+
+`login_required`가 적용된 엔드포인트의 POST/PUT/DELETE/PATCH 요청은 더블서밋 CSRF 검증 대상.
+요청 헤더 `X-CSRF-Token` 값과 `csrf_token` 쿠키 값이 일치해야 한다 (상수시간 비교).
+
+| HTTP | error | 의미 |
+|------|-------|------|
+| 403 | CSRF_INVALID | CSRF 토큰 누락/불일치 |
+
+> 비로그인 auth 엔드포인트(register/login/verify-email/resend-code)는 `login_required`가 없으므로 CSRF 대상이 아니다.
+> `logout`은 `login_required`가 있으므로 CSRF 검증 대상이다.
 
 ---
 

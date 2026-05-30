@@ -15,6 +15,16 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS status     VARCHAR(20) DEFAULT 'activ
 ALTER TABLE users ADD COLUMN IF NOT EXISTS is_special BOOLEAN     DEFAULT FALSE;
 
 -- ─────────────────────────────────────────────
+-- 계정 잠금(브루트포스 방어) 컬럼
+--   failed_attempts     : 윈도우 내 누적 인증 실패 횟수
+--   failed_window_start : 카운팅 윈도우 시작 시각(24h)
+--   locked_at           : 잠금 시각 (NULL = 미잠금). 24h 경과 시 자동 해제.
+-- ─────────────────────────────────────────────
+ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_attempts     INT       DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_window_start TIMESTAMP NULL;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_at           TIMESTAMP NULL;
+
+-- ─────────────────────────────────────────────
 -- 기관 명단 화이트리스트 (users와 별개)
 -- ─────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS institution_rosters (

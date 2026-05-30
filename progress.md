@@ -208,3 +208,35 @@ python3 run_tests.py
 ---
 ## 2회차 작업 시작 (2026-05-30)
 [2026-05-30][오케스트레이터][시작] JWT 보안 결함 수정 2회차 착수
+
+---
+
+[2026-05-30][backend-dev][완료] 보안 결함 수정 및 계정 잠금 구현
+
+생성/수정 파일:
+- auth/decorators.py — page_login_required 추가, login_required에 CSRF 더블서밋 검증 추가,
+  generate_tile_token/verify_tile_token(HMAC-SHA256, 5분 TTL) 추가, _authenticate 헬퍼로 분리
+- auth/auth.py — 계정 잠금 로직(_check_and_increment_failed/_reset_failed_attempts/_check_auto_unlock),
+  login/verify-email에 잠금 연동, ACCOUNT_LOCKED 처리, POST /api/auth/resend-code 신규
+- server_render.py — /viewer·/viewer/<id>·/slides에 page_login_required + 기관격리,
+  /dzi·/thumbnail·/ec2tile·/api/chat에 login_required + 타일토큰 검증 + Cache-Control no-store,
+  뷰어 JS에 타일토큰 부착(getTileUrl 오버라이드)·CSRF 헤더, get_slide_institution 헬퍼 추가
+- db/auth_schema.sql — failed_attempts/failed_window_start/locked_at 컬럼 ALTER 추가(멱등)
+- AUTH_API_SPEC.md — resend-code 명세, ACCOUNT_LOCKED/RESEND_*/CSRF_INVALID/TOKEN_EXPIRED/FORBIDDEN,
+  보호 라우트 표 추가
+
+핵심 결정:
+- ConversionJob/ConversionResult 데이터 계약 무변경, 운영 테이블 DROP/DELETE 없음(ALTER만)
+- 타일토큰은 .dzi 쿼리스트링이 개별 타일로 전파되지 않으므로 OSD getTileUrl 오버라이드로 부착
+- 기관격리는 viewer/DZI descriptor/thumbnail 단계에서 검증, 개별 타일은 토큰만 검증(식별자 보호)
+- 잠금 임계 24h 내 10회, 24h 경과 시 로그인 시도에서 자동 해제
+
+막힌 항목: 없음 (코드 실행/RDS 접속/마이그레이션 미실행 — 제약 준수)
+[2026-05-30][오케스트레이터][차단] RDS 마이그레이션 실행 불가 — AWS CLI 미설치, EC2 Instance Connect 원격 접속 불가능
+  사유: 로컬 WSL2 환경에서 AWS CLI 없음. EC2 Instance Connect는 브라우저 기반 전용.
+  해결: CEO가 AWS 콘솔 → EC2 → Instance Connect → psql 접속 후 db/auth_schema.sql 실행 필요
+  실행 명령: psql -h slideatlas-db.c94iwikwox6l.ap-northeast-2.rds.amazonaws.com -U slideatlas_admin -d slideatlas -p 5432 -f db/auth_schema.sql
+[2026-05-30][오케스트레이터][시작] 신규 보안 테스트 추가 (계정 잠금 + resend-code)
+[2026-05-30][test-runner][결과] 37/37 PASSED (26 기존 + 11 신규: 계정잠금4, resend-code5, CSRF2)
+[2026-05-30][security-reviewer][시작] 2회차 1차 보안 검증
+[2026-05-30][codex][시작] 2회차 2차 독립 보안 검증

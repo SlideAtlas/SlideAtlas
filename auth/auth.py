@@ -32,6 +32,14 @@ VERIFICATION_TTL_MIN = 10
 MAX_CODE_ATTEMPTS = 5
 COOKIE_MAX_AGE = 86400
 
+# 계정 잠금 정책
+LOCK_THRESHOLD = 10    # 윈도우 내 실패 누적 임계값
+LOCK_WINDOW_HRS = 24   # 카운팅 윈도우 / 자동 해제 시간(시간)
+
+# 인증코드 재발송 정책
+RESEND_COOLDOWN_SEC = 60   # 1분 쿨다운
+RESEND_DAILY_LIMIT = 5     # 24시간 최대 5회
+
 
 # ─────────────────────────────────────────────
 # 응답 헬퍼
@@ -88,6 +96,77 @@ def _gen_code() -> str:
 
 def _now():
     return datetime.now(timezone.utc)
+
+
+def _aware(ts):
+    """naive timestamp 를 UTC aware 로 정규화."""
+    if ts is None:
+        return None
+    if ts.tzinfo is None:
+        return ts.replace(tzinfo=timezone.utc)
+    return ts
+
+
+def _check_and_increment_failed(cur, user_id: int) -> bool:
+    """실패 카운터 증가 + 임계값 도달 시 계정 잠금. 잠겼으면 True."""
+    cur.execute(
+        "SELECT failed_attempts, failed_window_start FROM users WHERE id = %s FOR UPDATE",
+        (user_id,),
+    )
+    row = cur.fetchone()
+    if row is None:
+        return False
+
+    failed, window_start = row
+    now = _now()
+    window_start = _aware(window_start)
+
+    # 윈도우 만료 또는 미시작 → 새 윈도우로 카운트 1부터 시작.
+    if window_start is None or (now - window_start).total_seconds() > LOCK_WINDOW_HRS * 3600:
+        new_count = 1
+        cur.execute(
+            "UPDATE users SET failed_attempts = 1, failed_window_start = %s WHERE id = %s",
+            (now, user_id),
+        )
+    else:
+        new_count = (failed or 0) + 1
+        cur.execute(
+            "UPDATE users SET failed_attempts = %s WHERE id = %s",
+            (new_count, user_id),
+        )
+
+    if new_count >= LOCK_THRESHOLD:
+        cur.execute(
+            "UPDATE users SET status = 'locked', locked_at = %s WHERE id = %s",
+            (now, user_id),
+        )
+        return True
+    return False
+
+
+def _reset_failed_attempts(cur, user_id: int):
+    cur.execute(
+        "UPDATE users SET failed_attempts = 0, failed_window_start = NULL WHERE id = %s",
+        (user_id,),
+    )
+
+
+def _check_auto_unlock(cur, user_id: int, status: str, locked_at) -> str:
+    """locked_at 으로부터 LOCK_WINDOW_HRS 경과 시 자동 해제. 현재 유효 status 반환."""
+    if status != "locked" or locked_at is None:
+        return status
+    now = _now()
+    locked_at = _aware(locked_at)
+    if (now - locked_at).total_seconds() > LOCK_WINDOW_HRS * 3600:
+        cur.execute(
+            """UPDATE users
+               SET status = 'active', locked_at = NULL,
+                   failed_attempts = 0, failed_window_start = NULL
+               WHERE id = %s""",
+            (user_id,),
+        )
+        return "active"
+    return "locked"
 
 
 def _issue_token_payload(user_id, institution_id, role, is_special):
@@ -264,7 +343,11 @@ def verify_email():
                     (ev_id,),
                 )
                 remaining = MAX_CODE_ATTEMPTS - (attempt_count + 1)
+                # 코드 무차별 대입 방어: 누적 실패 시 계정 잠금
+                now_locked = _check_and_increment_failed(cur, user_id)
                 conn.commit()
+                if now_locked:
+                    return _err("ACCOUNT_LOCKED", "보안상 계정이 잠겼습니다. 과 사무실에 문의하세요", 403)
                 return _err_with_remaining("CODE_MISMATCH", "인증코드가 일치하지 않습니다", remaining)
 
             # 코드 일치 → TO 재검사 (동시성 방어): institutions row 잠금
@@ -289,7 +372,8 @@ def verify_email():
             )
             cur.execute(
                 """UPDATE users
-                   SET status = 'active', session_token = %s, last_login = NOW()
+                   SET status = 'active', session_token = %s, last_login = NOW(),
+                       failed_attempts = 0, failed_window_start = NULL
                    WHERE id = %s""",
                 (session_token, user_id),
             )
@@ -335,6 +419,96 @@ def _err_with_remaining(error, message, remaining):
 
 
 # ─────────────────────────────────────────────
+# POST /api/auth/resend-code
+# ─────────────────────────────────────────────
+@auth_bp.route("/resend-code", methods=["POST"])
+def resend_code():
+    body = request.get_json(silent=True) or {}
+    email = (body.get("email") or "").strip().lower()
+    if not email:
+        return _err("MISSING_FIELDS", "이메일을 입력하세요")
+
+    get_db_conn, release_db_conn = _db()
+    conn = get_db_conn()
+    conn.autocommit = False
+    code = None
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, status FROM users WHERE lower(email) = %s",
+                (email,),
+            )
+            user = cur.fetchone()
+            if user is None:
+                conn.rollback()
+                return _err("USER_NOT_FOUND", "해당 이메일로 가입된 계정이 없습니다", 404)
+            user_id, status = user
+
+            if status in ("locked", "suspended"):
+                conn.rollback()
+                return _err("ACCOUNT_LOCKED", "보안상 계정이 잠겼습니다. 과 사무실에 문의하세요", 403)
+            if status != "pending_verification":
+                conn.rollback()
+                return _err("ALREADY_VERIFIED", "이미 인증된 계정입니다", 409)
+
+            now = _now()
+
+            # 1분 쿨다운
+            cur.execute(
+                "SELECT MAX(created_at) FROM email_verifications WHERE user_id = %s",
+                (user_id,),
+            )
+            last_sent = _aware(cur.fetchone()[0])
+            if last_sent is not None:
+                elapsed = (now - last_sent).total_seconds()
+                if elapsed < RESEND_COOLDOWN_SEC:
+                    remaining_sec = int(RESEND_COOLDOWN_SEC - elapsed)
+                    conn.rollback()
+                    return _err("RESEND_TOO_SOON", f"{remaining_sec}초 후에 다시 시도하세요", 429)
+
+            # 24시간 발송 횟수 제한
+            cur.execute(
+                "SELECT COUNT(*) FROM email_verifications WHERE user_id = %s AND created_at > %s",
+                (user_id, now - timedelta(hours=24)),
+            )
+            daily_count = cur.fetchone()[0]
+            if daily_count >= RESEND_DAILY_LIMIT:
+                conn.rollback()
+                return _err("RESEND_LIMIT_EXCEEDED", "오늘 재발송 한도를 초과했습니다. 내일 다시 시도하세요", 429)
+
+            # 기존 미소진 코드 폐기 후 새 코드 발급
+            cur.execute(
+                "UPDATE email_verifications SET consumed = TRUE WHERE user_id = %s AND consumed = FALSE",
+                (user_id,),
+            )
+            code = _gen_code()
+            expires_at = now + timedelta(minutes=VERIFICATION_TTL_MIN)
+            cur.execute(
+                "INSERT INTO email_verifications (user_id, code, expires_at) VALUES (%s, %s, %s)",
+                (user_id, code, expires_at),
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        release_db_conn(conn)
+        return _err("SERVER_ERROR", "처리 중 오류가 발생했습니다", 500)
+    finally:
+        try:
+            conn.autocommit = True
+        except Exception:
+            pass
+
+    try:
+        send_verification_email(email, code)
+    except Exception:
+        release_db_conn(conn)
+        return _err("EMAIL_SEND_FAILED", "인증코드 발송에 실패했습니다", 502)
+
+    release_db_conn(conn)
+    return _ok({"message": "새 인증코드가 발송되었습니다"})
+
+
+# ─────────────────────────────────────────────
 # POST /api/auth/login
 # ─────────────────────────────────────────────
 @auth_bp.route("/login", methods=["POST"])
@@ -354,7 +528,7 @@ def login():
         with conn.cursor() as cur:
             cur.execute(
                 """SELECT u.id, u.institution_id, u.role, u.is_special,
-                          u.password_hash, u.status, i.subscription_end
+                          u.password_hash, u.status, u.locked_at, i.subscription_end
                    FROM users u
                    LEFT JOIN institutions i ON i.id = u.institution_id
                    WHERE lower(u.email) = %s
@@ -366,18 +540,27 @@ def login():
                 conn.rollback()
                 return _err("INVALID_CREDENTIALS", "이메일 또는 비밀번호가 올바르지 않습니다", 401)
             (user_id, institution_id, role, is_special,
-             pw_hash, status, subscription_end) = row
+             pw_hash, status, locked_at, subscription_end) = row
 
             if status == "pending_verification":
                 conn.rollback()
                 return _err("EMAIL_NOT_VERIFIED", "이메일 인증을 완료하세요", 403)
+            if status == "locked":
+                # 24시간 경과 시 자동 해제 후 정상 로그인 흐름 진행.
+                status = _check_auto_unlock(cur, user_id, status, locked_at)
+                if status == "locked":
+                    conn.commit()  # 자동해제 미발생 — 트랜잭션 마무리만
+                    return _err("ACCOUNT_LOCKED", "보안상 계정이 잠겼습니다. 과 사무실에 문의하세요", 403)
             if status != "active":
                 conn.rollback()
                 return _err("ACCOUNT_INACTIVE", "비활성화된 계정입니다", 403)
 
-            # 비밀번호 먼저 검증 (계정 상태 정보 노출 최소화)
+            # 비밀번호 검증 (실패 시 카운터 증가 → 임계값 도달 시 잠금)
             if not pw_hash or not check_password_hash(pw_hash, password):
-                conn.rollback()
+                now_locked = _check_and_increment_failed(cur, user_id)
+                conn.commit()
+                if now_locked:
+                    return _err("ACCOUNT_LOCKED", "보안상 계정이 잠겼습니다. 과 사무실에 문의하세요", 403)
                 return _err("INVALID_CREDENTIALS", "이메일 또는 비밀번호가 올바르지 않습니다", 401)
 
             # 구독 만료 검사 (is_special 계정은 만료 무관 허용)
@@ -391,8 +574,12 @@ def login():
                 user_id, institution_id, role, is_special
             )
             # 기존 세션 무효화: session_token 덮어쓰기 (1기기 동시접속 제어)
+            # + 로그인 성공 시 실패 카운터 리셋
             cur.execute(
-                "UPDATE users SET session_token = %s, last_login = NOW() WHERE id = %s",
+                """UPDATE users
+                   SET session_token = %s, last_login = NOW(),
+                       failed_attempts = 0, failed_window_start = NULL
+                   WHERE id = %s""",
                 (session_token, user_id),
             )
         conn.commit()
