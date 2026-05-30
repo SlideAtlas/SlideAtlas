@@ -587,10 +587,9 @@ def test_login_required_pending_verification(client, mock_db):
         client.set_cookie(COOKIE_NAME, token)
         
         mock_db["cursor"].fetchone.return_value = (
-            "valid-session-123",
-            "pending_verification"
+            "valid-session-123", "pending_verification", None
         )
-        
+
         resp = client.get("/api/auth/me")
         
         assert resp.status_code == 401
@@ -613,8 +612,8 @@ def test_login_required_success(client, mock_db):
         client.set_cookie(COOKIE_NAME, token)
 
         mock_db["cursor"].fetchone.side_effect = [
-            ("valid-session-123", "active"),
-            (1, "test@example.com", "student", "YU", False, "active", None)
+            ("valid-session-123", "active", None),   # _authenticate: session_token, status, subscription_end
+            (1, "test@example.com", "student", "YU", False, "active", None)  # me()
         ]
 
         # Werkzeug 3.x: set_cookie requires full URL for domain matching
@@ -672,7 +671,7 @@ def test_logout_success(client, mock_db):
         client.set_cookie("csrf_token", csrf_value)
 
         mock_db["cursor"].fetchone.return_value = (
-            "valid-session-123", "active"
+            "valid-session-123", "active", None   # session_token, status, subscription_end
         )
 
         # Werkzeug 3.x: full URL for domain matching; X-CSRF-Token required by login_required
@@ -897,7 +896,7 @@ def test_csrf_missing_header_returns_403(client, mock_db):
         client.set_cookie(COOKIE_NAME, token)
         client.set_cookie("csrf_token", "some-csrf-token")
 
-        mock_db["cursor"].fetchone.return_value = ("sess123", "active")
+        mock_db["cursor"].fetchone.return_value = ("sess123", "active", None)
 
         # No X-CSRF-Token header → 403
         resp = client.post("http://localhost/api/auth/logout")
@@ -919,7 +918,7 @@ def test_csrf_mismatched_token_returns_403(client, mock_db):
         client.set_cookie(COOKIE_NAME, token)
         client.set_cookie("csrf_token", "correct-csrf-token")
 
-        mock_db["cursor"].fetchone.return_value = ("sess123", "active")
+        mock_db["cursor"].fetchone.return_value = ("sess123", "active", None)
 
         resp = client.post(
             "http://localhost/api/auth/logout",

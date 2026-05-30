@@ -1,140 +1,135 @@
-# SlideAtlas JWT 인증 백엔드 작업 완료 보고서
+# SlideAtlas JWT 인증 보안 결함 수정 완료 보고서 (v2)
 
 **작성일**: 2026-05-30  
 **보고 대상**: CEO 김보람  
-**작업 범위**: JWT 인증 백엔드 구축 (프론트엔드 제외)
+**작업 범위**: JWT 인증 보안 결함 수정 2회차 + 계정 잠금·재발송 기능 추가
 
 ---
 
 ## 1. 한 줄 요약
 
-JWT 인증 백엔드(회원가입·인증코드·로그인·로그아웃 API, 접근 제어 데코레이터)를 Flask에 구현했고 테스트 26개 전부 통과했습니다. 단, 보안 검증 2회에서 "타일/슬라이드 라우트에 로그인 검사가 없다"는 치명적 결함이 공통 발견되어 현재 상태로 운영 배포를 권장하지 않습니다.
+1회차에서 발견된 3개 치명 결함(타일 인증 미적용, CSRF 미검증, Presigned URL 미구현)을 전부 수정했고, 신규 기능(계정 잠금, 인증코드 재발송, 구독 만료 매요청 차단, 탈옥 방어)을 추가했습니다. 테스트 37개 전부 통과. 2차 보안 검증에서 1회차 FAIL 3건이 PASS로 전환됐으나, 신규 FAIL 3건이 추가 발견되어 2차 수정까지 완료했습니다.
 
 ---
 
 ## 2. 완료한 것 (체크리스트)
 
-### 구현 완료
-- [x] 회원가입 API (POST /api/auth/register): 기관 명단 대조 → 불일치 시 "과 사무실 문의", 일치 시 인증코드 이메일 발송
-- [x] 인증코드 확인 API (POST /api/auth/verify-email): 10분 만료, 5회 오입력 시 코드 폐기, 정원 초과 동시성 방어
-- [x] 로그인 API (POST /api/auth/login): 활성 계정만 허용, 구독 만료 차단, 기존 세션 무효화
-- [x] 로그아웃 API (POST /api/auth/logout)
-- [x] 내 정보 조회 (GET /api/auth/me)
-- [x] JWT 발급: HttpOnly + Secure + SameSite=Strict 쿠키 저장, CSRF 토큰 발급
-- [x] 접근 제어 데코레이터 (@login_required, @role_required): 매 요청 session_token DB 대조
-- [x] DB 마이그레이션 SQL (db/auth_schema.sql): institution_rosters, email_verifications 테이블, BEGIN/COMMIT 트랜잭션
-- [x] API 명세서 (AUTH_API_SPEC.md): 프론트 연동용 문서
-- [x] CLAUDE.md §7 스키마 업데이트
-- [x] pytest 26개 전부 통과 (Python 3.14.4 환경, 실제 실행 확인)
+### 1회차 FAIL → 수정 완료
+- [x] **[P0] 슬라이드/타일/DZI/썸네일/EC2 프록시 라우트에 @login_required 적용**
+  - /viewer/<slide_id>, /slides: @page_login_required + institution_id 필터
+  - /dzi/*.dzi, /dzi/*_files/*, /thumbnail/*, /ec2tile/*, /api/chat: @login_required
+  - _slide_access_allowed()에서 institution_id + is_public 이중 검사
+- [x] **[P1] CSRF 더블서밋 검증 구현**
+  - login_required의 POST/PUT/DELETE/PATCH에서 X-CSRF-Token 헤더 ↔ csrf_token 쿠키 대조
+  - secrets.compare_digest로 타이밍 공격 방지
+- [x] **[P1] 타일 접근 토큰 TTL 5분 구현 (Presigned URL 대체)**
+  - generate_tile_token(user_id, institution_id, slide_id): HMAC-SHA256, exp 5분
+  - 뷰어 로드 시 토큰 발급 → 모든 타일 URL에 ?t= 포함 (OpenSeadragon getTileUrl 오버라이드)
+  - 모든 타일/DZI 라우트에서 verify_tile_token() 검증
 
-### §12-4 QA 체크리스트 대응
+### 신규 기능 추가
+- [x] **계정 잠금**: 24시간 내 10회 실패(비밀번호+인증코드 합산) → status='locked', locked_at 기록. 24시간 경과 시 자동 해제. FOR UPDATE로 동시성 방어.
+- [x] **인증코드 재발송**: POST /api/auth/resend-code. 1분 쿨다운, 24시간 5회 한도. locked/suspended 차단. FOR UPDATE 경쟁조건 방어.
+- [x] **구독 만료 매 요청 검사**: _authenticate()에서 매 요청 institutions.subscription_end 확인. 만료 시 즉시 SUBSCRIPTION_EXPIRED(401). 기존 24h 세션 악용 차단.
+- [x] **/api/chat 탈옥 방어**: 클라이언트 system 파라미터 무시, 서버 고정 가드레일 사용.
+- [x] **is_public=FALSE 라이선스 격리**: _slide_access_allowed()에서 is_public 플래그 검사. 비공개 슬라이드 일반 사용자 접근 차단.
 
-| 항목 | 상태 |
-|------|------|
-| JWT 토큰 변조 공격 방어 | PASS |
-| session_token 1기기 동시접속 제어 | PASS |
-| 인증코드 브루트포스 방어(5회+FOR UPDATE) | PASS |
-| TO 정원 초과 동시성 방어(FOR UPDATE) | PASS |
-| DB 트랜잭션 + 에러 시 Rollback | PASS |
-| 민감정보 코드 하드코딩 없음 | PASS |
-| 브라우저 캐시 no-store (인증 응답) | PASS |
-| 동시 로그인 레이스컨디션 방어 | PASS |
-| subscription_end 만료 차단 (로그인 시) | PASS |
-| 슬라이드/타일 라우트 인증 적용 | FAIL (미구현) |
-| CSRF 토큰 검증 로직 | FAIL (발급만 됨) |
-| Presigned URL TTL 5분 | FAIL (미구현) |
+### DB 스키마 추가 (db/auth_schema.sql)
+- [x] users 테이블: failed_attempts, failed_window_start, locked_at 컬럼 추가
+- [x] 기존 v1 테이블 (institution_rosters, email_verifications) 포함 멱등 SQL 완성
+- [ ] **RDS 실행 미완료** — CEO 승인 후 EC2에서 실행 필요 (아래 §5 참조)
+
+### 테스트
+- [x] **기존 26개 모두 통과 유지**
+- [x] **신규 11개 추가 통과**: 계정잠금 4개, resend-code 5개, CSRF 2개
+- [x] **최종 합계: 37/37 PASS** (Python 3.14.4, pytest-9.0.3)
 
 ---
 
-## 3. 검증 결과
+## 3. 검증 결과 (2회차)
 
-### 1차 검증 (security-reviewer): PASS 11 / FAIL 3 / WARNING 3
+### 1차 검증 (security-reviewer): PASS 11 / FAIL 3 / WARNING 2
 
-FAIL:
-1. 슬라이드/타일/DZI 라우트에 @login_required 없음 — slide_id만 알면 누구나 접근 가능 [치명]
-2. CSRF 토큰 발급만 있고 서버 검증 코드 없음 [높음]
-3. 이메일 발송 실패 시 pending 계정이 DB에 남아 재등록 불가 [중간]
+**1회차 FAIL → PASS 전환 (3건 모두 해결)**
+- 슬라이드/타일 라우트 인증 → PASS
+- CSRF 검증 → PASS
+- Presigned URL TTL → PASS
 
-WARNING:
-4. 로그인 후 24시간 동안 구독 만료 여부 매 요청 미확인
-5. autocommit 설정 코드 순서 문제 (경쟁조건 가능)
-6. 로그인 응답 코드 차이로 계정 존재 여부 추정 가능
+**신규 FAIL (2차 수정으로 해결)**
+1. is_public=FALSE 비공개 슬라이드 접근 → **수정 완료 (Fix2)**
+2. /api/chat system 프롬프트 클라이언트 주입 → **수정 완료 (Fix2)**
+3. subscription_end 만료 세션 차단 누락 → **수정 완료 (Fix2)**
 
-### 2차 검증 (Codex 독립): PASS 7 / FAIL 4 / WARNING 2
+**남은 WARNING 2건**
+- 타일 응답 no-cache 헤더 누락 (no-store만 적용, no-cache는 없음)
+- 마이그레이션 스키마-코드 배포 순서 강제 장치 부재
 
-FAIL:
-1. 슬라이드/타일 라우트 인증·기관 격리 미적용 [치명] (1차와 동일)
-2. CSRF 토큰 검증 없음 [높음] (1차와 동일)
-3. Presigned URL TTL 5분 미구현 — EC2 타일 프록시가 인증/만료 없이 동작
-4. institution_id 기반 멀티테넌시 격리 미적용
+### 2차 검증 (Codex): PASS 2 / FAIL 1 / WARNING 3
 
-WARNING:
-1. 타일/DZI/썸네일 응답에 Cache-Control: no-store 없음
-2. JWT issuer·audience 정책 미명시
+**신규 FAIL → 수정 완료**
+1. resend-code 쿨다운·한도 경쟁조건 → **수정 완료 (FOR UPDATE 추가)**
 
-### 두 검증이 엇갈린 항목 (특별 주의)
+**남은 WARNING 3건**
+- 개별 타일/EC2 프록시의 DB 기관 재검증 없음 (타일 토큰으로 대체, 방어 심도 제한)
+- admin 라우트 CSRF 미적용 (JWT 인증 범위 외, 별도 세션 인증)
+- admin 비밀번호 기본값 코드 존재 (환경변수 설정 권장)
 
-| 항목 | 1차 | 2차 | 차이 원인 |
-|------|-----|-----|----------|
-| 브라우저 캐시 no-store | PASS | WARNING | 1차는 인증 응답만 확인, 2차는 타일까지 포함 |
-| Presigned URL TTL | 미검토 | FAIL | 1차는 auth 파일 범위만, 2차는 server_render.py 전체 확인 |
-| 이메일 발송 실패 pending 계정 | FAIL | 미언급 | 2차에서 독립 발견 못함 |
-| autocommit 경쟁조건 | WARNING | 미언급 | 2차에서 미검토 |
+### 두 검증이 엇갈린 항목
 
-엇갈린 항목 중 가장 중요한 것: Presigned URL TTL — 1차가 범위 외로 놓쳤으나 2차가 발견. 현재 EC2 타일 프록시는 인증 없이 누구나 접근 가능하며 TTL 제한이 없음.
+| 항목 | 1차 판정 | 2차 판정 | 차이 원인 |
+|------|---------|---------|----------|
+| 타일 라우트 기관 격리 | PASS | WARNING | 1차: 토큰에 institution_id 포함으로 충분. 2차: DB 재검증 부재로 방어 심도 부족 |
+| CSRF 검증 | PASS | WARNING | 1차: JWT API 범위 내 PASS. 2차: admin API에도 CSRF 없어 WARNING |
+| resend-code 경쟁조건 | 미검토 | FAIL | 2차만 발견, Fix2에서 수정 완료 |
+| is_public 격리 | FAIL | 미언급 | 1차만 발견, Fix2에서 수정 완료 |
 
 ---
 
 ## 4. 미완성·막힌 것
 
-### 즉시 수정 필요 (운영 배포 전 필수)
+### A. RDS 마이그레이션 미실행 [CEO 승인 필요]
+- 현재: db/auth_schema.sql 완성, RDS에 미적용
+- 사유: AWS CLI 미설치, EC2 Instance Connect 로컬 실행 불가
+- 영향: 코드 배포해도 `failed_attempts`, `locked_at` 컬럼 없어 계정 잠금 기능 오류 발생
+- 실행 명령 (AWS 콘솔 EC2 Instance Connect에서):
+  ```
+  psql -h slideatlas-db.c94iwikwox6l.ap-northeast-2.rds.amazonaws.com \
+       -U slideatlas_admin -d slideatlas -p 5432 \
+       -f db/auth_schema.sql
+  ```
 
-A. 슬라이드/타일/DZI 라우트 인증 적용 [치명]
-- 현재: /viewer/, /slides, /dzi/*, /thumbnail/*, /ec2tile/* 모두 @login_required 없음
-- 영향: slide_id를 알면 로그인 없이 Happy Science 라이선스 콘텐츠 접근 가능
-- 해결: 각 라우트에 @login_required + slide.institution_id == g.institution_id 검사 추가
+### B. 남은 WARNING 항목 [다음 스프린트 권장]
+- **타일 no-cache 헤더**: Cache-Control: no-store만 있고 no-cache 없음 (CLAUDE.md §8 요구)
+- **admin CSRF**: /admin/api/* 라우트에 CSRF 검증 없음 (별도 세션 인증 사용 중)
+- **admin 기본 비밀번호**: 환경변수로 설정하도록 안내 필요
 
-B. CSRF 토큰 서버 검증 로직 [높음]
-- 현재: 발급만 되고 검증 코드 없음
-- 해결: POST/PUT/DELETE 요청에서 X-CSRF-Token 헤더 검증 추가
-
-C. Presigned URL TTL 5분 [높음]
-- 현재: EC2 타일 프록시가 인증·만료 없이 동작
-- CLAUDE.md §8 요구사항 미충족
-
-### 개선 권장 (배포 후 단기)
-
-D. subscription_end 매 요청 재확인: 로그인 후 24시간 동안 만료 무시 가능
-E. 이메일 발송 실패 시 재발송 엔드포인트: 현재 발송 실패 시 재등록 불가 상태
-F. autocommit 코드 순서 정리: except 블록에서 release 후 finally에서 autocommit 설정하는 패턴
+### C. 미완성 기능 (원래 범위 외)
+- 기관 관리자 계정 잠금 수동 해제 UI (/portal)
+- 계정 잠금 알림 이메일
 
 ---
 
 ## 5. CEO 결정사항
 
-다음 사항에 대해 결정이 필요합니다:
+1. **[즉시] RDS 마이그레이션 실행**: AWS 콘솔 → EC2 Instance Connect → 위 psql 명령 실행. 마이그레이션 후 코드 배포해야 계정 잠금 기능 작동.
 
-1. [RDS 마이그레이션 실행 승인] db/auth_schema.sql이 파일만 생성되고 아직 RDS에 실행되지 않았습니다. EC2에서 실행 명령어를 실행해야 합니다. 승인 여부를 알려주세요.
+2. **[선택] Render 재배포**: 코드 변경사항을 Render에 반영하려면 GitHub push 후 자동 배포 대기 (또는 수동 배포).
 
-2. [A항 작업 즉시 진행 여부] 슬라이드/타일 라우트 인증 적용은 Happy Science 라이선스 콘텐츠 보호를 위한 핵심 보안 작업입니다. 다음 작업으로 즉시 진행할지 확인이 필요합니다.
+3. **[차기] admin CSRF 추가 여부**: 현재 admin은 Flask session 기반. v1.0 런칭 전 CSRF 추가할지 결정 필요.
 
-3. [B항 CSRF 구현 범위] SameSite=Strict가 대부분의 CSRF를 차단하지만 CLAUDE.md §8 기준상 완전하지 않습니다. v1.0 런칭 전 필수로 볼지 개선사항으로 볼지 판단이 필요합니다.
-
-4. [E항 이메일 재발송 정책] 발송 실패 시 재등록 불가 문제를 어떻게 처리할지 — 재발송 엔드포인트 추가 or pending 계정 자동 만료 중 선택.
+4. **[차기] no-cache 헤더 추가 여부**: no-store만으로 충분한지 (실제 라이선스 계약 요건 확인 필요).
 
 ---
 
-## 6. 다음 단계 (우선순위 순)
+## 6. 다음 단계
 
-1. [긴급] RDS 마이그레이션 실행 — CEO 승인 후 db/auth_schema.sql EC2에서 실행
-2. [긴급] 슬라이드/타일 라우트 인증 + institution_id 격리 — A항 구현
-3. [필수] CSRF 검증 로직 추가 — B항 구현
-4. [필수] Presigned URL TTL 5분 — C항 구현
-5. [권장] subscription_end 매 요청 재확인 — D항
-6. [권장] 이메일 재발송 엔드포인트 — E항
-7. [권장] autocommit 순서 정리 — F항
-8. [완료 후] 전체 QA 5대 체크리스트 재검증 + CEO 최종 승인
+1. [필수] RDS 마이그레이션 실행 (CEO 직접)
+2. [필수] Render 재배포 (GitHub push)
+3. [차기] 포털 명단 관리 구현 (/portal) — §9 기관 관리자 기능
+4. [차기] 동적 워터마킹 구현
+5. [차기] admin CSRF 추가
+6. [완료 후] 전체 QA 5대 체크리스트 최종 점검 + CEO 승인
 
 ---
 
-생성: Claude Code 오케스트레이터 | 2026-05-30
+생성: Claude Code 오케스트레이터 | 2026-05-30 v2

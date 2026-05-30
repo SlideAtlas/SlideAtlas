@@ -134,8 +134,12 @@ def _authenticate():
     conn = get_db_conn()
     try:
         with conn.cursor() as cur:
+            # subscription_end 매 요청 검사 (§12-4 ③) — 만료 후 활성 세션 차단
             cur.execute(
-                "SELECT session_token, status FROM users WHERE id = %s",
+                """SELECT u.session_token, u.status, i.subscription_end
+                   FROM users u
+                   LEFT JOIN institutions i ON i.id = u.institution_id
+                   WHERE u.id = %s""",
                 (user_id,),
             )
             row = cur.fetchone()
@@ -144,12 +148,17 @@ def _authenticate():
 
     if row is None:
         return ("SESSION_EXPIRED", "다시 로그인하세요")
-    db_session, status = row
+    db_session, status, subscription_end = row
     # 동시접속 제어: DB의 최신 session_token 과 다르면 구 세션 → 즉시 만료.
     if db_session != token_session:
         return ("SESSION_EXPIRED", "다시 로그인하세요")
     if status != "active":
         return ("SESSION_EXPIRED", "다시 로그인하세요")
+    # 구독 만료 검사: is_special 계정 제외, 매 요청마다 확인 (만료 후 24h 세션 악용 방지)
+    if not payload.get("is_special") and subscription_end is not None:
+        from datetime import date
+        if subscription_end < date.today():
+            return ("SUBSCRIPTION_EXPIRED", "구독이 만료되었습니다. 갱신 후 다시 로그인하세요")
 
     g.user_id = user_id
     g.institution_id = payload.get("institution_id")

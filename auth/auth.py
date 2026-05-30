@@ -451,6 +451,9 @@ def resend_code():
                 conn.rollback()
                 return _err("ALREADY_VERIFIED", "이미 인증된 계정입니다", 409)
 
+            # 동시 재발송 경쟁조건 방어: user row 잠금 후 쿨다운/한도 검사
+            cur.execute("SELECT id FROM users WHERE id = %s FOR UPDATE", (user_id,))
+
             now = _now()
 
             # 1분 쿨다운
