@@ -1,0 +1,516 @@
+/* login_terminal.js — 로그인 터미널 7개 뷰 상태 관리 */
+(function () {
+  'use strict';
+
+  /* ── 상태 ───────────────────────────────────────────── */
+  var _view = 'LOGIN';
+  var _email = '';
+  var _resetToken = '';
+  var _verifyTimer = null;
+  var _verifySecondsLeft = 600;
+  var _resendTimer = null;
+  var _resendSecondsLeft = 0;
+  var _codeExhausted = false;
+
+  /* ── next URL (오픈 리다이렉트 방어) ─────────────────── */
+  var _nextUrl = (function () {
+    var n = new URLSearchParams(location.search).get('next') || '/slides';
+    // '/'로 시작하는 내부 경로만 허용, '//'나 외부 URL 차단
+    if (!n.startsWith('/') || n.startsWith('//')) n = '/slides';
+    return n;
+  })();
+
+  /* ── 타이머 헬퍼 ─────────────────────────────────────── */
+  function _clearTimers() {
+    if (_verifyTimer)  { clearInterval(_verifyTimer);  _verifyTimer  = null; }
+    if (_resendTimer)  { clearInterval(_resendTimer);  _resendTimer  = null; }
+  }
+
+  function _startVerifyTimer() {
+    _verifySecondsLeft = 600;
+    if (_verifyTimer) clearInterval(_verifyTimer);
+    _verifyTimer = setInterval(function () {
+      _verifySecondsLeft--;
+      var el = document.getElementById('t-vtimer');
+      if (el) {
+        var m = Math.floor(_verifySecondsLeft / 60);
+        var s = _verifySecondsLeft % 60;
+        el.textContent = m + ':' + (s < 10 ? '0' + s : s);
+      }
+      if (_verifySecondsLeft <= 0) {
+        clearInterval(_verifyTimer); _verifyTimer = null;
+        var wrap = document.getElementById('t-vtimer-wrap');
+        if (wrap) wrap.innerHTML = '<span style="color:#e76f51;">인증코드가 만료되었습니다.</span>';
+      }
+    }, 1000);
+  }
+
+  function _startResendCooldown(sec) {
+    _resendSecondsLeft = sec;
+    var btn = document.getElementById('t-resend');
+    if (btn) btn.disabled = true;
+    if (_resendTimer) clearInterval(_resendTimer);
+    _resendTimer = setInterval(function () {
+      _resendSecondsLeft--;
+      var b = document.getElementById('t-resend');
+      if (!b) { clearInterval(_resendTimer); _resendTimer = null; return; }
+      if (_resendSecondsLeft <= 0) {
+        b.disabled = false;
+        b.textContent = '인증코드 재발송';
+        clearInterval(_resendTimer); _resendTimer = null;
+      } else {
+        b.textContent = '재발송 (' + _resendSecondsLeft + 's)';
+      }
+    }, 1000);
+  }
+
+  /* ── 에러 / 성공 메시지 ──────────────────────────────── */
+  function _showErr(msg) {
+    var el = document.getElementById('t-err');
+    if (!el) return;
+    el.style.color = '#e76f51';
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+  function _showMsg(msg) {
+    var el = document.getElementById('t-err');
+    if (!el) return;
+    el.style.color = '#0F1F3D';
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+  function _hideErr() {
+    var el = document.getElementById('t-err');
+    if (el) { el.textContent = ''; el.style.display = 'none'; }
+  }
+
+  /* ── 뷰 전환 ─────────────────────────────────────────── */
+  function _goView(v, email) {
+    _view = v;
+    if (email !== undefined) _email = email;
+    if (v === 'VERIFY') _codeExhausted = false;
+    _render();
+  }
+
+  /* ── 공통 로고 ───────────────────────────────────────── */
+  function _logo() {
+    return '<div class="terminal-logo">' +
+      '<img src="/static/slideatlas_logo_hor.png" alt="SlideAtlas" class="terminal-logo-img">' +
+      '</div>';
+  }
+
+  /* ── 뷰별 HTML ───────────────────────────────────────── */
+  function _loginHTML() {
+    return _logo() +
+      '<h2 class="terminal-view-title">로그인</h2>' +
+      '<label class="terminal-label" for="t-email">이메일</label>' +
+      '<input class="terminal-input" type="email" id="t-email" placeholder="your@edu.kr" autocomplete="email">' +
+      '<label class="terminal-label" for="t-pw">비밀번호</label>' +
+      '<input class="terminal-input" type="password" id="t-pw" placeholder="••••••••" autocomplete="current-password">' +
+      '<button class="terminal-btn" id="t-submit">로그인</button>' +
+      '<div class="terminal-error" id="t-err" style="display:none"></div>' +
+      '<div class="terminal-links">' +
+        '<button class="terminal-link" id="to-signup">회원가입</button>' +
+        '<span class="terminal-divider">·</span>' +
+        '<button class="terminal-link" id="to-forgot">비밀번호 찾기</button>' +
+      '</div>';
+  }
+
+  function _signupHTML() {
+    return _logo() +
+      '<h2 class="terminal-view-title">회원가입</h2>' +
+      '<label class="terminal-label" for="t-inst">기관 코드</label>' +
+      '<input class="terminal-input" type="text" id="t-inst" placeholder="예: YU, SNU" autocomplete="off" style="text-transform:uppercase">' +
+      '<label class="terminal-label" for="t-name">이름</label>' +
+      '<input class="terminal-input" type="text" id="t-name" placeholder="홍길동" autocomplete="name">' +
+      '<label class="terminal-label" for="t-email">이메일</label>' +
+      '<input class="terminal-input" type="email" id="t-email" placeholder="your@edu.kr" autocomplete="email">' +
+      '<label class="terminal-label" for="t-pw">비밀번호</label>' +
+      '<input class="terminal-input" type="password" id="t-pw" placeholder="8자 이상" autocomplete="new-password">' +
+      '<label class="terminal-label" for="t-role">지위</label>' +
+      '<select class="terminal-select" id="t-role">' +
+        '<option value="student">학생</option>' +
+        '<option value="ta">조교</option>' +
+        '<option value="professor">교수</option>' +
+      '</select>' +
+      '<button class="terminal-btn" id="t-submit">회원가입</button>' +
+      '<div class="terminal-error" id="t-err" style="display:none"></div>' +
+      '<div class="terminal-links">' +
+        '<button class="terminal-link" id="to-login">이미 계정이 있나요?</button>' +
+      '</div>';
+  }
+
+  function _verifyHTML() {
+    return _logo() +
+      '<h2 class="terminal-view-title">이메일 인증</h2>' +
+      '<p class="terminal-info">이메일로 전송된 6자리 인증코드를 입력하세요.<br>' +
+        '<small style="color:#9B9490;font-size:12px;">' + _email + '</small></p>' +
+      '<input class="terminal-code-input" type="text" id="t-code" maxlength="6" placeholder="000000" inputmode="numeric" autocomplete="one-time-code">' +
+      '<button class="terminal-btn" id="t-submit">인증 확인</button>' +
+      '<div class="terminal-error" id="t-err" style="display:none"></div>' +
+      '<div class="terminal-timer" id="t-vtimer-wrap">' +
+        '남은 시간: <span id="t-vtimer">10:00</span>' +
+      '</div>' +
+      '<button class="terminal-resend-btn" id="t-resend">인증코드 재발송</button>' +
+      '<div class="terminal-links">' +
+        '<button class="terminal-link" id="to-login">← 로그인으로</button>' +
+      '</div>';
+  }
+
+  function _forgotHTML() {
+    return _logo() +
+      '<h2 class="terminal-view-title">비밀번호 찾기</h2>' +
+      '<p class="terminal-info" style="margin-bottom:16px;">가입한 이메일 주소를 입력하시면<br>비밀번호 재설정 링크를 보내드립니다.</p>' +
+      '<label class="terminal-label" for="t-email">이메일</label>' +
+      '<input class="terminal-input" type="email" id="t-email" placeholder="your@edu.kr" autocomplete="email">' +
+      '<button class="terminal-btn" id="t-submit">재설정 링크 발송</button>' +
+      '<div class="terminal-error" id="t-err" style="display:none"></div>' +
+      '<div class="terminal-links">' +
+        '<button class="terminal-link" id="to-login">← 로그인으로</button>' +
+      '</div>';
+  }
+
+  function _resetHTML() {
+    return _logo() +
+      '<h2 class="terminal-view-title">비밀번호 재설정</h2>' +
+      '<label class="terminal-label" for="t-pw">새 비밀번호</label>' +
+      '<input class="terminal-input" type="password" id="t-pw" placeholder="8자 이상" autocomplete="new-password">' +
+      '<label class="terminal-label" for="t-pw2">비밀번호 확인</label>' +
+      '<input class="terminal-input" type="password" id="t-pw2" placeholder="••••••••" autocomplete="new-password">' +
+      '<button class="terminal-btn" id="t-submit">비밀번호 변경</button>' +
+      '<div class="terminal-error" id="t-err" style="display:none"></div>' +
+      '<div class="terminal-links">' +
+        '<button class="terminal-link" id="to-login">← 로그인으로</button>' +
+      '</div>';
+  }
+
+  function _lockedHTML() {
+    return _logo() +
+      '<div class="terminal-static-icon">&#128274;</div>' +
+      '<div class="terminal-info">' +
+        '<strong>보안상 계정이 잠겼습니다.</strong><br>' +
+        '과 사무실에 문의하세요.' +
+      '</div>' +
+      '<div class="terminal-links" style="margin-top:24px;">' +
+        '<button class="terminal-link" id="to-login">← 로그인으로</button>' +
+      '</div>';
+  }
+
+  function _expiredHTML() {
+    return _logo() +
+      '<div class="terminal-static-icon">&#128340;</div>' +
+      '<div class="terminal-info">' +
+        '<strong>구독이 만료되었습니다.</strong><br>' +
+        '과 사무실에 문의하세요.' +
+      '</div>' +
+      '<div class="terminal-links" style="margin-top:24px;">' +
+        '<button class="terminal-link" id="to-login">← 로그인으로</button>' +
+      '</div>';
+  }
+
+  /* ── 렌더 ────────────────────────────────────────────── */
+  function _render() {
+    var root = document.getElementById('login-terminal-root');
+    if (!root) return;
+    _clearTimers();
+    var html = '<div class="terminal-wrap">';
+    switch (_view) {
+      case 'LOGIN':   html += _loginHTML();   break;
+      case 'SIGNUP':  html += _signupHTML();  break;
+      case 'VERIFY':  html += _verifyHTML();  break;
+      case 'FORGOT':  html += _forgotHTML();  break;
+      case 'RESET':   html += _resetHTML();   break;
+      case 'LOCKED':  html += _lockedHTML();  break;
+      case 'EXPIRED': html += _expiredHTML(); break;
+      default:        html += _loginHTML();
+    }
+    html += '</div>';
+    root.innerHTML = html;
+    _attachHandlers();
+    if (_view === 'VERIFY') _startVerifyTimer();
+  }
+
+  /* ── API 호출 ─────────────────────────────────────────── */
+  async function _doLogin() {
+    var email = (document.getElementById('t-email').value || '').trim();
+    var pw    = document.getElementById('t-pw').value || '';
+    _hideErr();
+    if (!email || !pw) { _showErr('이메일과 비밀번호를 입력하세요.'); return; }
+    var btn = document.getElementById('t-submit');
+    if (btn) btn.disabled = true;
+    try {
+      var res  = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email, password: pw })
+      });
+      var data = await res.json();
+      if (data.success) {
+        location.href = _nextUrl;
+        return;
+      }
+      var code = data.error || '';
+      if (code === 'EMAIL_NOT_VERIFIED' || code === 'PENDING_VERIFICATION') {
+        _goView('VERIFY', email);
+      } else if (code === 'ACCOUNT_LOCKED') {
+        _goView('LOCKED');
+      } else if (code === 'SUBSCRIPTION_EXPIRED') {
+        _goView('EXPIRED');
+      } else {
+        _showErr(data.message || '로그인에 실패했습니다.');
+        if (btn) btn.disabled = false;
+      }
+    } catch (_e) {
+      _showErr('네트워크 오류가 발생했습니다.');
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  async function _doSignup() {
+    var inst  = (document.getElementById('t-inst').value  || '').trim().toUpperCase();
+    var name  = (document.getElementById('t-name').value  || '').trim();
+    var email = (document.getElementById('t-email').value || '').trim();
+    var pw    = document.getElementById('t-pw').value || '';
+    var role  = document.getElementById('t-role').value || 'student';
+    _hideErr();
+    if (!inst || !name || !email || !pw) { _showErr('모든 항목을 입력하세요.'); return; }
+    if (pw.length < 8) { _showErr('비밀번호는 8자 이상이어야 합니다.'); return; }
+    var btn = document.getElementById('t-submit');
+    if (btn) btn.disabled = true;
+    try {
+      var res  = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ institution_id: inst, name: name, email: email, password: pw, role: role })
+      });
+      var data = await res.json();
+      if (data.success) {
+        _goView('VERIFY', email);
+        return;
+      }
+      var code = data.error || '';
+      if (code === 'ROSTER_MISMATCH' || code === 'ROSTER_NOT_FOUND') {
+        _showErr('명단에 없습니다. 과 사무실에 문의하세요.');
+      } else if (code === 'EMAIL_EXISTS' || code === 'ALREADY_REGISTERED') {
+        _showErr('이미 가입된 이메일입니다. 로그인 화면으로 이동합니다.');
+        setTimeout(function () { _goView('LOGIN', email); }, 1800);
+      } else if (code === 'CAPACITY_EXCEEDED') {
+        _showErr('기관 정원이 초과되었습니다. 과 사무실에 문의하세요.');
+      } else {
+        _showErr(data.message || '회원가입에 실패했습니다.');
+      }
+      if (btn) btn.disabled = false;
+    } catch (_e) {
+      _showErr('네트워크 오류가 발생했습니다.');
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  async function _doVerify() {
+    var code = (document.getElementById('t-code').value || '').trim();
+    _hideErr();
+    if (!code || code.length !== 6) { _showErr('6자리 인증코드를 입력하세요.'); return; }
+    if (!_email) { _showErr('이메일 정보가 없습니다. 다시 로그인해주세요.'); return; }
+    var btn = document.getElementById('t-submit');
+    if (btn) btn.disabled = true;
+    try {
+      var res  = await fetch('/api/auth/verify-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: _email, code: code })
+      });
+      var data = await res.json();
+      if (data.success) {
+        location.href = _nextUrl;
+        return;
+      }
+      var errCode = data.error || '';
+      if (errCode === 'TOO_MANY_ATTEMPTS' || errCode === 'CODE_ATTEMPTS_EXCEEDED') {
+        _codeExhausted = true;
+        _showErr('시도 횟수를 초과했습니다. 인증코드를 재발송하세요.');
+        var inp = document.getElementById('t-code');
+        if (inp) inp.disabled = true;
+        if (btn) btn.disabled = true;
+      } else if (errCode === 'ACCOUNT_LOCKED') {
+        _goView('LOCKED');
+      } else if (errCode === 'CODE_EXPIRED') {
+        _showErr('인증코드가 만료되었습니다. 재발송 버튼을 눌러주세요.');
+        if (btn) btn.disabled = false;
+      } else if (errCode === 'CODE_MISMATCH') {
+        var rem = typeof data.remaining === 'number' ? data.remaining : '';
+        _showErr('인증코드가 일치하지 않습니다.' + (rem !== '' ? ' (남은 시도: ' + rem + '회)' : ''));
+        if (btn) btn.disabled = false;
+      } else {
+        _showErr(data.message || '인증에 실패했습니다.');
+        if (btn) btn.disabled = false;
+      }
+    } catch (_e) {
+      _showErr('네트워크 오류가 발생했습니다.');
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  async function _doResend() {
+    if (!_email) { _showErr('이메일 정보가 없습니다.'); return; }
+    var btn = document.getElementById('t-resend');
+    if (btn) btn.disabled = true;
+    _hideErr();
+    try {
+      var res  = await fetch('/api/auth/resend-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: _email })
+      });
+      var data = await res.json();
+      if (data.success) {
+        _codeExhausted = false;
+        var inp = document.getElementById('t-code');
+        if (inp) { inp.disabled = false; inp.value = ''; inp.focus(); }
+        var subBtn = document.getElementById('t-submit');
+        if (subBtn) subBtn.disabled = false;
+        _startResendCooldown(60);
+        _startVerifyTimer();
+        _showMsg('새 인증코드가 발송되었습니다.');
+        return;
+      }
+      var code = data.error || '';
+      if (code === 'RESEND_TOO_SOON') {
+        var m = (data.message || '').match(/(\d+)/);
+        _startResendCooldown(m ? parseInt(m[1], 10) : 60);
+        _showErr(data.message || '잠시 후 다시 시도하세요.');
+      } else if (code === 'RESEND_LIMIT_EXCEEDED') {
+        _showErr('오늘 재발송 한도를 초과했습니다. 내일 다시 시도하세요.');
+        if (btn) btn.disabled = true;
+      } else if (code === 'ACCOUNT_LOCKED') {
+        _goView('LOCKED');
+      } else {
+        _showErr(data.message || '재발송에 실패했습니다.');
+        if (btn) btn.disabled = false;
+      }
+    } catch (_e) {
+      _showErr('네트워크 오류가 발생했습니다.');
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  async function _doForgot() {
+    var email = (document.getElementById('t-email').value || '').trim();
+    _hideErr();
+    if (!email) { _showErr('이메일을 입력하세요.'); return; }
+    var btn = document.getElementById('t-submit');
+    if (btn) btn.disabled = true;
+    try {
+      var res  = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email })
+      });
+      if (res.status === 404) {
+        _showErr('서비스 준비 중입니다.');
+        if (btn) btn.disabled = false;
+        return;
+      }
+      var data = await res.json();
+      if (data.success) {
+        _email = email;
+        _resetToken = (data.data && data.data.reset_token) ? data.data.reset_token : '';
+        _goView('RESET');
+      } else {
+        _showErr(data.message || '처리에 실패했습니다.');
+        if (btn) btn.disabled = false;
+      }
+    } catch (_e) {
+      _showErr('서비스 준비 중입니다.');
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  async function _doReset() {
+    var pw  = document.getElementById('t-pw').value  || '';
+    var pw2 = document.getElementById('t-pw2').value || '';
+    _hideErr();
+    if (!pw || !pw2)  { _showErr('비밀번호를 입력하세요.'); return; }
+    if (pw !== pw2)   { _showErr('비밀번호가 일치하지 않습니다.'); return; }
+    if (pw.length < 8){ _showErr('비밀번호는 8자 이상이어야 합니다.'); return; }
+    var btn = document.getElementById('t-submit');
+    if (btn) btn.disabled = true;
+    try {
+      var res  = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: _email, reset_token: _resetToken, password: pw })
+      });
+      if (res.status === 404) {
+        _showErr('서비스 준비 중입니다.');
+        if (btn) btn.disabled = false;
+        return;
+      }
+      var data = await res.json();
+      if (data.success) {
+        _goView('LOGIN');
+      } else {
+        _showErr(data.message || '비밀번호 변경에 실패했습니다.');
+        if (btn) btn.disabled = false;
+      }
+    } catch (_e) {
+      _showErr('서비스 준비 중입니다.');
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  /* ── 이벤트 핸들러 연결 ──────────────────────────────── */
+  function _attachHandlers() {
+    var submit   = document.getElementById('t-submit');
+    var toSignup = document.getElementById('to-signup');
+    var toLogin  = document.getElementById('to-login');
+    var toForgot = document.getElementById('to-forgot');
+    var resend   = document.getElementById('t-resend');
+
+    if (submit) {
+      var fn = { LOGIN: _doLogin, SIGNUP: _doSignup, VERIFY: _doVerify,
+                 FORGOT: _doForgot, RESET: _doReset }[_view];
+      if (fn) submit.addEventListener('click', fn);
+    }
+    if (toSignup) toSignup.addEventListener('click', function () { _goView('SIGNUP'); });
+    if (toLogin)  toLogin.addEventListener('click',  function () { _goView('LOGIN');  });
+    if (toForgot) toForgot.addEventListener('click', function () { _goView('FORGOT'); });
+    if (resend)   resend.addEventListener('click',   _doResend);
+
+    // Enter 키 제출 지원
+    ['t-email','t-pw','t-pw2','t-code','t-inst','t-name'].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el && submit) {
+        el.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter' && !submit.disabled) submit.click();
+        });
+      }
+    });
+
+    // 기관코드 대문자 강제
+    var instEl = document.getElementById('t-inst');
+    if (instEl) {
+      instEl.addEventListener('input', function () {
+        var pos = this.selectionStart;
+        this.value = this.value.toUpperCase();
+        this.setSelectionRange(pos, pos);
+      });
+    }
+  }
+
+  /* ── 공개 API ─────────────────────────────────────────── */
+  window.LoginTerminal = {
+    init: function (initialView) {
+      _clearTimers();
+      if (initialView === 'locked')       _view = 'LOCKED';
+      else if (initialView === 'expired') _view = 'EXPIRED';
+      else                                _view = 'LOGIN';
+      _render();
+    }
+  };
+
+  /* ── DOMContentLoaded 자동 초기화 ─────────────────────── */
+  document.addEventListener('DOMContentLoaded', function () {
+    var vp = new URLSearchParams(location.search).get('view');
+    window.LoginTerminal.init(vp);
+  });
+})();

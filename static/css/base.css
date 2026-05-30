@@ -161,3 +161,407 @@ main {
     opacity: 1;
     transform: translateX(-50%) translateY(0);
 }
+
+/* ── Global Modals (interceptor.js) ──────────────────── */
+.sa-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 31, 61, 0.72);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9998;
+}
+
+.sa-modal-box {
+    background: #fff;
+    border-radius: 14px;
+    padding: 40px 36px;
+    text-align: center;
+    max-width: 360px;
+    width: 90%;
+    box-shadow: 0 16px 48px rgba(15, 31, 61, 0.28);
+}
+
+.sa-modal-msg {
+    font-size: 16px;
+    font-weight: 600;
+    color: #0F1F3D;
+    line-height: 1.7;
+    margin-bottom: 24px;
+    font-family: 'Noto Sans KR', sans-serif;
+}
+
+.sa-modal-btn {
+    background: #0F1F3D;
+    color: #fff;
+    border: none;
+    padding: 12px 32px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: 'Noto Sans KR', sans-serif;
+    transition: background 0.2s;
+}
+
+.sa-modal-btn:hover {
+    background: #5BB8D4;
+}
+
+/* ── Login Terminal ──────────────────────────────────── */
+.terminal-wrap {
+    background: #fff;
+    border-radius: 16px;
+    padding: 44px 36px 36px;
+    width: 100%;
+    max-width: 420px;
+    box-shadow: 0 4px 32px rgba(15, 31, 61, 0.14);
+}
+
+.terminal-logo {
+    text-align: center;
+    margin-bottom: 28px;
+}
+
+.terminal-logo-img {
+    height: 34px;
+    width: auto;
+}
+
+.terminal-view-title {
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 800;
+    font-size: 20px;
+    color: #0F1F3D;
+    text-align: center;
+    margin-bottom: 24px;
+    letter-spacing: -0.02em;
+}
+
+.terminal-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #0F1F3D;
+    display: block;
+    margin-bottom: 6px;
+    font-family: 'Noto Sans KR', sans-serif;
+}
+
+.terminal-input,
+.terminal-select {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1.5px solid #E5E0D8;
+    border-radius: 8px;
+    font-size: 14px;
+    font-family: 'Noto Sans KR', sans-serif;
+    color: #0F1F3D;
+    background: #FAF8F5;
+    outline: none;
+    margin-bottom: 14px;
+    box-sizing: border-box;
+    transition: border-color 0.15s, background 0.15s;
+}
+
+.terminal-input:focus,
+.terminal-select:focus {
+    border-color: #5BB8D4;
+    background: #fff;
+}
+
+.terminal-select {
+    appearance: none;
+    cursor: pointer;
+}
+
+.terminal-btn {
+    width: 100%;
+    padding: 12px;
+    background: #0F1F3D;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 700;
+    font-family: 'Noto Sans KR', sans-serif;
+    cursor: pointer;
+    margin-top: 4px;
+    letter-spacing: -0.01em;
+    transition: background 0.2s;
+}
+
+.terminal-btn:hover:not(:disabled) {
+    background: #5BB8D4;
+}
+
+.terminal-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.terminal-error {
+    color: #e76f51;
+    font-size: 13px;
+    text-align: center;
+    margin-top: 12px;
+    line-height: 1.55;
+    font-family: 'Noto Sans KR', sans-serif;
+}
+
+.terminal-links {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    margin-top: 20px;
+    flex-wrap: wrap;
+}
+
+.terminal-link {
+    color: #5BB8D4;
+    font-size: 13px;
+    cursor: pointer;
+    text-decoration: none;
+    background: none;
+    border: none;
+    padding: 0;
+    font-family: 'Noto Sans KR', sans-serif;
+    transition: color 0.15s;
+}
+
+.terminal-link:hover {
+    color: #0F1F3D;
+    text-decoration: underline;
+}
+
+.terminal-divider {
+    color: #D0CDC8;
+    font-size: 13px;
+}
+
+.terminal-info {
+    text-align: center;
+    padding: 8px 0 16px;
+    font-size: 14px;
+    color: #0F1F3D;
+    line-height: 1.7;
+    font-family: 'Noto Sans KR', sans-serif;
+}
+
+.terminal-timer {
+    font-size: 12px;
+    color: #9B9490;
+    text-align: center;
+    margin-top: 8px;
+    font-family: 'Noto Sans KR', sans-serif;
+}
+
+.terminal-resend-btn {
+    width: 100%;
+    background: transparent;
+    border: 1.5px solid #5BB8D4;
+    color: #5BB8D4;
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-size: 13px;
+    cursor: pointer;
+    font-family: 'Noto Sans KR', sans-serif;
+    font-weight: 600;
+    margin-top: 10px;
+    transition: all 0.2s;
+}
+
+.terminal-resend-btn:hover:not(:disabled) {
+    background: #5BB8D4;
+    color: #fff;
+}
+
+.terminal-resend-btn:disabled {
+    border-color: #D0CDC8;
+    color: #9B9490;
+    cursor: not-allowed;
+}
+
+.terminal-code-input {
+    width: 100%;
+    padding: 14px;
+    border: 2px solid #E5E0D8;
+    border-radius: 8px;
+    font-size: 28px;
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 800;
+    color: #0F1F3D;
+    background: #FAF8F5;
+    outline: none;
+    text-align: center;
+    letter-spacing: 10px;
+    margin-bottom: 14px;
+    box-sizing: border-box;
+    transition: border-color 0.15s, background 0.15s;
+}
+
+.terminal-code-input:focus {
+    border-color: #5BB8D4;
+    background: #fff;
+}
+
+.terminal-static-icon {
+    font-size: 36px;
+    text-align: center;
+    margin-bottom: 12px;
+}
+
+/* ── Landing Page ────────────────────────────────────── */
+.landing-hero {
+    display: grid;
+    grid-template-columns: 65fr 35fr;
+    min-height: calc(100vh - 64px);
+}
+
+.landing-left {
+    position: relative;
+    background: #0F1F3D;
+    overflow: hidden;
+}
+
+.landing-bg-slide {
+    position: absolute;
+    inset: 0;
+    background-size: cover;
+    background-position: center;
+    opacity: 0;
+    animation: landingBgFade 16s linear infinite;
+}
+
+.landing-bg-slide:nth-child(1) { animation-delay: 0s; }
+.landing-bg-slide:nth-child(2) { animation-delay: 4s; }
+.landing-bg-slide:nth-child(3) { animation-delay: 8s; }
+.landing-bg-slide:nth-child(4) { animation-delay: 12s; }
+
+@keyframes landingBgFade {
+    0%, 100% { opacity: 0; }
+    3%        { opacity: 1; }
+    22%       { opacity: 1; }
+    25%       { opacity: 0; }
+}
+
+.landing-brand {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    padding: 48px 52px;
+    background: linear-gradient(to top, rgba(15,31,61,0.72) 0%, transparent 55%);
+    pointer-events: none;
+}
+
+.landing-brand-logo {
+    height: 44px;
+    width: auto;
+    margin-bottom: 14px;
+    filter: brightness(0) invert(1);
+}
+
+.landing-brand-tag {
+    font-size: 13px;
+    color: rgba(255,255,255,0.72);
+    font-family: 'Noto Sans KR', sans-serif;
+    letter-spacing: 0.04em;
+}
+
+.landing-right {
+    background: #FAF8F5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 28px;
+    border-left: 1px solid #E5E0D8;
+}
+
+.notices-section {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 48px 24px 32px;
+}
+
+.notices-section h3 {
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 800;
+    font-size: 16px;
+    color: #0F1F3D;
+    letter-spacing: -0.01em;
+    margin-bottom: 16px;
+}
+
+.notices-list {
+    list-style: none;
+    border-top: 2px solid #0F1F3D;
+}
+
+.notices-list li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 0;
+    border-bottom: 1px solid #F0EDE9;
+    gap: 12px;
+}
+
+.notice-title {
+    font-size: 14px;
+    color: #0F1F3D;
+    font-family: 'Noto Sans KR', sans-serif;
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.notice-date {
+    font-size: 12px;
+    color: #9B9490;
+    white-space: nowrap;
+    font-family: 'Noto Sans KR', sans-serif;
+}
+
+.notices-empty {
+    padding: 20px 0;
+    text-align: center;
+    font-size: 14px;
+    color: #9B9490;
+    font-family: 'Noto Sans KR', sans-serif;
+}
+
+.ad-banner {
+    background: #F0EDE9;
+    border-top: 1px solid #E5E0D8;
+    min-height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* ── Login Page ──────────────────────────────────────── */
+.login-page-bg {
+    background: #FAF8F5;
+    min-height: calc(100vh - 64px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 24px;
+}
+
+@media (max-width: 768px) {
+    .landing-hero {
+        grid-template-columns: 1fr;
+    }
+    .landing-left {
+        min-height: 220px;
+    }
+    .landing-right {
+        border-left: none;
+        border-top: 1px solid #E5E0D8;
+    }
+}

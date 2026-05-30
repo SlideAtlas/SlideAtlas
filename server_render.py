@@ -313,17 +313,49 @@ def ec2_proxy(subpath):
         print(f"EC2 proxy error {url}: {e}")
         return Response(str(e), status=502)
 
+# ── 공지사항 로드 (notices 테이블 미존재 시 빈 목록 반환) ──
+def _load_notices():
+    try:
+        conn = get_db_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT title, published_at FROM notices
+                    WHERE is_published = TRUE
+                    ORDER BY published_at DESC LIMIT 5
+                """)
+                rows = cur.fetchall()
+                return [
+                    {
+                        'title': r[0],
+                        'date': r[1].strftime('%Y.%m.%d') if r[1] else '',
+                    }
+                    for r in rows
+                ]
+        finally:
+            release_db_conn(conn)
+    except Exception:
+        return []
+
+
 # ── 랜딩페이지 ──
 @app.route('/')
 def landing():
     is_logged = bool(request.cookies.get('access_token'))
-    return render_template('landing.html', is_logged=is_logged)
+    notices = _load_notices()
+    return render_template('landing.html', is_logged=is_logged, notices=notices)
 
 
 @app.route('/login')
 def login_page():
     is_logged = bool(request.cookies.get('access_token'))
-    next_url = request.args.get('next', '/')
+    # 이미 로그인 상태이면 홈으로 리다이렉트
+    if is_logged:
+        return redirect('/')
+    next_url = request.args.get('next', '/slides')
+    # 오픈 리다이렉트 방어: '/'로 시작하는 내부 경로만 허용
+    if not next_url.startswith('/') or next_url.startswith('//'):
+        next_url = '/slides'
     return render_template('login.html', is_logged=is_logged, next=next_url)
 
 
