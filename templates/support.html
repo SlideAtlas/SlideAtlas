@@ -1,3 +1,319 @@
 {% extends "base.html" %}
 {% block title %}1:1 문의 — SlideAtlas{% endblock %}
-{% block content %}{% endblock %}
+
+{% block extra_head %}
+<style>
+.support-page {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 56px 24px 80px;
+}
+
+.support-page-title {
+  font-family: 'Montserrat', sans-serif;
+  font-weight: 800;
+  font-size: 28px;
+  color: #0F1F3D;
+  letter-spacing: -0.02em;
+  margin-bottom: 8px;
+}
+
+.support-page-sub {
+  font-size: 14px;
+  color: #9B9490;
+  font-family: 'Noto Sans KR', sans-serif;
+  margin-bottom: 40px;
+}
+
+.support-form-group {
+  margin-bottom: 18px;
+}
+
+.support-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: #0F1F3D;
+  font-family: 'Noto Sans KR', sans-serif;
+  margin-bottom: 6px;
+}
+
+.support-label .required-mark {
+  color: #e76f51;
+  margin-left: 2px;
+}
+
+.support-label .optional {
+  color: #9B9490;
+  font-weight: 400;
+  margin-left: 4px;
+  font-size: 12px;
+}
+
+.support-input,
+.support-textarea {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1.5px solid #E5E0D8;
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: 'Noto Sans KR', sans-serif;
+  color: #0F1F3D;
+  background: #FAF8F5;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.support-input:focus,
+.support-textarea:focus {
+  border-color: #5BB8D4;
+  background: #fff;
+}
+
+.support-textarea {
+  resize: vertical;
+  min-height: 140px;
+  line-height: 1.7;
+}
+
+.privacy-box {
+  border: 1.5px solid #E5E0D8;
+  border-radius: 8px;
+  background: #FAF8F5;
+  padding: 14px 16px;
+  max-height: 90px;
+  overflow-y: auto;
+  font-size: 13px;
+  color: #4A5568;
+  font-family: 'Noto Sans KR', sans-serif;
+  line-height: 1.8;
+  margin-bottom: 10px;
+}
+
+.privacy-check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.privacy-check-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: #0F1F3D;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.privacy-check-row label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #0F1F3D;
+  font-family: 'Noto Sans KR', sans-serif;
+  cursor: pointer;
+}
+
+.privacy-check-row label .required-mark {
+  color: #e76f51;
+  margin-left: 2px;
+}
+
+.support-submit-btn {
+  width: 100%;
+  padding: 13px;
+  background: #0F1F3D;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 700;
+  font-family: 'Noto Sans KR', sans-serif;
+  cursor: pointer;
+  margin-top: 8px;
+  letter-spacing: -0.01em;
+  transition: background 0.2s;
+}
+
+.support-submit-btn:hover:not(:disabled) {
+  background: #5BB8D4;
+}
+
+.support-submit-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.support-error {
+  color: #e76f51;
+  font-size: 13px;
+  font-family: 'Noto Sans KR', sans-serif;
+  margin-top: 8px;
+  line-height: 1.6;
+}
+
+.support-success {
+  text-align: center;
+  padding: 60px 24px;
+}
+
+.support-success-icon {
+  font-size: 48px;
+  margin-bottom: 20px;
+}
+
+.support-success h2 {
+  font-family: 'Montserrat', sans-serif;
+  font-weight: 800;
+  font-size: 22px;
+  color: #0F1F3D;
+  margin-bottom: 12px;
+  letter-spacing: -0.02em;
+}
+
+.support-success p {
+  font-size: 14px;
+  color: #9B9490;
+  font-family: 'Noto Sans KR', sans-serif;
+  line-height: 1.8;
+  margin-bottom: 28px;
+}
+
+.support-success a {
+  display: inline-block;
+  padding: 11px 24px;
+  background: #0F1F3D;
+  color: #fff;
+  text-decoration: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  font-family: 'Noto Sans KR', sans-serif;
+  transition: background 0.2s;
+}
+
+.support-success a:hover {
+  background: #5BB8D4;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="support-page">
+
+  {% if success %}
+  <div class="support-success">
+    <div class="support-success-icon">✉️</div>
+    <h2>문의가 접수되었습니다</h2>
+    <p>빠른 시일 내에 답변 드리겠습니다.<br>답변은 입력하신 이메일 주소로 발송됩니다.</p>
+    <a href="/">홈으로 돌아가기</a>
+  </div>
+
+  {% else %}
+  <h1 class="support-page-title">1:1 문의</h1>
+  <p class="support-page-sub">궁금한 점이나 불편한 사항을 남겨 주세요. 빠르게 답변 드리겠습니다.</p>
+
+  {% if error %}
+  <div class="support-error" style="margin-bottom:16px;">{{ error }}</div>
+  {% endif %}
+
+  <form method="POST" action="/support" id="supportForm" novalidate>
+
+    <div class="support-form-group">
+      <label class="support-label" for="name">
+        이름<span class="optional">(선택)</span>
+      </label>
+      <input class="support-input" type="text" id="name" name="name"
+             placeholder="홍길동" maxlength="50"
+             value="{{ form.name or '' }}">
+    </div>
+
+    <div class="support-form-group">
+      <label class="support-label" for="email">
+        답변받을 이메일<span class="required-mark">*</span>
+      </label>
+      <input class="support-input" type="email" id="email" name="email"
+             placeholder="example@university.ac.kr" maxlength="200" required
+             value="{{ form.email or '' }}">
+    </div>
+
+    <div class="support-form-group">
+      <label class="support-label" for="phone">
+        전화번호<span class="optional">(선택)</span>
+      </label>
+      <input class="support-input" type="tel" id="phone" name="phone"
+             placeholder="010-0000-0000" maxlength="20"
+             value="{{ form.phone or '' }}">
+    </div>
+
+    <div class="support-form-group">
+      <label class="support-label" for="subject">
+        제목<span class="required-mark">*</span>
+      </label>
+      <input class="support-input" type="text" id="subject" name="subject"
+             placeholder="문의 제목을 입력해 주세요" maxlength="200" required
+             value="{{ form.subject or '' }}">
+    </div>
+
+    <div class="support-form-group">
+      <label class="support-label" for="content">
+        문의 내용<span class="required-mark">*</span>
+      </label>
+      <textarea class="support-textarea" id="content" name="content"
+                placeholder="문의하실 내용을 자세히 입력해 주세요." maxlength="4000" required>{{ form.content or '' }}</textarea>
+    </div>
+
+    <div class="support-form-group">
+      <label class="support-label">개인정보 수집·이용 동의<span class="required-mark">*</span></label>
+      <div class="privacy-box">
+        · 수집항목: 이름, 이메일, 연락처<br>
+        · 수집목적: 1:1 문의 접수 및 답변 안내<br>
+        · 보유기간: 문의 처리 완료 후 1년 보관 후 파기
+      </div>
+      <div class="privacy-check-row">
+        <input type="checkbox" id="privacy_agreed" name="privacy_agreed" value="1"
+               {% if form.privacy_agreed %}checked{% endif %}>
+        <label for="privacy_agreed">위 내용에 동의합니다<span class="required-mark">*</span></label>
+      </div>
+    </div>
+
+    <div id="formError" class="support-error" style="display:none;"></div>
+
+    <button type="submit" class="support-submit-btn" id="submitBtn">문의 접수하기</button>
+  </form>
+  {% endif %}
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  var form = document.getElementById('supportForm');
+  if (!form) return;
+  form.addEventListener('submit', function (e) {
+    var email = document.getElementById('email').value.trim();
+    var subject = document.getElementById('subject').value.trim();
+    var content = document.getElementById('content').value.trim();
+    var privacy = document.getElementById('privacy_agreed').checked;
+    var errEl = document.getElementById('formError');
+    errEl.style.display = 'none';
+
+    if (!email) { showErr('이메일 주소를 입력해 주세요.'); e.preventDefault(); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      showErr('올바른 이메일 형식을 입력해 주세요.'); e.preventDefault(); return;
+    }
+    if (!subject) { showErr('제목을 입력해 주세요.'); e.preventDefault(); return; }
+    if (!content) { showErr('문의 내용을 입력해 주세요.'); e.preventDefault(); return; }
+    if (!privacy) { showErr('개인정보 수집·이용에 동의해 주세요.'); e.preventDefault(); return; }
+
+    document.getElementById('submitBtn').disabled = true;
+  });
+
+  function showErr(msg) {
+    var errEl = document.getElementById('formError');
+    errEl.textContent = msg;
+    errEl.style.display = 'block';
+  }
+})();
+</script>
+{% endblock %}

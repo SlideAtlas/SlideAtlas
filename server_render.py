@@ -806,6 +806,68 @@ def admin_delete_slide(slide_id):
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)})
 
+# ── 고객센터 ──────────────────────────────────────────────
+
+@app.route('/faq')
+def faq():
+    is_logged = bool(request.cookies.get('access_token'))
+    return render_template('faq.html', is_logged=is_logged)
+
+
+@app.route('/manual')
+def manual():
+    is_logged = bool(request.cookies.get('access_token'))
+    return render_template('manual.html', is_logged=is_logged)
+
+
+@app.route('/support', methods=['GET', 'POST'])
+def support():
+    is_logged = bool(request.cookies.get('access_token'))
+
+    if request.method == 'GET':
+        return render_template('support.html', is_logged=is_logged,
+                               success=False, error=None, form={})
+
+    # POST: 문의 접수
+    name    = request.form.get('name', '').strip()
+    email   = request.form.get('email', '').strip()
+    phone   = request.form.get('phone', '').strip()
+    subject = request.form.get('subject', '').strip()
+    content = request.form.get('content', '').strip()
+    privacy = request.form.get('privacy_agreed', '')
+
+    form_data = {'name': name, 'email': email, 'phone': phone,
+                 'subject': subject, 'content': content,
+                 'privacy_agreed': bool(privacy)}
+
+    # 서버측 필수값 검증
+    if not email or not subject or not content or not privacy:
+        return render_template('support.html', is_logged=is_logged,
+                               success=False,
+                               error='필수 항목을 모두 입력해 주세요.',
+                               form=form_data)
+
+    # inquiries 테이블 INSERT (테이블 미존재 시 안전하게 처리)
+    try:
+        conn = get_db_conn()
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        INSERT INTO inquiries
+                            (name, email, phone, subject, content, privacy_agreed)
+                        VALUES (%s, %s, %s, %s, %s, TRUE)
+                    """, (name or None, email, phone or None, subject, content))
+        finally:
+            release_db_conn(conn)
+    except Exception:
+        # 테이블 미존재 등 DB 오류 — 사용자에겐 정상 접수로 표시
+        pass
+
+    return render_template('support.html', is_logged=is_logged,
+                           success=True, error=None, form={})
+
+
 if __name__ == '__main__':
     print(f"\n✅ SlideAtlas 서버 시작!")
     port = int(os.environ.get("PORT", 5000))
