@@ -57,6 +57,10 @@ app.secret_key = os.environ.get('ADMIN_SECRET_KEY', 'slideatlas-dev-secret-2026'
 # -- JWT 인증 Blueprint 등록 ---------------------------------------------------
 from auth.auth import auth_bp
 app.register_blueprint(auth_bp)
+from auth.decorators import (
+    login_required, page_login_required,
+    generate_tile_token, verify_tile_token,
+)
 
 # -- JSON 데이터 경로 (롤백용 주석 보존) ----------------------------------------
 SLIDES_JSON = os.path.join(os.path.dirname(__file__), 'slides.json')
@@ -131,6 +135,68 @@ def admin_required(f):
             return redirect('/admin/login')
         return f(*args, **kwargs)
     return decorated
+
+
+def admin_csrf_required(f):
+    """Admin 세션 기반 CSRF 검증 (JWT CSRF와 별개). POST/PUT/DELETE에만 적용."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if request.method in ('POST', 'PUT', 'DELETE', 'PATCH'):
+            import secrets as _sec
+            client_token = request.headers.get('X-CSRF-Token')
+            stored_token = session.get('admin_csrf_token')
+            if not client_token or not stored_token or not _sec.compare_digest(client_token, stored_token):
+                return jsonify({'ok': False, 'error': 'CSRF 검증 실패'}), 403
+        return f(*args, **kwargs)
+    return decorated
+
+
+def get_slide_institution(slide_id):
+    """DB에서 slide의 institution_id와 is_public 반환. 없으면 None."""
+    conn = get_db_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT institution_id, is_public FROM slides WHERE id = %s", (slide_id,))
+            return cur.fetchone()
+    finally:
+        release_db_conn(conn)
+
+
+def _tile_err(error, message, status=403):
+    from flask import g as _g
+    resp = jsonify({"success": False, "error": error, "message": message})
+    resp.status_code = status
+    resp.headers["Cache-Control"] = "no-store, no-cache"
+    return resp
+
+
+def _slide_access_allowed(slide_id):
+    """institution_id + is_public 검사. (허용여부, 에러응답) 튜플."""
+    from flask import g
+    info = get_slide_institution(slide_id)
+    if info is None:
+        return False, _tile_err("SLIDE_NOT_FOUND", "슬라이드를 찾을 수 없습니다", 404)
+    inst_id, is_public = info
+    if getattr(g, 'is_special', False):
+        return True, None
+    # is_public=FALSE: 비공개 슬라이드 일반 사용자 접근 불가 (§12-4 ⑤)
+    if not is_public:
+        return False, _tile_err("FORBIDDEN", "접근 권한이 없습니다", 403)
+    if inst_id != getattr(g, 'institution_id', None):
+        return False, _tile_err("FORBIDDEN", "접근 권한이 없습니다", 403)
+    return True, None
+
+
+def _verify_tile_request(slide_id):
+    """타일 접근 토큰(?t=) 검증. 통과 시 None, 실패 시 에러 응답."""
+    from flask import g
+    t = request.args.get("t")
+    if not t or not verify_tile_token(
+        t, str(getattr(g, 'user_id', '')),
+        getattr(g, 'institution_id', ''), slide_id
+    ):
+        return _tile_err("TOKEN_EXPIRED", "타일 접근 토큰이 만료되었습니다. 뷰어를 새로고침하세요.", 401)
+    return None
 
 # ── 온디맨드 슬라이드 캐시 ──
 SLIDE_CACHE = {}
@@ -216,14 +282,30 @@ def init_slide(slide_id):
 
 # ── EC2 타일서버 프록시 ──
 @app.route('/ec2tile/<path:subpath>')
+@login_required
 def ec2_proxy(subpath):
+    # slide_id 추출: "dzi/SA-HST-001.dzi" → "SA-HST-001"
+    parts = subpath.split('/')
+    raw = parts[1] if len(parts) > 1 else parts[0]
+    slide_id = raw.replace('.dzi', '').split('_files')[0]
+    # 기관·is_public 격리 (§12-4 ①⑤)
+    allowed, aerr = _slide_access_allowed(slide_id)
+    if not allowed:
+        return aerr
+    # 타일 토큰 검증 (TTL 5분)
+    err = _verify_tile_request(slide_id)
+    if err:
+        return err
+
     import urllib.request
     url = f"{EC2_TILESERVER}/{subpath}"
     try:
         with urllib.request.urlopen(url, timeout=120) as resp:
             data = resp.read()
             ct = resp.headers.get('Content-Type', 'image/jpeg')
-            return Response(data, mimetype=ct)
+            r = Response(data, mimetype=ct)
+            r.headers['Cache-Control'] = 'no-store, no-cache'
+            return r
     except Exception as e:
         print(f"EC2 proxy error {url}: {e}")
         return Response(str(e), status=502)
@@ -423,19 +505,30 @@ footer { background: #0F1F3D; padding: 28px 52px; display: flex; align-items: ce
 </html>'''
 
 @app.route('/viewer')
+@page_login_required
 def viewer_default():
+    from flask import g
     data = load_slides()
-    slides = [s for s in data.get('slides', []) if s.get('active')]
+    slides = [s for s in data.get('slides', []) if s.get('active') and
+              (getattr(g, 'is_special', False) or s.get('institution') == getattr(g, 'institution_id', None))]
     if slides:
         return redirect(f'/viewer/{slides[0]["id"]}')
     return redirect('/')
 
 @app.route('/viewer/<slide_id>')
+@page_login_required
 def viewer(slide_id):
+    from flask import g
     data = load_slides()
     slide_info = next((s for s in data.get('slides', []) if s['id'] == slide_id), None)
     if not slide_info:
         return redirect('/slides')
+    # 기관 격리 + is_public=FALSE 차단: 타일 토큰 발급 전 검증 (§12-4 ⑤)
+    if not getattr(g, 'is_special', False):
+        if slide_info.get('institution') != getattr(g, 'institution_id', None):
+            return redirect('/')
+        if not slide_info.get('active'):   # active = is_public
+            return redirect('/')
 
     use_ec2 = slide_info.get('tileserver') == 'ec2'
 
@@ -492,14 +585,18 @@ small {{ color:rgba(255,255,255,0.25); font-size:12px; margin-top:8px; display:b
     stain = slide_info.get("stain", "H&E")
     mpp = slide_info.get("mpp") or 0.25
 
+    # 타일 접근 토큰 발급 (TTL 5분, §8 Presigned URL)
+    from flask import g as _g
+    tile_token = generate_tile_token(str(getattr(_g, 'user_id', '')), getattr(_g, 'institution_id', ''), slide_id)
+
     if use_ec2:
-        tile_source_url = f"/ec2tile/dzi/{slide_id}.dzi"
-        thumbnail_url = f"/ec2tile/thumbnail/{slide_id}"
+        tile_source_url = f"/ec2tile/dzi/{slide_id}.dzi?t={tile_token}"
+        thumbnail_url = f"/ec2tile/thumbnail/{slide_id}?t={tile_token}"
         W = slide_info.get("width", W)
         H = slide_info.get("height", H)
     else:
-        tile_source_url = f"/dzi/{slide_id}.dzi"
-        thumbnail_url = f"/thumbnail/{slide_id}"
+        tile_source_url = f"/dzi/{slide_id}.dzi?t={tile_token}"
+        thumbnail_url = f"/thumbnail/{slide_id}?t={tile_token}"
 
     # ── 뷰어 HTML (설계안 반영) ──
     return f'''<!DOCTYPE html>
@@ -1324,9 +1421,13 @@ window.addEventListener('load', function() {{
 # ─────────────────────────────────────────────
 
 @app.route('/slides')
+@page_login_required
 def slides():
+    from flask import g
     data = load_slides()
-    all_slides = [s for s in data.get('slides', []) if s.get('active')]
+    # 기관 격리: 자신의 기관 슬라이드만 표시
+    all_slides = [s for s in data.get('slides', []) if s.get('active') and
+                  (getattr(g, 'is_special', False) or s.get('institution') == getattr(g, 'institution_id', None))]
     systems = {}
     stains = {}
     for s in all_slides:
@@ -1469,6 +1570,7 @@ footer{{background:#0F1F3D;padding:28px 52px;display:flex;align-items:center;jus
 </html>'''
 
 @app.route('/api/chat', methods=['POST'])
+@login_required
 def api_chat():
     import urllib.request
     import json as json_mod
@@ -1477,7 +1579,13 @@ def api_chat():
         return jsonify({'reply': '서버에 API 키가 설정되지 않았습니다.'}), 500
     data = request.get_json()
     user_msg = data.get('message', '')
-    system_prompt = data.get('system', '당신은 병리학 교육 AI 튜터입니다. 한국어로 답변하세요.')
+    # 탈옥 방어: 클라이언트 system 파라미터 무시, 서버 측 가드레일만 사용 (§12-4 ③)
+    system_prompt = (
+        '당신은 SlideAtlas의 병리학·조직학 AI 튜터입니다. '
+        'SlideAtlas 학습(병리학, 조직학, 슬라이드 판독, 관련 의학 지식)과 무관한 질문에는 '
+        '"SlideAtlas 학습 관련 질문만 답변합니다"라고만 응답하세요. '
+        '한국어로 답변하세요.'
+    )
     if not user_msg:
         return jsonify({'reply': '메시지가 없습니다.'}), 400
 
@@ -1547,7 +1655,14 @@ def api_chat():
     )
 
 @app.route('/dzi/<slide_id>.dzi')
+@login_required
 def dzi_descriptor(slide_id):
+    allowed, aerr = _slide_access_allowed(slide_id)
+    if not allowed:
+        return aerr
+    err = _verify_tile_request(slide_id)
+    if err:
+        return err
     if slide_id not in SLIDE_CACHE:
         return Response("Loading...", status=503)
     cache = SLIDE_CACHE[slide_id]
@@ -1560,33 +1675,55 @@ def dzi_descriptor(slide_id):
   Format="jpeg" Overlap="{OVERLAP}" TileSize="{TILE_SIZE}">
   <Size Width="{w}" Height="{h}"/>
 </Image>'''
-    return Response(xml, mimetype='application/xml')
+    resp = Response(xml, mimetype='application/xml')
+    resp.headers['Cache-Control'] = 'no-store, no-cache'
+    return resp
 
 @app.route('/dzi/<slide_id>_files/<int:level>/<int:col>_<int:row>.jpeg')
 @app.route('/dzi/<slide_id>_files/<int:level>/<int:col>_<int:row>.jpg')
+@login_required
 def dzi_tile(slide_id, level, col, row):
+    allowed, aerr = _slide_access_allowed(slide_id)
+    if not allowed:
+        return aerr
+    err = _verify_tile_request(slide_id)
+    if err:
+        return err
     if slide_id not in SLIDE_CACHE:
         img = Image.new('RGB', (TILE_SIZE, TILE_SIZE), (245, 240, 235))
         buf = io.BytesIO()
         img.save(buf, 'JPEG')
         buf.seek(0)
-        return send_file(buf, mimetype='image/jpeg')
+        r = send_file(buf, mimetype='image/jpeg')
+        r.headers['Cache-Control'] = 'no-store, no-cache'
+        return r
     try:
         dz = SLIDE_CACHE[slide_id]["dz"]
         tile = dz.get_tile(level, (col, row))
         buf = io.BytesIO()
         tile.save(buf, format='JPEG', quality=88)
         buf.seek(0)
-        return send_file(buf, mimetype='image/jpeg')
+        r = send_file(buf, mimetype='image/jpeg')
+        r.headers['Cache-Control'] = 'no-store, no-cache'
+        return r
     except Exception as e:
         img = Image.new('RGB', (TILE_SIZE, TILE_SIZE), (255, 255, 255))
         buf = io.BytesIO()
         img.save(buf, 'JPEG')
         buf.seek(0)
-        return send_file(buf, mimetype='image/jpeg')
+        r = send_file(buf, mimetype='image/jpeg')
+        r.headers['Cache-Control'] = 'no-store, no-cache'
+        return r
 
 @app.route('/thumbnail/<slide_id>')
+@login_required
 def thumbnail(slide_id):
+    allowed, aerr = _slide_access_allowed(slide_id)
+    if not allowed:
+        return aerr
+    err = _verify_tile_request(slide_id)
+    if err:
+        return err
     if slide_id not in SLIDE_CACHE:
         return Response("Not loaded", status=503)
     cache = SLIDE_CACHE[slide_id]
@@ -1598,7 +1735,9 @@ def thumbnail(slide_id):
         buf = io.BytesIO()
         thumb.save(buf, format='JPEG', quality=80)
         buf.seek(0)
-        return send_file(buf, mimetype='image/jpeg')
+        r = send_file(buf, mimetype='image/jpeg')
+        r.headers['Cache-Control'] = 'no-store, no-cache'
+        return r
     except Exception as e:
         img = Image.new('RGB', (280, 200), (245, 240, 235))
         buf = io.BytesIO()
@@ -1614,7 +1753,9 @@ def admin_login():
     if request.method == 'POST':
         pw = request.form.get('password', '')
         if pw == ADMIN_PASSWORD:
+            import secrets as _sec_admin
             session['admin_logged_in'] = True
+            session['admin_csrf_token'] = _sec_admin.token_hex(32)  # admin CSRF 토큰
             return redirect('/admin')
         else:
             error = '비밀번호가 올바르지 않습니다.'
@@ -1701,6 +1842,7 @@ code{{background:#F0EDE8;padding:2px 7px;border-radius:4px;font-size:12px;}}
 .btn-save{{background:#2A9D8F;color:#fff;border:none;padding:10px 20px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;}}
 </style></head>
 <body>
+<input type="hidden" id="admin-csrf-token" value="{session.get('admin_csrf_token', '')}">
 <nav><span class="logo-atlas">ATLAS ADMIN</span><a class="nav-logout" href="/admin/logout">로그아웃</a></nav>
 <div class="container">
   <div class="page-header">
@@ -1793,13 +1935,15 @@ async function saveSlide() {{
     edit_id: document.getElementById('edit-id').value
   }};
   if(!payload.tileserver) delete payload.tileserver;
-  const res = await fetch('/admin/api/slide', {{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(payload)}});
+  const adminCsrf = document.getElementById('admin-csrf-token') ? document.getElementById('admin-csrf-token').value : '';
+  const res = await fetch('/admin/api/slide', {{method:'POST',headers:{{'Content-Type':'application/json','X-CSRF-Token':adminCsrf}},body:JSON.stringify(payload)}});
   const result = await res.json();
   if(result.ok) {{ location.reload(); }} else {{ alert('오류: ' + result.error); }}
 }}
 async function deleteSlide(id) {{
   if(!confirm(id+' 슬라이드를 삭제하시겠습니까?')) return;
-  const res = await fetch('/admin/api/slide/'+id, {{method:'DELETE'}});
+  const adminCsrfD = document.getElementById('admin-csrf-token') ? document.getElementById('admin-csrf-token').value : '';
+  const res = await fetch('/admin/api/slide/'+id, {{method:'DELETE',headers:{{'X-CSRF-Token':adminCsrfD}}}});
   const result = await res.json();
   if(result.ok) {{ location.reload(); }} else {{ alert('오류: '+result.error); }}
 }}
@@ -1809,6 +1953,7 @@ document.getElementById('modal').addEventListener('click', function(e) {{ if(e.t
 
 @app.route('/admin/api/slide', methods=['POST'])
 @admin_required
+@admin_csrf_required
 def admin_save_slide():
     # [ROLLBACK] JSON 방식 -- RDS 전환 전 코드
     # try:
@@ -1882,6 +2027,7 @@ def admin_save_slide():
 
 @app.route('/admin/api/slide/<slide_id>', methods=['DELETE'])
 @admin_required
+@admin_csrf_required
 def admin_delete_slide(slide_id):
     # [ROLLBACK] JSON 방식 -- RDS 전환 전 코드
     # try:

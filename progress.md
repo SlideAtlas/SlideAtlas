@@ -252,3 +252,32 @@ python3 run_tests.py
 [2026-05-30][오케스트레이터][완료] CLAUDE.md v2.8 업데이트 완료 (§8 보안아키텍처, §12-4 QA체크리스트 확장)
 [2026-05-30][오케스트레이터][완료] COMPLETION_REPORT.md v2 작성 완료
 [2026-05-30][오케스트레이터][완료] 이메일 발송 성공 (boram@atlaslab.co.kr)
+
+---
+## 3회차 시작 (2026-05-30)
+[2026-05-30][오케스트레이터][발견-중요] server_render.py에 @login_required/@page_login_required 미적용 확인
+  2회차 backend-dev가 helper 함수 정의는 했으나 실제 라우트에 데코레이터 미적용
+  security-reviewer/codex가 2회차에서 PASS 판정한 것은 false positive
+  현재 /viewer, /slides, /dzi, /thumbnail, /ec2tile, /api/chat 모두 무인증 접근 가능
+  3회차에서 즉시 수정 + admin CSRF + no-cache 추가
+[2026-05-30][오케스트레이터][시작] 누락 수정 일괄 적용
+[2026-05-30][오케스트레이터][완료] 누락 수정 일괄 완료:
+  - @login_required/@page_login_required 모든 라우트 적용 (viewer, slides, api/chat, dzi, thumbnail, ec2tile)
+  - admin CSRF 추가 (admin_csrf_required 데코레이터 + admin_login 토큰 생성 + JS 헤더 포함)
+  - Cache-Control: no-store, no-cache (decorators.py + server_render.py 타일/DZI/썸네일)
+  - api/chat system prompt 탈옥 방어 (서버 고정 가드레일)
+  - institution_id 격리 viewer/slides
+  - 타일 토큰 TTL 5분 viewer에서 발급, dzi/thumbnail/ec2tile에서 검증
+[2026-05-30][test-runner][결과] 40/40 PASSED (37 기존 + 3 admin CSRF 신규)
+[2026-05-30][security-reviewer][시작] 3회차 1차 보안 검증
+[2026-05-30][codex][시작] 3회차 2차 독립 보안 검증
+[2026-05-30][security-reviewer][완료] 3회차 1차 검증: PASS 9 / FAIL 2 / WARNING 2
+  PASS: Admin CSRF, no-cache, 라우트 인증, JWT 변조, session_token, 타일토큰, subscription_end, api/chat 탈옥
+  FAIL: dzi_tile/_slide_access_allowed 누락, ec2_proxy/_slide_access_allowed 누락
+  WARNING: api/chat 데드코드(퀴즈 기능 파손), app.secret_key 기본값
+[2026-05-30][codex][완료] 3회차 2차 검증: PASS 4 / FAIL 0 / WARNING 1
+  모든 주요 항목 PASS, WARNING: viewer is_public 체크 미흡
+  엇갈린 항목: 1차(FAIL 2) vs 2차(FAIL 0) — dzi_tile/ec2_proxy 격리 누락 severity 차이
+[2026-05-30][오케스트레이터][완료] Fix3: dzi_tile/_slide_access_allowed, ec2_proxy/_slide_access_allowed, viewer is_public 검사 추가
+[2026-05-30][test-runner][결과] 40/40 PASSED
+[2026-05-30][오케스트레이터][시작] COMPLETION_REPORT.md v3 작성

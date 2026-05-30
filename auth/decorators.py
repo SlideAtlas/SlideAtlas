@@ -51,7 +51,7 @@ def decode_token(token: str) -> dict:
 
 
 def _no_store(resp):
-    resp.headers["Cache-Control"] = "no-store"
+    resp.headers["Cache-Control"] = "no-store, no-cache"
     return resp
 
 

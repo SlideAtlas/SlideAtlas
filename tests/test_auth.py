@@ -928,3 +928,46 @@ def test_csrf_mismatched_token_returns_403(client, mock_db):
         assert resp.status_code == 403
         data = resp.get_json()
         assert data["error"] == "CSRF_INVALID"
+
+
+# ─────────────────────────────────────────────
+# Admin CSRF 검증 테스트
+# ─────────────────────────────────────────────
+
+def test_admin_csrf_required_no_header(client):
+    """Admin API POST: X-CSRF-Token 없음 → 403"""
+    with client.session_transaction() as sess:
+        sess['admin_logged_in'] = True
+        sess['admin_csrf_token'] = 'test-admin-csrf-123'
+
+    resp = client.post('/admin/api/slide',
+                       json={"id": "TEST-001", "title_ko": "테스트"},
+                       headers={'Content-Type': 'application/json'})
+    assert resp.status_code == 403
+    data = resp.get_json()
+    assert data.get('ok') is False or 'CSRF' in str(data)
+
+
+def test_admin_csrf_required_wrong_token(client):
+    """Admin API POST: X-CSRF-Token 불일치 → 403"""
+    with client.session_transaction() as sess:
+        sess['admin_logged_in'] = True
+        sess['admin_csrf_token'] = 'correct-token'
+
+    resp = client.post('/admin/api/slide',
+                       json={"id": "TEST-001"},
+                       headers={
+                           'Content-Type': 'application/json',
+                           'X-CSRF-Token': 'wrong-token',
+                       })
+    assert resp.status_code == 403
+
+
+def test_admin_csrf_delete_no_header(client):
+    """Admin API DELETE: X-CSRF-Token 없음 → 403"""
+    with client.session_transaction() as sess:
+        sess['admin_logged_in'] = True
+        sess['admin_csrf_token'] = 'test-csrf'
+
+    resp = client.delete('/admin/api/slide/TEST-001')
+    assert resp.status_code == 403

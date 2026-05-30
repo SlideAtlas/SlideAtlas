@@ -47,14 +47,14 @@ RESEND_DAILY_LIMIT = 5     # 24시간 최대 5회
 def _ok(data=None, status=200):
     resp = jsonify({"success": True, "data": data or {}})
     resp.status_code = status
-    resp.headers["Cache-Control"] = "no-store"
+    resp.headers["Cache-Control"] = "no-store, no-cache"
     return resp
 
 
 def _err(error, message, status=400):
     resp = jsonify({"success": False, "error": error, "message": message})
     resp.status_code = status
-    resp.headers["Cache-Control"] = "no-store"
+    resp.headers["Cache-Control"] = "no-store, no-cache"
     return resp
 
 
@@ -414,7 +414,7 @@ def _err_with_remaining(error, message, remaining):
         "remaining": max(remaining, 0),
     })
     resp.status_code = 400
-    resp.headers["Cache-Control"] = "no-store"
+    resp.headers["Cache-Control"] = "no-store, no-cache"
     return resp
 
 
