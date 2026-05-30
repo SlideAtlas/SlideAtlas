@@ -302,6 +302,8 @@ CREATE TABLE users (
   email VARCHAR(200) UNIQUE NOT NULL,
   password_hash VARCHAR(255),
   role VARCHAR(20) DEFAULT 'student',
+  status VARCHAR(20) DEFAULT 'active',     -- 'active' | 'pending_verification' (JWT 인증 추가)
+  is_special BOOLEAN DEFAULT FALSE,        -- 구독 만료 무관 접근 허용 계정 (JWT 인증 추가)
   last_login TIMESTAMP,
   session_token VARCHAR(255),
   created_at TIMESTAMP DEFAULT NOW()
@@ -375,7 +377,34 @@ CREATE TABLE course_assistants (
   user_id INT REFERENCES users(id),
   PRIMARY KEY (course_id, user_id)
 );
+
+-- JWT 인증 추가 테이블 (db/auth_schema.sql) ──────────────────────
+
+CREATE TABLE institution_rosters (    -- 기관 명단 화이트리스트 (users와 별개)
+  id SERIAL PRIMARY KEY,
+  institution_id VARCHAR(20) REFERENCES institutions(id) ON DELETE CASCADE,
+  email VARCHAR(200) NOT NULL,
+  name VARCHAR(100),
+  role VARCHAR(20) NOT NULL DEFAULT 'student',  -- 'student' | 'professor' | 'ta'
+  is_verified BOOLEAN DEFAULT FALSE,
+  added_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(institution_id, email)
+);
+
+CREATE TABLE email_verifications (    -- 이메일 인증코드 (가입 시 발급, 10분 TTL)
+  id SERIAL PRIMARY KEY,
+  user_id INT REFERENCES users(id) ON DELETE CASCADE,
+  code VARCHAR(6) NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW(),
+  expires_at TIMESTAMP NOT NULL,
+  consumed BOOLEAN DEFAULT FALSE,
+  attempt_count INT DEFAULT 0          -- 5회 초과 시 코드 폐기
+);
 ```
+
+> 회원가입은 institution_rosters에 (institution_id+email+role)이 등록된 경우만 허용.
+> 가입 시 users.status='pending_verification' → 이메일 인증 완료 시 'active'.
+> 마이그레이션: `db/auth_schema.sql` (멱등, 트랜잭션 BEGIN/COMMIT). 실행은 CEO 판단.
 
 ---
 

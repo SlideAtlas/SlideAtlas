@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 import os
 import sys
 import threading
@@ -50,6 +53,10 @@ CATEGORY_MAP = {
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('ADMIN_SECRET_KEY', 'slideatlas-dev-secret-2026')
+
+# -- JWT 인증 Blueprint 등록 ---------------------------------------------------
+from auth.auth import auth_bp
+app.register_blueprint(auth_bp)
 
 # -- JSON 데이터 경로 (롤백용 주석 보존) ----------------------------------------
 SLIDES_JSON = os.path.join(os.path.dirname(__file__), 'slides.json')
