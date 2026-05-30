@@ -1,4 +1,4 @@
-# CLAUDE.md — SlideAtlas 프로젝트 메모리 v2.8
+# CLAUDE.md — SlideAtlas 프로젝트 메모리 v2.9
 
 > 이 파일은 Claude Code 세션 시작 시 반드시 읽어야 하는 프로젝트 컨텍스트 파일입니다.
 > 모든 에이전트(오케스트레이터, 개발, QA)는 이 파일을 기준으로 작업합니다.
@@ -16,9 +16,9 @@
 
 **한 줄 정의**: 의과대학·치과대학·수의대·한의대·약대·간호대를 대상으로 한 디지털 병리/조직학 WSI(Whole Slide Image) 구독 SaaS 플랫폼.
 
-**핵심 비즈니스 모델**: 오프라인 슬라이드 납품(보람바이오텍, 20년 의대 납품 이력) 네트워크를 디지털 구독 SaaS로 전환. 연 400만원 구독료, 장비 불필요(WinMedic 등 경쟁사 대비 차별점).
+**핵심 비즈니스 모델**: 오프라인 슬라이드 납품(보람바이오텍, 20년 의대 납품 이력) 네트워크를 디지털 구독 SaaS로 전환. **좌석 플랜 기반 학기 단위 구독**, 장비 불필요(WinMedic 등 경쟁사 대비 차별점).
 
-**경쟁 구도**: WinMedic(스캐너+플랫폼 수직통합, 장비 수천만원) vs SlideAtlas(콘텐츠 구독 SaaS 연400만원, 장비 불필요) = 장비판매 vs Netflix
+**경쟁 구도**: WinMedic(스캐너+플랫폼 수직통합, 장비 수천만원) vs SlideAtlas(콘텐츠 구독 SaaS, 장비 불필요) = 장비판매 vs Netflix. 실제 경쟁 프레임은 "유리슬라이드 1회 구매(₩18M+) 대체"이지 무료 디지털 사이트가 아니다.
 
 ---
 
@@ -27,8 +27,9 @@
 ### v1.0 — 한국 런칭 (2026년 9월 목표)
 - **타겟**: 국내 지방의대·수의대·약대·한의대·보건대
 - **콘텐츠**: 아틀라스랩이 직접 라이선스 계약한 컬렉션만 제공 (교수 업로드 없음)
+- **모듈**: **조직학(HST) 단일**. 병리·기생충은 v1.5 이후.
 - **AI 튜터**: 슬라이드 메타데이터 + `knowledge_base` JSON → Claude API (VectorDB 없음)
-- **구독 플랜**: 조직학 베이스 플랜 → 병리·기생충 모듈 추가 방식, 기관당 연 400~900만원
+- **구독**: 좌석 플랜(Department/Standard/Campus/Institution) × 학기 단위. 자세한 모델은 §16.
 - **모바일**: 반응형 웹 (OpenSeadragon 터치 기본 지원 + CSS 미디어쿼리)
 - **마일스톤**: 9월 가을학기 2~3개교 구독 확보 → 초창패 추경 신청
 
@@ -38,32 +39,15 @@
 - **영업**: 국내 10~15개교 확보, 매출 레퍼런스 구축
 
 ### v1.5M — 모바일 PWA 출시 (2027년 1분기)
-- **방향**: 네이티브 앱 아님. PWA(Progressive Web App) — 브라우저에서 설치, 앱스토어 불필요
-- **핵심 기능**: WSI 뷰어 터치 최적화 (핀치줌·스와이프 패닝), 태블릿 레이아웃 별도 설계, 홈화면 추가 설치
-- **개발 기간**: 2~3개월 (v1.5 안착 후 착수)
-- **설계 원칙**: v1.0 웹앱을 PWA 전환 고려한 구조로 미리 설계 → 나중에 뜯어고치지 않음
-- **앱스토어**: PWA는 심사 불필요. 의료 교육 앱 심사 이슈 회피 가능.
+- PWA(브라우저 설치, 앱스토어 불필요). WSI 뷰어 터치 최적화, 태블릿 레이아웃, 홈화면 추가.
 
 ### v2.0 — 글로벌 플랫폼 (2027년 이후)
-- **콘텐츠**: Liverpool 열대의학, 아마존·아프리카 기생충학 특수 컬렉션
-- **교수 업로드**: 강의노트·PPT 업로드 기능 오픈, 조회수 기반 로열티
-- **AI 튜터**: Vector DB (multilingual-e5) + RAG + 다국어 출력
-- **구조**: 유튜브식 콘텐츠 마켓플레이스, Fleet Learning 구조
+- Liverpool 열대의학 등 특수 컬렉션, 교수 업로드+로열티, Vector DB(multilingual-e5)+RAG 다국어, 유튜브식 콘텐츠 마켓플레이스.
 
 ### v2.x — 네이티브 앱 (2027년 Q3~Q4 목표)
-- **방향**: React Native 또는 Flutter — 기술 스택은 그때 팀 구성 보고 결정
-- **PWA 대비 핵심 추가 기능**:
-  - 고배율 타일 렌더링 성능 향상 (브라우저 한계 탈피)
-  - 오프라인 캐시 — 자주 보는 슬라이드 로컬 저장 (실습실 환경 대응)
-  - Apple Pencil / S펜 마킹 — 슬라이드 위 직접 필기·표시
-  - 푸시 알림 — 퀴즈 알림, 새 슬라이드 업로드 등
-- **개발 전제**: 투자 유치 후 전문 모바일 개발팀 구성
-- **데이터 활용**: PWA 사용 패턴 데이터(어떤 기능을 모바일에서 쓰는지) → 네이티브 앱 스펙으로 직접 활용
+- React Native/Flutter(팀 구성 시 결정). 고배율 렌더링·오프라인 캐시·펜 마킹·푸시. 투자 유치 후 착수.
 
-> **설계 원칙**: v2.0 기능(VectorDB, 교수 업로드, 다국어, 로열티 정산)은 v1.0 범위에서 제외.
-> 단, 코드 모듈 경계는 처음부터 v2.0 확장을 고려해 설계한다.
-> PWA 전환을 고려해 v1.0부터 프론트엔드 구조를 잡는다.
-> 네이티브 앱 기술 스택(React Native / Flutter)은 투자 유치 후 팀 구성 시점에 결정한다.
+> **설계 원칙**: v2.0 기능(VectorDB, 교수 업로드, 다국어, 로열티)은 v1.0 범위 제외. 단 코드 모듈 경계는 v2.0 확장을 고려해 설계. PWA 전환 고려해 v1.0부터 프론트엔드 구조를 잡는다.
 
 ---
 
@@ -75,10 +59,10 @@
 | 뷰어 | OpenSeadragon |
 | 배포 | Render Starter ($7/월) |
 | 저장소 | AWS S3 (ap-northeast-2, 버킷: slideatlas-slides) |
-| 타일서버 | AWS EC2 t3.medium (slideatlas-tileserver, ec2-3-34-35-58.ap-northeast-2) — 동적 워터마킹 처리 포함 (~$40/월) |
+| 타일서버 | AWS EC2 t3.medium (slideatlas-tileserver, ec2-3-34-35-58.ap-northeast-2) — 동적 워터마킹 포함 (~$40/월) |
 | 타일엔진 | titiler + 커스텀 타일서버 (~/tileserver/main.py, rasterio 기반) |
-| 파이프라인 | SVS/DCM/TIFF → COG TIFF → S3 → titiler |
-| 데이터 관리 | slides.json + institutions.json → **RDS PostgreSQL (slideatlas-db, ap-northeast-2c) 구축 완료, 마이그레이션 진행 중** |
+| 파이프라인 | SVS/DCM/TIFF/NDPI/VSI → COG TIFF → S3 → titiler |
+| 데이터 관리 | RDS PostgreSQL (slideatlas-db, ap-northeast-2c) 구축 완료, 마이그레이션 진행 중 |
 | AI 연동 | Claude API (/api/chat), 구조가이드/질문하기/퀴즈 탭 |
 | 버전 관리 | GitHub (SlideAtlas/SlideAtlas) |
 
@@ -87,149 +71,101 @@
 ## 4. 슬라이드 변환 파이프라인 (핵심 인프라)
 
 ### 4-1. 설계 원칙
-
-**문제**: SVS/DCM → COG TIFF 변환 시 MPP·오버뷰 레벨이 파일마다 달라 줌인/줌아웃 오작동 발생.
-**해결**: 변환 스펙을 완전히 고정. 어떤 파일이 들어오든 출력은 항상 동일한 COG TIFF 스펙.
+변환 스펙을 완전히 고정. 어떤 파일이 들어오든 출력은 항상 동일한 COG TIFF 스펙.
 
 **고정 변환 스펙 (모든 슬라이드 공통)**
 ```
-타일: 256×256 px
-압축: JPEG Q=85
-오버뷰: 7레벨 고정 (2, 4, 8, 16, 32, 64, 128)
-MPP: 원본에서 추출, 없으면 0.5 기본값, DB에 저장
-좌표계: 픽셀 기준, 북서쪽 원점
-BigTIFF: 파일 크기 4GB 초과 시 자동 적용
+타일: 256×256 px / 압축: JPEG Q=85 / 오버뷰: 7레벨 고정 (2,4,8,16,32,64,128)
+MPP: 원본에서 추출 (없으면 ready_no_mpp, 임의 기본값 금지), DB 저장
+좌표계: 픽셀 기준, 북서쪽 원점 / BigTIFF: 4GB 초과 시 자동
 ```
 
 ### 4-2. 파이프라인 실행 순서
-
-관리자가 파일 업로드 → S3 임시 버킷 → EC2 워커 자동 트리거 → 순차 실행:
-
+관리자 파일 업로드 → S3 임시 버킷 → EC2 워커 자동 트리거 → 순차 실행:
 ```
-① extract_meta()      → MPP, 해상도, 포맷, 스캐너 정보 추출·검증
+① extract_meta()      → MPP·해상도·포맷·스캐너 추출·검증
 ② convert_cog()       → COG TIFF 변환 (표준 스펙 고정)
-③ extract_minimap()   → 최저 오버뷰 레벨에서 minimap.png 추출 → S3
-④ extract_thumbnail() → MPP 기준 20x 해당 오버뷰에서 thumbnail.jpg 추출 → S3
-⑤ generate_kb_json()  → Claude API 호출로 knowledge_base JSON 자동 생성
-⑥ run_qc()           → 타일 응답·흰타일 비율·줌 레벨 정합성 검증
-⑦ update_db()        → status = ready, 전체 메타데이터 DB INSERT
+③ extract_minimap()   → 최저 오버뷰에서 minimap.png 추출 → S3
+④ extract_thumbnail() → 20x 해당 오버뷰에서 thumbnail.jpg(400×300) → S3
+⑤ generate_kb_json()  → Claude API로 knowledge_base JSON 자동 초안 생성
+⑥ run_qc()           → 타일 응답·흰타일 비율·줌 정합성 자동 검증
+⑦ update_db()        → status 갱신, 전체 메타데이터 DB INSERT
 ```
-
-**지원 입력 포맷**: SVS, TIFF, DCM, NDPI, VSI
-
-**미니맵 구현 원칙**: 뷰어 코드에서 미니맵을 그리지 않는다. 파이프라인에서 `minimap.png`를 미리 생성해 S3에 저장하고, OpenSeadragon은 해당 이미지를 불러오기만 한다. 이것이 일관된 미니맵의 유일한 해결책.
-
-**썸네일 구현 원칙**: 20x 배율에 해당하는 COG 오버뷰 레벨을 MPP 기반으로 계산해 400×300 px JPEG 추출. 슬라이드 목록 카드에 자동 표시.
+**미니맵/썸네일 원칙**: 뷰어에서 그리지 않고 파이프라인이 미리 생성해 S3 저장. OpenSeadragon은 불러오기만.
 
 ### 4-3. 모듈 구조 (SQS/Lambda 이식성 보장)
-
-미래에 SQS 큐 또는 Lambda로 전환할 때 **엔진 코드 수정 없이** 트리거 어댑터만 교체 가능하도록 설계.
-
 ```
 pipeline/
-├── models.py              # ConversionJob, ConversionResult (데이터 계약, 절대 변경 금지)
-├── trigger_adapter.py     # 트리거별 파싱 (v1.0: HTTP / v1.5: SQS / v2.0: Lambda)
-├── conversion_engine.py   # 변환 엔진 (핵심 로직, 트리거 무관하게 동일 작동)
+├── models.py              # ConversionJob, ConversionResult (데이터 계약, 변경 금지)
+├── trigger_adapter.py     # 트리거별 파싱 (v1.0 HTTP / v1.5 SQS / v2.0 Lambda)
+├── conversion_engine.py   # 변환 엔진 (트리거 무관 동일 작동)
 └── storage_adapter.py     # S3 이동, RDS 업데이트, 상태 갱신
 ```
-
-**데이터 계약 (전 버전 공통, 변경 금지)**
-```python
-@dataclass
-class ConversionJob:
-    slide_id: str           # 'HS-PATH-004'
-    s3_input_key: str       # 'incoming/HS-PATH-004.svs'
-    institution_id: str
-    original_format: str    # 'SVS', 'DCM', 'TIFF'
-
-@dataclass
-class ConversionResult:
-    slide_id: str
-    status: str             # 'ready' | 'failed'
-    s3_cog_key: str         # 'slides/HS-PATH-004/HS-PATH-004.tiff'
-    mpp: float
-    width: int
-    height: int
-    qc_passed: bool
-    error_log: str | None
-```
-
-**마이그레이션 규칙**
-- v1.0 → v1.5: `trigger_adapter.py`만 교체 (SQS 파서 추가). 엔진 코드 무변경.
-- v1.5 → v2.0: `trigger_adapter.py`만 교체 (Lambda 이벤트 파서). 엔진 코드 무변경.
-- 변환 스펙 변경 시: `conversion_engine.py`만 수정. 트리거 코드 무변경.
+`ConversionJob`/`ConversionResult` 데이터 계약은 어떤 이유로도 변경 금지. 마이그레이션 시 `trigger_adapter.py`만 교체, 엔진 코드 무변경.
 
 ### 4-4. QC 자동 검증 항목
-
 | 항목 | 기준 | 실패 시 |
 |------|------|---------|
-| 타일 HTTP 응답 | 저·중·고배율 3레벨 모두 200 | status = failed |
-| 흰 타일 비율 | 샘플 타일 흰색 픽셀 < 95% | status = failed |
-| DZI 레벨 수 | 원본 해상도 기반 예상값과 일치 | status = failed |
-| MPP 범위 | 0.1 ~ 1.0 μm/px | 경고 로그, 계속 진행 |
-| 최소 해상도 | 5,000 px 이상 | status = failed |
+| 타일 HTTP 응답 | 저·중·고 3레벨 모두 200 | failed |
+| 흰 타일 비율 | 샘플 타일 흰색 < 95% | failed |
+| DZI 레벨 수 | 예상값 일치 | failed |
+| MPP 범위 | 0.1~1.0 μm/px | 경고, 계속 |
+| 최소 해상도 | 5,000 px 이상 | failed |
 
-### 4-5. 상태 머신
-
+### 4-5. 변환(파이프라인) 상태 머신
 ```
 pending → converting → qc_check → ready
                     ↘            ↘          ↘
                      failed       failed     ready_no_mpp
 ```
-
-| 상태 | 의미 | 관리자 페이지 표시 |
+| 상태 | 의미 | 어드민 표시 |
 |------|------|-------------------|
-| pending | 업로드 완료, 변환 대기 | 🟡 대기 중 |
-| converting | COG 변환 진행 중 | 🔵 변환 중 |
-| qc_check | QC 검증 중 | 🔵 검증 중 |
-| ready | 정상 서빙 가능 | 🟢 정상 |
-| ready_no_mpp | MPP 없음, 배율 기능 제외 서빙 | 🟠 MPP 없음 (경고) |
+| pending | 업로드 완료, 변환 대기 | 🟡 대기 |
+| converting | COG 변환 중 | 🔵 변환 중 |
+| qc_check | 자동 QC 검증 중 | 🔵 검증 중 |
+| ready | 변환·자동QC 통과 | 🟢 변환완료 |
+| ready_no_mpp | MPP 없음, 배율 비활성 서빙 | 🟠 MPP 없음 |
 | failed | 변환/QC 실패 | 🔴 실패 + 로그 |
 
-**ready_no_mpp 처리 원칙**
-- 슬라이드 열람 자체는 가능 (타일 서빙 정상)
-- 뷰어에서 배율 버튼(10x/20x/40x) 비활성화
-- "배율 정보 없음" 안내 표시
-- 관리자 페이지에서 MPP 수동 입력 후 재처리 가능
-- 기본값(0.5)으로 임의 처리하지 않는다 — 배율 오류가 교육적으로 더 위험
+**ready_no_mpp 원칙**: 열람 가능(타일 정상)하나 배율 버튼 비활성, "배율 정보 없음" 표시. 어드민에서 **MPP 수동 입력 후 재처리(Retry)** 가능. 임의 기본값(0.5)으로 처리하지 않는다(배율 오류가 교육적으로 더 위험).
 
-**MPP 확보 전략 (장기)**
-- 공급사 계약 시 MPP 포함 요구사항 명시 (Motic 등 상업용 스캐너는 자동 포함)
-- MPP 없는 파일 수령 시: 유리슬라이드 원본 재수령 → 뷰웍스 유료 스캐닝 서비스 활용 검토
-- 자체 스캐너 도입 시 "스캐닝 서비스 제공"이 공급사 유치 레버리지가 될 수 있음
-
-관리자 페이지에서 각 슬라이드의 현재 상태를 실시간 모니터링. 실패 시 `conversion_log` 컬럼에 오류 내용 보존.
+> ⚠ **변환 상태(자동)와 배포 상태(사람 결정)는 별개 축이다.** 변환이 `ready`여도 학생에게 자동 공개되지 않는다. 사람의 교육 QC(배포 결정)가 별도로 얹힌다 — §5-4, §15-3 참조.
 
 ---
 
-## 5. 슬라이드 메타데이터 입력 방식
+## 5. 슬라이드 메타데이터 & 지식베이스(kb)
 
 ### 5-1. 배치 업로드 (100장 이상)
-엑셀 파일(.xlsx)과 슬라이드 파일을 함께 업로드. 엑셀 컬럼:
-
+엑셀(.xlsx) + 슬라이드 파일 동반 업로드. 컬럼:
 ```
 slide_id | title_ko | title_en | organ | stain | species | subject_code | description
 ```
-
-- `slide_id`는 파일명에서 자동 파싱 (`HS-HST-001.svs` → `HS-HST-001`)
-- Happy Science 등 공급사에 파일명 규칙 사전 합의 필수
-- 엑셀 파싱 → DB 일괄 INSERT → 변환 파이프라인 자동 시작
+- `slide_id`는 파일명에서 자동 파싱. 공급사에 파일명 규칙 사전 합의.
+- **MPP는 입력하지 않는다 — 변환 시 파일에서 자동 추출.**
 
 ### 5-2. 개별 추가 (1~2장)
-관리자 페이지에서 파일 업로드 후 메타데이터 직접 입력 폼 제공.
+파일 업로드(SVS/TIFF/NDPI/DCM/VSI) + 메타데이터 폼. **기관코드는 SA 고정(§6)**, 과목만 선택 → 슬라이드 ID 자동 채번. **MPP 입력칸 없음(자동 추출)**. 공급원(Acknowledgement)은 `license_source`로 별도 입력 → 뷰어 푸터 자동 표기.
 
 ### 5-3. knowledge_base JSON 자동 생성
-메타데이터 입력 완료 후 `generate_kb_json()`이 Claude API를 호출해 자동 생성:
-
+`generate_kb_json()`이 Claude API로 자동 초안 생성:
 ```json
 {
   "key_structures": ["villus", "Lieberkuhn crypt", "goblet cell"],
-  "exam_points": ["villus height ratio", "cell distribution pattern"],
-  "common_confusions": ["jejunum vs ileum — Peyer's patches 유무로 구분"]
+  "exam_points": ["villus height ratio"],
+  "common_confusions": ["jejunum vs ileum — Peyer's patches 유무"],
+  "ko_observation_points": "점막 표면 융모를 먼저 찾고 ..."
 }
 ```
+AI 튜터 컨텍스트로 사용. `ko_observation_points`(한국어 관찰 순서·키워드)는 Histology Guide류 무료 사이트 대비 핵심 차별점.
 
-이 JSON이 AI 튜터의 컨텍스트로 사용됨. 교수 자문 없이도 의대 국가고시 수준 답변 가능.
+### 5-4. kb 검수 = QC 단계 게이트 (중요)
+kb 초안 검수·보완은 **업로드 시점이 아니라 배포(QC) 단계**에서 일어난다. 흐름:
+```
+업로드(파일+메타) → 자동 변환 + kb 자동 초안 → 배포 대기
+   → (소수) 어드민 "검수" 모달에서 보완 후 배포
+   → (대량 134장) kb 초안 엑셀 내보내기 → 검수자(대학원생) 일괄 보완 → 검수결과 일괄 반영(엑셀) → 일괄 배포
+```
+검수는 학생 노출 직전의 게이트다. `educational_qc_status`(또는 §15-3 배포 상태)로 관리.
 
 ---
 
@@ -237,108 +173,158 @@ slide_id | title_ko | title_en | organ | stain | species | subject_code | descri
 
 형식: `{기관코드}-{과목코드}-{순번}`
 
-**설계 원칙**: 기관코드·과목코드는 코드에 하드코딩하지 않는다. 모두 DB 테이블로 관리하여 관리자 페이지에서 개발자 개입 없이 추가 가능.
+**v1.0 채번 원칙 (변경됨)**: 아틀라스랩은 슬라이드 제작자가 아니라 **라이선스 후 스캔하는 주체**다. 따라서 v1.0의 모든 콘텐츠는 **기관코드 `SA`(SlideAtlas 자체)로 단일 채번**한다. 공급사(율린/Vic 등)는 ID에 넣지 않는다.
+- 공급원·저작권 출처는 ID가 아니라 **`slides.license_source` 컬럼**에 기록.
+- 제조사가 acknowledgement를 요구하면 `license_source`를 기준으로 **뷰어 하단 푸터에 "Provided by ___" 자동 표기**.
+- (과거 검토했던 율린 `YL` 코드 안은 폐기. `YU`는 연세대로 예약됨.)
 
-**기관코드** → `institutions.id` 컬럼이 곧 기관코드 (관리자 페이지에서 추가)
-- SA: SlideAtlas 자체
-- HS: Happy Science
-- YU: 연세대학교
-- SNU: 서울대학교
-- KU: 고려대학교
-- MU: Mahidol University
-- AJOU: 아주대학교
-- *(신규 기관 계약 시 /admin에서 추가 → 즉시 사용 가능)*
+**과목코드** → `subject_codes` 테이블로 관리(코드 하드코딩 금지, 관리자 페이지에서 행 추가):
+- HST: 조직학 / PATH: 병리학 / PARA: 기생충학 / ANAT: 해부학 / EMBRY: 발생학
 
-**과목코드** → `subject_codes` 테이블로 관리 (관리자 페이지에서 행 추가)
-- HST: 조직학 (Histology)
-- PATH: 병리학 (Pathology)
-- PARA: 기생충학 (Parasitology)
-- ANAT: 해부학 (Anatomy)
-- EMBRY: 발생학 (Embryology)
-- *(신규 과목 추가 시 /admin에서 행 추가 → 즉시 사용 가능)*
+**순번**: 기관+과목 조합별 독립 카운터(자동 채번). 예: `SA-HST-001`, `SA-PARA-003`.
 
-**순번**: 기관+과목 조합별 독립 카운터 (자동 채번)
-```sql
-SELECT COUNT(*) + 1 FROM slides
-WHERE institution_id = 'MU' AND subject_code = 'HST'
--- → MU-HST-001, MU-HST-002 순으로 자동 생성
-```
-
-**기관코드 자동 제안**: 관리자가 기관명 입력 시 ICAO식으로 자동 제안, 충돌 시 숫자 suffix 추가
-```
-"Liverpool School of Tropical Medicine" → "LSTM" 제안
-충돌 시 → "LSTM2" 자동 변형 후 확인 요청
-```
-
-예시: `HS-HST-001`, `MU-PARA-003`, `LSTM-PARA-001`
+> 향후 교수 업로드(v2.0)나 고객 기관 자체 콘텐츠가 생기면 그때 기관코드 다축 채번을 재도입한다.
 
 ---
 
 ## 7. DB 스키마 (v1.0 기준)
 
+> v2.9 변경: ① 구독을 **기관×과목 독립 좌석**으로 (subscriptions에 subject_code·seats) ② `admin_users`(2단계 권한) 신설 ③ `plan_slide_access` → `institution_subject_access` ④ announcements 보관함 플래그 ⑤ 특별계정 만료·재검토 컬럼 ⑥ created_by 감사 추적.
+
 ```sql
 CREATE TABLE subject_codes (
-  code VARCHAR(10) PRIMARY KEY,  -- 'HST', 'PATH', 'PARA'
-  name_ko VARCHAR(50),           -- '조직학'
-  name_en VARCHAR(50),           -- 'Histology'
+  code VARCHAR(10) PRIMARY KEY,  -- 'HST','PATH','PARA'
+  name_ko VARCHAR(50), name_en VARCHAR(50),
+  is_active BOOLEAN DEFAULT FALSE,   -- 모듈 활성 여부 (v1.0은 HST만 TRUE)
   created_at TIMESTAMP DEFAULT NOW()
 );
 
 CREATE TABLE institutions (
-  id VARCHAR(20) PRIMARY KEY,
-  name_ko VARCHAR(100),
+  id VARCHAR(20) PRIMARY KEY,     -- 기관코드
+  name_ko VARCHAR(100),           -- "충남대 의과대학" (학교+단과대)
   name_en VARCHAR(100),
-  domain VARCHAR(100),
-  subscription_plan VARCHAR(20),
-  subscription_start DATE,
-  subscription_end DATE,
-  max_users INT,
+  university VARCHAR(100),         -- 학교명
+  college VARCHAR(100),            -- 단과대명
+  domain VARCHAR(100),             -- 이메일 자가인증 도메인
   created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- 구독: 기관 × 과목 단위 (좌석·학기·구독료 독립) ── v2.9 핵심
+CREATE TABLE subscriptions (
+  id SERIAL PRIMARY KEY,
+  institution_id VARCHAR(20) REFERENCES institutions(id),
+  subject_code VARCHAR(10) REFERENCES subject_codes(code),
+  plan VARCHAR(20),                -- 'department'|'standard'|'campus'|'institution'|'custom'
+  max_seats INT,                   -- 플랜 기본값 또는 직접 지정(특수계약)
+  start_term VARCHAR(10),          -- '2026-fall' 등 학기 식별자
+  term_count INT,                  -- 구독 학기 수
+  access_open_date DATE,           -- 학기 시작 -30일 (자동 계산)
+  subscription_end DATE,           -- 마지막 학기 종료일 (자동 계산)
+  fee INT,                         -- 구독료(원)
+  payment_method VARCHAR(20),      -- '연간 선불'|'학기 선불'|'기타'
+  status VARCHAR(20) DEFAULT 'active',
+  created_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(institution_id, subject_code, start_term)
+);
+
+-- 구독 갱신/변경 이력 (덮어쓰지 않고 누적 보존)
+CREATE TABLE subscription_history (
+  id SERIAL PRIMARY KEY,
+  subscription_id INT REFERENCES subscriptions(id),
+  event VARCHAR(20),               -- 'initial'|'renewal'|'change'
+  plan VARCHAR(20), max_seats INT,
+  start_term VARCHAR(10), term_count INT,
+  fee INT, note TEXT,
+  created_by INT REFERENCES admin_users(id),
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- 콘텐츠 접근권: 기관 × 과목 (좌석 플랜과 직교) ── v2.9 (구 plan_slide_access 대체)
+CREATE TABLE institution_subject_access (
+  institution_id VARCHAR(20) REFERENCES institutions(id),
+  subject_code VARCHAR(10) REFERENCES subject_codes(code),
+  granted BOOLEAN DEFAULT TRUE,
+  PRIMARY KEY (institution_id, subject_code)
 );
 
 CREATE TABLE users (
   id SERIAL PRIMARY KEY,
   institution_id VARCHAR(20) REFERENCES institutions(id),
-  email VARCHAR(200) UNIQUE NOT NULL,
+  subject_code VARCHAR(10),         -- 어느 과목 명단인지 (과목별 좌석 카운터)
+  email VARCHAR(200) NOT NULL,
   password_hash VARCHAR(255),
   role VARCHAR(20) DEFAULT 'student',
-  status VARCHAR(20) DEFAULT 'active',     -- 'active' | 'pending_verification' (JWT 인증 추가)
-  is_special BOOLEAN DEFAULT FALSE,        -- 구독 만료 무관 접근 허용 계정 (JWT 인증 추가)
+  status VARCHAR(20) DEFAULT 'pending_verification', -- active|pending_verification|locked
+  is_special BOOLEAN DEFAULT FALSE,  -- 구독 만료 무관 접근
+  special_expires_at DATE,           -- 특별계정 만료일 (NULL=무기한, 비권장)
+  special_review_at DATE,            -- 특별계정 재검토일/사전알림 기준
   last_login TIMESTAMP,
+  locked_at TIMESTAMP,
   session_token VARCHAR(255),
-  created_at TIMESTAMP DEFAULT NOW()
+  created_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(institution_id, subject_code, email)
 );
 
 CREATE TABLE slides (
-  id VARCHAR(50) PRIMARY KEY,
-  institution_id VARCHAR(20),
+  id VARCHAR(50) PRIMARY KEY,        -- 'SA-HST-001'
+  institution_id VARCHAR(20),        -- v1.0은 항상 'SA'
   subject_code VARCHAR(20),
-  title_ko VARCHAR(200),
-  title_en VARCHAR(200),
-  description TEXT,
-  s3_key VARCHAR(500),
-  s3_minimap_key VARCHAR(500),       -- 미니맵 PNG S3 경로
-  s3_thumbnail_key VARCHAR(500),     -- 썸네일 JPG S3 경로
-  mpp FLOAT,
-  width INT,
-  height INT,
-  stain VARCHAR(50),
-  organ VARCHAR(100),
-  species VARCHAR(50) DEFAULT 'human',
-  license_source VARCHAR(100),
-  original_format VARCHAR(20),       -- 원본 포맷 (SVS/DCM/TIFF)
-  conversion_status VARCHAR(20) DEFAULT 'pending',  -- pending/converting/qc_check/ready/ready_no_mpp/failed
-  conversion_log TEXT,
-  qc_passed_at TIMESTAMP,
-  is_public BOOLEAN DEFAULT FALSE,
-  knowledge_base JSONB,              -- AI 튜터용 구조화 데이터
+  title_ko VARCHAR(200), title_en VARCHAR(200), description TEXT,
+  s3_key VARCHAR(500), s3_minimap_key VARCHAR(500), s3_thumbnail_key VARCHAR(500),
+  mpp FLOAT, width INT, height INT,
+  stain VARCHAR(50), organ VARCHAR(100), species VARCHAR(50) DEFAULT 'human',
+  license_source VARCHAR(100),       -- 공급원 (푸터 표기 근거) 예: 'Provided by Yulin'
+  original_format VARCHAR(20),
+  conversion_status VARCHAR(20) DEFAULT 'pending', -- §4-5
+  deploy_status VARCHAR(20) DEFAULT 'qc_pending',  -- §15-3: qc_pending|deployed|rejected (revoked→qc_pending)
+  reject_reason TEXT,                -- 반려 사유 (검수자 보고)
+  conversion_log TEXT, qc_passed_at TIMESTAMP,
+  knowledge_base JSONB,
   created_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE TABLE plan_slide_access (
-  plan VARCHAR(20),
-  subject_code VARCHAR(20),
-  PRIMARY KEY (plan, subject_code)
+-- 어드민 계정: 2단계 권한 ── v2.9 (기존 단일 비번 방식 폐기)
+CREATE TABLE admin_users (
+  id SERIAL PRIMARY KEY,
+  email VARCHAR(200) UNIQUE NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  name VARCHAR(100),
+  role VARCHAR(20) NOT NULL,         -- 'super_admin'|'staff'
+  is_active BOOLEAN DEFAULT TRUE,
+  last_login_at TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT NOW(),
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- 랜딩 공지: 소프트 삭제(보관함) ── v2.9
+CREATE TABLE announcements (
+  id SERIAL PRIMARY KEY,
+  title VARCHAR(200), body TEXT,
+  is_published BOOLEAN DEFAULT FALSE,  -- 랜딩 노출 (최대 5)
+  display_order INT,
+  is_archived BOOLEAN DEFAULT FALSE,   -- 보관함(소프트 삭제)
+  archived_at TIMESTAMP,
+  created_by INT REFERENCES admin_users(id),
+  updated_by INT REFERENCES admin_users(id),
+  created_at TIMESTAMP DEFAULT NOW(), updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- 1:1 문의: 기관 컨텍스트 자동 첨부 ── v2.9 (관련 슬라이드란 제거)
+CREATE TABLE inquiries (
+  id SERIAL PRIMARY KEY,
+  user_id INT REFERENCES users(id),
+  institution_id VARCHAR(20) REFERENCES institutions(id),  -- 접수 시 자동 캡처
+  title VARCHAR(200), body TEXT,
+  status VARCHAR(20) DEFAULT 'open',   -- open|answered
+  created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE TABLE inquiry_replies (
+  id SERIAL PRIMARY KEY,
+  inquiry_id INT REFERENCES inquiries(id),
+  body TEXT,
+  created_by INT REFERENCES admin_users(id),  -- 감사 추적
+  sent_via_ses BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMP DEFAULT NOW()
 );
 
 CREATE TABLE access_logs (
@@ -349,290 +335,247 @@ CREATE TABLE access_logs (
   session_id VARCHAR(100)
 );
 
-CREATE TABLE courses (
-  id SERIAL PRIMARY KEY,
-  institution_id VARCHAR(20) REFERENCES institutions(id),
-  professor_user_id INT REFERENCES users(id),
-  title VARCHAR(200),
-  semester VARCHAR(20),
-  created_at TIMESTAMP DEFAULT NOW()
-);
-
-CREATE TABLE course_weeks (
-  id SERIAL PRIMARY KEY,
-  course_id INT REFERENCES courses(id),
-  week_number INT,
-  title VARCHAR(200)
-);
-
-CREATE TABLE course_week_slides (
-  course_week_id INT REFERENCES course_weeks(id),
-  slide_id VARCHAR(50) REFERENCES slides(id),
-  display_order INT,
-  PRIMARY KEY (course_week_id, slide_id)
-);
-
-CREATE TABLE course_assistants (
-  course_id INT REFERENCES courses(id),
-  user_id INT REFERENCES users(id),
-  PRIMARY KEY (course_id, user_id)
-);
-
--- JWT 인증 추가 테이블 (db/auth_schema.sql) ──────────────────────
-
-CREATE TABLE institution_rosters (    -- 기관 명단 화이트리스트 (users와 별개)
+-- 기관 명단 화이트리스트 / 이메일 인증 (JWT 인증)
+CREATE TABLE institution_rosters (
   id SERIAL PRIMARY KEY,
   institution_id VARCHAR(20) REFERENCES institutions(id) ON DELETE CASCADE,
-  email VARCHAR(200) NOT NULL,
-  name VARCHAR(100),
-  role VARCHAR(20) NOT NULL DEFAULT 'student',  -- 'student' | 'professor' | 'ta'
-  is_verified BOOLEAN DEFAULT FALSE,
-  added_at TIMESTAMP DEFAULT NOW(),
-  UNIQUE(institution_id, email)
+  subject_code VARCHAR(10),            -- 과목별 명단 (v2.9)
+  email VARCHAR(200) NOT NULL, name VARCHAR(100),
+  role VARCHAR(20) NOT NULL DEFAULT 'student',
+  is_verified BOOLEAN DEFAULT FALSE, added_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(institution_id, subject_code, email)
 );
-
-CREATE TABLE email_verifications (    -- 이메일 인증코드 (가입 시 발급, 10분 TTL)
+CREATE TABLE email_verifications (
   id SERIAL PRIMARY KEY,
   user_id INT REFERENCES users(id) ON DELETE CASCADE,
   code VARCHAR(6) NOT NULL,
-  created_at TIMESTAMP DEFAULT NOW(),
-  expires_at TIMESTAMP NOT NULL,
-  consumed BOOLEAN DEFAULT FALSE,
-  attempt_count INT DEFAULT 0          -- 5회 초과 시 코드 폐기
+  created_at TIMESTAMP DEFAULT NOW(), expires_at TIMESTAMP NOT NULL,
+  consumed BOOLEAN DEFAULT FALSE, attempt_count INT DEFAULT 0
 );
 ```
 
-> 회원가입은 institution_rosters에 (institution_id+email+role)이 등록된 경우만 허용.
-> 가입 시 users.status='pending_verification' → 이메일 인증 완료 시 'active'.
-> 마이그레이션: `db/auth_schema.sql` (멱등, 트랜잭션 BEGIN/COMMIT). 실행은 CEO 판단.
+> 회원가입은 institution_rosters에 (institution_id+subject_code+email)이 등록된 경우만 허용. 가입 시 users.status='pending_verification' → 이메일 인증 완료 시 'active'. 마이그레이션 스크립트는 멱등·트랜잭션(BEGIN/COMMIT), 실행은 CEO 판단.
 
 ---
 
 ## 8. 보안 아키텍처
 
-- **Presigned URL / 타일 접근 토큰**: TTL 5분, HMAC-SHA256 서명. 뷰어 페이지 로드 시 `generate_tile_token(user_id, institution_id, slide_id)` 발급 → 모든 타일/DZI URL에 `?t=` 포함. 검증 실패 시 401. S3 버킷 퍼블릭 접근 전면 차단.
-- **동적 워터마킹**: v1.0 런칭 시 포함. 사용자 ID·기관명을 타일마다 투명하게 삽입 (Pillow, 투명도 15~20%, 대각선 반복 패턴). Happy Science 등 라이선스 콘텐츠 유출 시 추적 가능.
-- **브라우저 캐시 완전 차단**: 타일/DZI/인증 응답 헤더에 `Cache-Control: no-store` 적용. 고객 로컬에 타일 파일 저장 불가.
-- **서버사이드 캐시**: EC2 메모리 캐시로 동일 유저·동일 타일 재처리 방지 (보안 위험 없음, 서버에만 존재)
-- **동시접속 제어**: 새 기기 로그인 시 기존 session_token 무효화 (기관 해약 아닌 세션 종료만)
-- **도메인 기반 자가인증**: 기관 이메일 도메인 검증 + 6개월 재인증
-- **멀티테넌시**: institution_id 기반 Row Level 격리. 모든 슬라이드/타일/DZI 라우트에 `@login_required` + institution_id 검사 적용.
-- **라이선스 격리**: is_public=FALSE 슬라이드는 어떤 경로로도 직접 URL 접근 불가. `_slide_access_allowed()`에서 is_public 플래그 검사.
-- **CSRF 방어**: 더블서밋 쿠키 패턴. `@login_required` POST/PUT/DELETE/PATCH에서 `X-CSRF-Token` 헤더와 `csrf_token` 쿠키를 `secrets.compare_digest`로 대조.
-- **계정 잠금**: 24시간 내 비밀번호 오류+인증코드 오류 합산 10회 누적 시 `users.status='locked'`. `locked_at` 컬럼 기준 24시간 경과 시 자동 해제. 잠금 메시지: "보안상 계정이 잠겼습니다. 과 사무실에 문의하세요".
-- **이메일 인증코드 재발송**: `POST /api/auth/resend-code`. 1분 쿨다운, 24시간 최대 5회 제한. locked/suspended 계정 차단. 동시 요청 경쟁조건은 `SELECT ... FOR UPDATE`로 방어.
-- **구독 만료 매 요청 검사**: `_authenticate()`에서 매 요청마다 `institutions.subscription_end` 확인. 만료 시 SUBSCRIPTION_EXPIRED (401) 반환. is_special 계정 예외.
-- **SESSION_REVOKED (401)**: 타 기기 로그인으로 기존 session_token이 무효화된 경우. 프론트는 "다른 기기에서 로그인되었습니다" 안내.
-- **TOKEN_INVALID (401)**: 쿠키 없음·JWT 만료·수동 삭제·유저 미조회 등 세션 자체가 없는 경우. 프론트는 로그인 페이지로 리다이렉트.
-- **TILE_TOKEN_INVALID (401)**: 타일 접근 토큰(TTL 5분) 검증 실패. 로그인 세션과 무관하므로 인터셉터가 SESSION_REVOKED·SUBSCRIPTION_EXPIRED로 오판하지 않도록 구분.
-- **/api/chat 탈옥 방어**: 클라이언트가 전송하는 `system` 파라미터를 무시하고 서버 측 고정 가드레일만 사용.
+- **타일 접근 토큰**: TTL 5분, HMAC-SHA256. 뷰어 로드 시 `generate_tile_token(user_id, institution_id, slide_id)` 발급 → 모든 타일/DZI URL에 `?t=`. 검증 실패 401. S3 퍼블릭 차단.
+- **동적 워터마킹**: v1.0 포함. 사용자 ID·기관명을 타일마다 투명 삽입(Pillow, 15~20%, 대각선 반복). **특별 계정도 동일 적용**(유출 추적 유지).
+- **브라우저 캐시 차단**: 타일/DZI/인증 응답 `Cache-Control: no-store`.
+- **서버사이드 캐시**: EC2 메모리 캐시(서버에만 존재, 보안 위험 없음).
+- **동시접속 제어**: 새 기기 로그인 시 기존 session_token 무효화(기관 해약 아닌 세션 종료).
+- **도메인 자가인증**: 기관 이메일 도메인 검증 + 6개월 재인증.
+- **멀티테넌시**: institution_id 기반 Row Level 격리. 모든 슬라이드/타일/DZI 라우트에 `@login_required` + institution_id 검사.
+- **라이선스 격리**: deploy_status != 'deployed' 슬라이드는 어떤 경로로도 직접 URL 접근 불가.
+- **CSRF 방어**: 더블서밋 쿠키. POST/PUT/DELETE/PATCH에서 `X-CSRF-Token` 헤더와 `csrf_token` 쿠키를 `secrets.compare_digest`로 대조.
+- **계정 잠금**: 24h 내 비번+인증코드 오류 합산 10회 → status='locked'. `locked_at` 기준 24h 후 자동 해제.
+- **인증코드 재발송**: 1분 쿨다운, 24h 최대 5회. 경쟁조건은 `SELECT ... FOR UPDATE`.
+- **구독 만료 매 요청 검사**: `_authenticate()`에서 매 요청 `subscriptions.subscription_end` 확인(과목별). 만료 시 SUBSCRIPTION_EXPIRED(401). is_special 예외.
+- **401 코드 구분**: SESSION_REVOKED(타 기기 로그인) / TOKEN_INVALID(세션 없음) / TILE_TOKEN_INVALID(타일토큰 검증실패, 로그인과 무관) / SUBSCRIPTION_EXPIRED.
+- **/api/chat 탈옥 방어**: 클라이언트 `system` 파라미터 무시, 서버 측 고정 가드레일만 사용.
+- **어드민 인증(v2.9)**: `admin_users` 이메일+비밀번호. staff 계정은 super_admin이 발급·비활성화. 권한 게이트는 §15-2.
 
 ---
 
-## 9. 관리자 포털 구조
+## 9. 기관 관리자 포털 (/portal)
 
-### 슈퍼관리자 (/admin)
-- 기관 추가/수정/삭제, 계약 상태/구독 플랜/만료일 관리
-- 기관 관리자 이메일 등록/변경
-- 슬라이드 관리: 파일 업로드(엑셀 배치 or 개별) → 파이프라인 자동 시작
-- **파이프라인 모니터링**: 슬라이드별 conversion_status 실시간 표시 (converting/qc_check/ready/failed + 로그)
-- 전체 현황 대시보드
-
-### 기관 관리자 (/portal)
-- 계약 체결 후 슈퍼관리자가 기관 관리자 이메일 등록
-- 학생 명단: xlsx/csv 업로드(이름+이메일) → DB 등록
-- 개별 학생 추가/삭제, 라이선스 현황 표시 (사용 중 N / 전체 N)
-- 삭제 시 즉시 접근 차단 + 라이선스 반환
-
-### 라이선스 모델
-- 구독 = 기관당 활성 계정 수 라이선스
-- 명단 삭제 → 즉시 접근 차단 + 라이선스 1 반환
-- 신입생 추가 → 라이선스 1 소비
+- 계약 후 super_admin이 기관 관리자 이메일 등록.
+- 학생 명단: xlsx/csv 업로드(이름+이메일, **+과목 축** v2.9) → DB 등록. 과목별 좌석 카운터로 독립 관리.
+- 개별 학생 추가/삭제, 라이선스 현황(사용 N / 전체 N). 삭제 시 즉시 접근 차단 + 라이선스 반환.
+- **이용 리포트**: 활성/좌석 소진율, 총 열람, AI 튜터 질문수, 많이 본 슬라이드 Top N, 로그인 추세, 마지막 활동. 이 리포트를 super_admin은 학교 선택해 동일하게 열람(§15-7).
 
 ---
 
 ## 10. AI 튜터 구조 (v1.0)
 
-**원칙**: VectorDB 없이 `knowledge_base` JSON + 슬라이드 메타데이터만으로 Claude API 호출.
-
-```python
-system_prompt = f"""
-당신은 SlideAtlas의 조직학/병리학 AI 튜터입니다.
-슬라이드: {slide.title_ko} ({slide.organ}, {slide.stain})
-핵심 구조: {knowledge_base['key_structures']}
-시험 포인트: {knowledge_base['exam_points']}
-혼동 주의: {knowledge_base['common_confusions']}
-SlideAtlas 무관 질문에는 답변하지 마세요.
-"""
-```
-
-**v2.0에서 RAG로 전환 시**: `system_prompt`에 Vector DB 검색 결과를 추가하는 것만으로 업그레이드 완료. 나머지 코드 변경 없음.
+VectorDB 없이 `knowledge_base` JSON + 슬라이드 메타데이터만으로 Claude API 호출. v2.0에서 system_prompt에 Vector DB 검색 결과만 추가하면 RAG 전환 완료(나머지 코드 무변경).
 
 ---
 
-## 11. 콘텐츠 현황
+## 11. 콘텐츠 현황 (v2.9 — 조달 전략 전환)
 
-| 공급사 | 상태 | 수량 | 비고 |
-|--------|------|------|------|
-| Happy Science (Linda Li) | 계약 진행 중 | 조직학 133종+ | 최우선 파트너, 5월 신향 미팅 |
-| TCGA 오픈소스 | 사용 중 | 일부 | MVP용 |
-| 3DHISTECH 샘플 | 사용 중 | 1종 (소장 H&E) | MVP용 |
-| Vic Science (Joy Xu) | 응답 대기 | - | RFP-002 발송 완료 |
-| Hongye (Lily Zhao) | 응답 대기 | - | RFP-002 발송 완료 |
+**조달 방식: 듀얼 소싱 → 율린 단일 물리 소싱.**
+- **율린(Yulin)에서 전량 물리슬라이드 구매 → 뷰웍스 일괄 스캔** 단일 방식.
+- 율린 견적: 134장 약 $600, 오더 후 7일 배송.
+- 뷰웍스 스캔: 장당 1만원(VAT 별도), 150장 기준 약 2.5시간.
+- 전환 이유: 비용(SVS 대비 약 절반), 원본 유리슬라이드 확보, **MPP·품질 직접 통제**, 짧은 리드타임 — 물리 구매가 전 항목 우위.
 
-**주의**: 외부 문서에 중국 제조사명 미기재 원칙 (공급망 보호).
+| 공급사 | 상태 | 비고 |
+|--------|------|------|
+| Yulin (율린) | **주 공급원** | 물리 134장 구매 → 뷰웍스 스캔 |
+| Vic Science (Joy Xu) | 라이선스 협상 대상 | 물리 공급사, 디지털 라이선스 협의 |
+| Happy Science (Linda Li) | **보류 — 향후 글로벌 확장 시 파트너 옵션** | SVS 공급사에서 제외 |
+| TCGA / 3DHISTECH 샘플 | MVP용 | 일부 |
 
-**파일명 규칙 합의 필요**: Happy Science 미팅 시 `HS-HST-001.svs` 형식 파일명 규칙 확정 요청. 메타데이터 엑셀 컬럼 양식도 사전 공유.
+**저작권 / 공급사 관계 (CEO 거래 원칙)**:
+- 우회 프레이밍 없이 정면으로 디지털 라이선스 가치를 설명하고 **연 $1,000 라이선스비 선제안**.
+- 1년차는 $600 물리 구매로 갈음, **2년차부터 연 $1,000** 지급.
+- 목적: 분쟁 예방 + 장기 파트너 신뢰. 제조사가 디지털 라이선스 개념이 없더라도 이를 이용하지 않고 정당한 가치를 지급한다.
+
+**미확보 슬라이드 (9장)**: 중국 3사 모두 조달 불가분은 **v1.0 제외**. 예) brown adipose tissue(미국 Ward's Science만 가능, 라이선스 복잡) — 충남대 오더에도 포함된 귀한 material로 향후 보충 대상 기록(당장 우선순위 아님). v1.0 확보 목표 = 율린 134장 중 스캔 완료분.
+
+**일정**: 다음 주 오더 결정·송금 → 6월 둘째 주 중 스캔 완료 목표.
+
+> 외부 문서에 중국 제조사명 미기재 원칙(공급망 보호). 파일명 규칙·메타데이터 엑셀 양식은 스캔 전 확정.
 
 ---
 
 ## 12. QA 거버넌스 — 3단계 검증 구조
 
-### 12-1. 전체 워크플로우
-
 ```
-Claude Code 내부
-├── Lead Developer 에이전트  → 구현 (Flask + AWS RDS 코드 작성)
-└── QA 에이전트 (레드팀)    → 내부 핑퐁 검증 (섹션당 max 3회)
-         ↓ 내부 QA 통과
-Codex 외부 검증             → 엣지케이스 이중검증
-         ↓ Codex 통과
-CEO (보람) 최종 승인        → 다음 섹션으로
+Claude Code 내부:  Lead Developer(구현) ↔ QA 에이전트(레드팀, 섹션당 max 3회)
+   ↓ 내부 QA 통과
+Codex 외부 검증(엣지케이스 이중검증)
+   ↓ 통과
+CEO(보람) 최종 승인 → 다음 섹션
 ```
 
-### 12-2. 에이전트 역할 정의
+**워크플로우 통제**: 내부 핑퐁 max 3회 초과 시 중단→CEO 판단. Codex 통과 없이 다음 섹션 금지. **인프라 변경(RDS/EC2/S3)은 CEO 명시 승인 없이 절대 실행 금지.** 토큰 절약 위해 전체 재작성보다 diff 우선.
 
-**Lead Developer (개발 에이전트)**
-- 역할: Flask 웹앱 + AWS RDS PostgreSQL 인프라 코드 작성
-- 성향: 기능 구현 중심, 빠른 프로토타이핑
-- 제약: 인프라 변경(RDS, EC2, S3)은 반드시 CEO 승인 후 실행
-
-**Senior QA Engineer (내부 검증 에이전트 — 레드팀)**
-- 역할: 개발 에이전트 결과물을 해커 관점으로 공격, 예외 상황 발굴
-- 성향: 극도로 보수적, 타협 없는 보안 및 상용화 품질 요구
-- 권한: 5대 체크리스트 중 하나라도 미통과 시 무조건 반려
-
-**Codex (외부 이중검증)**
-- 역할: 섹션 완료 후 Claude Code 외부에서 엣지케이스 교차검증
-- 투입 시점: 섹션별 내부 QA 통과 직후
-- 포커스: Claude Code가 놓친 경계값·레이스컨디션·보안 사각지대
-
-### 12-3. 섹션별 Codex 검증 포커스
-
-| 섹션 완료 | Codex 검증 포커스 |
-|------|------|
-| 파이프라인 구축 | MPP 없음·포맷 오류·S3 업로드 실패 각 경로 처리 |
-| JWT 인증 | 토큰 만료 경계값, 동시 로그인 레이스 컨디션 |
-| 동적 워터마킹 | 타일 경계 픽셀 텍스트 잘림, 고배율/저배율 가시성 |
-| 기관 접근제어 | URL 조작으로 타 기관 슬라이드 접근 가능 여부 |
-| 포털 명단 관리 | 동일 이메일 중복 등록, 삭제 직후 세션 유지 여부 |
-| 전체 QA | CLAUDE.md 5대 체크리스트 전항목 최종 점검 |
-
-### 12-4. QA 5대 무조건 체크리스트 (하나라도 미통과 시 Reject)
-
-**① 보안 & 멀티테넌시**
-- YU 계정으로 SNU 슬라이드 URL 조작 접근 차단 확인
-- JWT 토큰 변조 공격 방어
-- session_token 1기기 동시접속 제어
-- 타일 접근 토큰 TTL 5분 (`generate_tile_token`, `verify_tile_token`) 작동 확인
-- 브라우저 캐시 no-store 헤더 적용 확인 (타일/DZI 응답 포함)
-- 계정 잠금 (24h/10회 임계값) 작동 및 자동 해제 확인
-- 인증코드 재발송 쿨다운(1분) 및 일일 한도(24h 5회) 제한 확인
-- CSRF 더블서밋 검증 (POST/PUT/DELETE 요청 X-CSRF-Token 헤더 대조) 작동 확인
-- subscription_end 만료 시 매 요청 접근 차단 확인 (is_special 계정 예외)
-- /api/chat 탈옥 방어: 클라이언트 system 파라미터 무시, 서버 측 가드레일 작동 확인
-
-**② 파이프라인 안전성**
-- COG TIFF 처리 시 파일 전체 메모리 로드 금지 (스트리밍 강제)
-- QC 실패·ready_no_mpp 슬라이드가 ready 상태로 전환되지 않는지 확인
-- 미니맵·썸네일 S3 경로가 DB에 정확히 저장되는지 확인
-- ready_no_mpp 슬라이드에서 배율 버튼 비활성화 확인
-
-**③ 비즈니스 로직**
-- subscription_end 경과 사용자 접근 차단 및 결제 유도 팝업
-- /api/chat 탈옥 질문 시 방어벽 작동
-
-**④ DB 마이그레이션 안전성**
-- 마이그레이션 스크립트 트랜잭션 처리
-- 중간 에러 시 전면 Rollback
-
-**⑤ 라이선스 격리**
-- is_public=FALSE 슬라이드 비구독 기관 노출 차단
-- Happy Science 라이선스 콘텐츠 외부 유출 경로 차단
-
-### 12-5. 워크플로우 통제 규칙
-
-- **내부 핑퐁 max 3회**: Dev ↔ QA 한 이슈당 최대 3회. 초과 시 즉시 중단 → CEO 판단 대기
-- **Codex 검증 후 CEO 승인**: Codex 통과 없이 다음 섹션 진행 금지
-- **인프라 변경 금지**: RDS, EC2, S3 설정 변경은 CEO 명시적 승인 없이 절대 실행 불가
-- **토큰 절약**: 반복 수정 시 전체 재작성보다 diff 기반 수정 우선
+**QA 5대 무조건 체크리스트 (하나라도 미통과 시 Reject)**
+1. **보안·멀티테넌시**: 타 기관 슬라이드 URL 조작 차단, JWT 변조 방어, 1기기 동시접속, 타일토큰 TTL, no-store 헤더, 계정잠금(24h/10회), 인증코드 재발송 한도, CSRF, 과목별 구독 만료 매요청 검사, /api/chat 탈옥 방어. **어드민 권한 게이트(super_admin/staff) 우회 불가.**
+2. **파이프라인 안전성**: COG 스트리밍(전체 메모리 로드 금지), QC 실패·ready_no_mpp가 ready로 전환 안 됨, 미니맵·썸네일 S3 경로 정확, ready_no_mpp 배율 버튼 비활성.
+3. **비즈니스 로직**: 만료 사용자 접근 차단+결제 유도, **변환 ready여도 deploy_status='deployed' 아니면 학생 비노출**, 과목별 좌석 카운터 정확.
+4. **DB 마이그레이션**: 트랜잭션 처리, 중간 에러 전면 Rollback.
+5. **라이선스 격리**: 미배포 슬라이드 비구독 노출 차단, license_source 콘텐츠 외부 유출 경로 차단.
 
 ---
 
 ## 13. 개발 원칙 & 주의사항
 
-- **AWS 자격증명**: nohup 컨텍스트에서 인라인 `$(aws configure get ...)` 치환 실패 → 환경변수 먼저 export 후 실행
-- **Windows SCP**: PEM 권한 설정은 비관리자 PowerShell에서 icacls 처리
-- **한국어 PDF**: reportlab/weasyprint 한글 폰트 임베딩 한계 → Adobe Illustrator 직접 작업
-- **중국어 문서**: Node.js docx 패키지, SimSun TextRun 별도 분리 필요
-- **COG 변환 배치**: SVS 1장당 5~15분, 133장 = 최대 30시간 → EC2에서 밤새 배치 실행
-- **매출 우선 원칙**: 정부지원(초창패 등)보다 9월 매출 데이터 확보가 최우선
-- **모듈 경계 원칙**: `ConversionJob` / `ConversionResult` 데이터 계약은 어떤 이유로도 변경 금지
+- **AWS 자격증명**: nohup 컨텍스트에서 인라인 치환 실패 → 환경변수 먼저 export.
+- **Windows SCP**: PEM 권한은 비관리자 PowerShell에서 icacls.
+- **한국어 PDF**: reportlab/weasyprint 한글 폰트 한계 → Illustrator 직접.
+- **중국어 문서**: Node.js docx, SimSun TextRun 별도 분리.
+- **COG 변환 배치**: SVS 1장 5~15분, 134장 최대 30시간 → EC2 밤샘 배치.
+- **매출 우선**: 정부지원(초창패)보다 9월 매출 데이터 확보가 최우선.
+- **모듈 경계**: `ConversionJob`/`ConversionResult` 데이터 계약 변경 금지.
 
 ---
 
 ## 14. 주요 외부 연락처
 
-- Happy Science: Linda Li / info@ihappysci.com / WhatsApp +86 188 3816 1683
-- Vic Science: Joy Xu / joy@vicscience.com
-- Hongye: Lily Zhao / Lianhonglianli@163.com
-- 성원애드피아: 명함 인쇄 (아르미 울트라화이트 310g 양면)
+- Yulin(율린): Jessy, Cathy — 물리슬라이드 주 공급원
+- Vic Science: Joy Xu / joy@vicscience.com — 라이선스 협상
+- Happy Science: Linda Li / info@ihappysci.com (보류, 글로벌 확장 옵션)
+- 뷰웍스(Viewworks): 스캔 서비스 (장당 1만원+VAT)
+- 성원애드피아: 명함 인쇄
+
+---
+
+## 15. 슈퍼관리자 어드민 (v2.9 신규 — 구현 사양)
+
+> 화면 사양은 `docs/mockups/`의 HTML 목업 6개를 1차 사양서로 삼는다(§17).
+
+### 15-1. 탭 구조
+```
+[운영]      대시보드 · 기관 관리 · 슬라이드 관리 · 접근 제어 · 이용 리포트 · 특별 계정
+[고객 응대]  공지 관리 · 1:1 문의
+```
+
+### 15-2. 권한 (2단계)
+| 탭 | super_admin | staff |
+|---|---|---|
+| 대시보드 | ✅ | ✅ 읽기만 |
+| 기관·슬라이드·접근제어·이용리포트·특별계정 | ✅ | ❌ (사이드바에서 숨김) |
+| 공지 관리 | ✅ | ✅ |
+| 1:1 문의 | ✅ | ✅ |
+- staff에는 운영 그룹 탭이 사이드바에서 노출되지 않고 API 레벨에서도 차단. 액션 버튼(추가/갱신/비활성화 등)도 숨김.
+- 모든 작성/수정/답변에 `created_by`(admin_users.id) 기록.
+
+### 15-3. 슬라이드 배포 상태 (변환 상태와 별개)
+```
+qc_pending(배포 대기) → deployed(배포 중) ↔ revoked(철회→배포 대기로 복귀)
+                      ↘ rejected(반려, 사유 기록)
+```
+- **반려(rejected)**: 변환은 됐으나 원본 품질 문제(조직 찢어짐·초점 흐림 등). 사유 기록 → 학생 비노출 → **공급사 재공급/재스캔 요청 목록에 자동 등록** → 원본 보존(삭제 금지) → 대체본 도착 시 **같은 slide_id로 재업로드**. 반려 이력 보존. (재공급 목록은 슬라이드 관리의 필터 탭 + 공급사별 내보내기로, **2번째 모듈 시점에 구현**.)
+- **철회(revoked)**: 배포했던 것을 내림 → qc_pending 복귀(내부 결정, 공급사 클레임 아님).
+- **배치 QC**: 체크박스 다중선택 → "선택 항목 일괄 배포/반려". 134장 대응.
+
+### 15-4. 기관 추가/수정/갱신 (§16 모델 기반)
+- 기본 정보: 학교명·단과대·(영문)·이메일 도메인. (슬라이드ID/기관코드 입력 없음 — SA 고정.)
+- 구독: **과목별 구독 카드**(과목 + 좌석플랜/좌석수 + 시작학기 + 학기수 + 구독료 + 결제). "+ 과목 구독 추가"로 줄 추가. v1.0은 조직학 한 줄.
+- 좌석: 플랜 선택 시 자동, 직접 수정 가능(특수계약 좌석 직접 지정).
+- 학기/접근창: §16 학기제. 오픈일·만료일 자동 계산(읽기전용).
+- 관리자 등록 최대 5명(이름/지위/이메일/전화). 저장 시 SES 포털 안내 발송.
+- 갱신: 과목 단위. 현재 학기 다음 학기 자동 세팅, 이력 누적 보존(`subscription_history`).
+
+### 15-5. 슬라이드 QC / 파이프라인
+- 변환 상태(자동) + 배포 상태(사람) 2축 표시. 상태 필터 칩.
+- 개별 추가: 파일 업로드 + 메타데이터, **MPP 입력칸 없음**, 기관 SA 고정, 공급원→푸터. (§5-2)
+- ready_no_mpp: 인라인 MPP 입력 + 재처리. failed: 로그 보기 + 재변환.
+- 검수 모달: kb 자동 초안(핵심구조/시험포인트/혼동주의/한국어 관찰포인트) 편집 후 배포. (§5-4)
+
+### 15-6. 접근 제어
+- **콘텐츠 모듈 레지스트리**(조직학 활성 / 병리·기생충 준비중). 좌석↔콘텐츠 분리(§16).
+- **기관 × 모듈 매트릭스**: 조직학은 전 기관 자동·잠김. 병리·기생충 열은 출시 후 토글. **이 매트릭스는 기관 관리 데이터에 연동(기관 추가 시 행 자동 생성)되며, 2번째 모듈 출시 시점에 구현.** v1.0은 미리보기.
+
+### 15-7. 이용 리포트
+- 기관 관리자 포털 리포트와 동일 화면 + **학교 선택 드롭다운**. 집계 중심(개별 학생 추적 지양). 엑셀/PDF 내보내기.
+
+### 15-8. 특별 계정
+- 자문위원·검수자·데모·공급사 평가. 구독 만료 무관(is_special), **전체 콘텐츠 접근 고정**, 워터마킹 동일.
+- **선택적 만료일 + 사전 알림(14/30일 전)**. 무기한은 비권장(잊힌 계정 = 보안·라이선스 구멍) → "검토 권장" 경고.
+
+### 15-9. 공지 관리
+- 랜딩 공지, **최대 5개 동시 노출**, 순서 지정. 게시↔숨김.
+- **소프트 삭제(보관함)**: 삭제 시 보관함 이동(이력 보존). 복원 시 숨김 상태로 복귀. **완전 삭제는 보관함에서 확인 후** 영구 제거. super_admin·staff 모두 가능, created_by 기록.
+
+### 15-10. 1:1 문의
+- "사이트 사용 전반 / FAQ 미해결" 문의. 접수 시 **기관 정보 자동 첨부**(institution_id) → staff가 운영 탭 접근 없이 응대. (관련 슬라이드란은 두지 않음.)
+- 답변은 SES 발송, 작성자 기록. 상태 open/answered.
+
+### 15-11. 대시보드
+- KPI: 활성 구독 기관 / 이번 학기 확정 매출 / 활성 사용자·좌석 / 만료 임박(D-90 내).
+- 만료·갱신 임박 D-day 리스트, 학기별 매출 추이, 파이프라인 현황, 처리 대기(미답변 문의·검수 대기·MPP없음·갱신 협의).
+
+---
+
+## 16. 가격·구독 모델 (v2.9)
+
+- **좌석 플랜이 기본 가격축**: Department(50) / Standard(150) / Campus(300) / Institution(500+). 특수계약은 좌석 수 직접 지정.
+- **학기 단위 라이선스**: 봄학기(3/1~8/31) / 가을학기(9/1~익년 2월말). 라이선스는 6개월 단위. **방학 접근 허용**(여름·겨울방학 포함, 복습 목적).
+- **접근 오픈일 = 학기 시작 −30일**(봄 2/1, 가을 8/1). 학기 첫날 혼란 방지 위해 한 달 일찍 오픈(편의 제공이며 라이선스 기간과 별개). 신규·재구독은 이전 만료일이 없으므로 겹침 문제 없음.
+- **참고 가격**: 연 ₩4,000,000 / 학기 ₩2,500,000(학기 단가에 의도적 할증으로 연납 유도). 실제 가격은 딜별 확정.
+- **좌석과 콘텐츠는 분리(직교)**: 좌석 플랜 = 규모·가격, 콘텐츠 모듈 = 무엇을 여는가. v1.0은 조직학 자동 부여.
+- **신규 과목(병리·기생충)은 독립 좌석 add-on으로 판매**: 과목마다 좌석 카운터가 독립(예: 조직학 의대 150석 + 기생충학 기생충학교실 30석). 과목별로 좌석·학기·구독료·갱신이 모두 따로 굴러간다. → 구독 = (기관 × 과목) 단위(`subscriptions`).
+- 신규 과목 가격(별도 과금/번들/상위티어)은 **출시 시점에 결정**(데이터 모델이 셋 다 지원).
+- (구 "조직학+병리·기생충 모듈 연 400~900만원" 표현 폐기.)
+
+---
+
+## 17. 화면 사양서 (목업)
+
+구현 1차 사양은 `docs/mockups/`의 HTML 목업이다(클릭 가능한 인터랙션 포함):
+- `institution_modals.html` — 기관 추가/수정/갱신 (과목별 구독 카드, 학기제)
+- `slide_qc.html` — 슬라이드 QC/파이프라인 (2축 상태, 배치 QC, 검수 kb, 반려, MPP 재처리, 개별 추가)
+- `access_reports_special.html` — 접근 제어·이용 리포트·특별 계정
+- `notices_inquiries.html` — 공지 관리(보관함)·1:1 문의(권한 분리)
+- `admin_integrated.html` — 전체 통합 대시보드(IA·대시보드)
+
+> 목업과 본 문서가 충돌하면 본 문서(CLAUDE.md)가 우선. 목업은 레이아웃·동작 참조용.
 
 ---
 
 ## 19. 인프라 접속 정보
 
 ### RDS PostgreSQL
-
 | 항목 | 값 |
 |------|------|
 | 엔드포인트 | slideatlas-db.c94iwikwox6l.ap-northeast-2.rds.amazonaws.com |
-| DB명 | slideatlas |
-| 유저 | slideatlas_admin |
-| 포트 | 5432 |
+| DB명 / 유저 / 포트 | slideatlas / slideatlas_admin / 5432 |
 | 리전/AZ | ap-northeast-2 / ap-northeast-2c |
+접속: EC2 Instance Connect → psql (로컬 psql 불필요). RDS Security Group은 EC2 IP만 인바운드 허용(VPC 내부 전용).
 
-**접속 방법**: EC2 Instance Connect → psql (로컬 psql 설치 불필요)
-
-```bash
-# EC2에서 RDS 접속
-psql -h slideatlas-db.c94iwikwox6l.ap-northeast-2.rds.amazonaws.com \
-     -U slideatlas_admin \
-     -d slideatlas \
-     -p 5432
-
-# DDL 스크립트 실행
-psql -h slideatlas-db.c94iwikwox6l.ap-northeast-2.rds.amazonaws.com \
-     -U slideatlas_admin \
-     -d slideatlas \
-     -p 5432 \
-     -f db/schema.sql
-```
-
-**보안 원칙**: RDS Security Group은 EC2 인스턴스 IP만 인바운드 허용. 로컬 PC에서 직접 접속 불가 (VPC 내부 전용).
-
-### EC2 SSH 접속 (Windows)
-
+### EC2 SSH (Windows)
 | 항목 | 값 |
 |------|------|
-| 고정 IP (탄력적 IP) | 3.34.35.58 |
-| PEM 파일 경로 | C:\Users\아무개\slideatlas-key.pem |
-| 접속 명령어 | ssh -i "C:\Users\아무개\slideatlas-key.pem" ubuntu@3.34.35.58 |
-| PowerShell 종류 | 반드시 비관리자 PowerShell 사용 |
-
-**주의**: 관리자 PowerShell에서 실행하면 계정 매핑 오류 발생.
-탄력적 IP 할당 완료 (2026-05-30) — 재시작해도 IP 고정.
+| 고정 IP(EIP) | 3.34.35.58 (재시작해도 고정) |
+| PEM | C:\Users\아무개\slideatlas-key.pem |
+| 명령 | ssh -i "C:\Users\아무개\slideatlas-key.pem" ubuntu@3.34.35.58 |
+| PowerShell | 반드시 비관리자 PowerShell |
 
 ---
 
-*최종 업데이트: 2026-05-30 v2.8 | 변경 내용: JWT 인증 보안 결함 수정 2회차 완료 (타일토큰 TTL, CSRF 검증, 계정잠금, 재발송, 구독만료 매요청 검사, 탈옥방어) | 다음 업데이트: 포털 명단 관리 구현 완료 시점*
+*최종 업데이트: 2026-05-30 v2.9 | 변경: 콘텐츠 조달 율린 단일 물리소싱·Happy Science 보류·연$1,000 라이선스·미확보 9장 제외 / SA 단일 채번 + license_source 푸터 / kb 검수 QC 게이트 / 슈퍼관리자 전체 사양(§15) — admin_users 2단계 권한·created_by 감사추적 / 가격·구독 모델 재정의(§16) — 좌석↔콘텐츠 분리, 기관×과목 독립 좌석, plan_slide_access→institution_subject_access / 공지 소프트삭제·보관함 / 1:1문의 기관 자동첨부·슬라이드란 제거 / 화면 사양 목업(§17) | 다음: 슈퍼관리자 구현 착수*
