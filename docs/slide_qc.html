@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SlideAtlas 슈퍼관리자 — 슬라이드 QC·파이프라인</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Noto+Sans+KR:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --navy:#0F1F3D; --navy-2:#1B2F52; --sky:#5BB8D4; --sky-d:#3A93AE;
+    --ink:#1a2434; --muted:#6B7689; --line:#E2E7EF; --line-2:#EDF1F6;
+    --bg:#F4F6FA; --ok:#1E9E6A; --warn:#E08A1E; --danger:#D14C4C; --blue:#2F6FE0;
+    --shadow:0 10px 40px rgba(15,31,61,.18);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.5}
+  .app{display:flex;min-height:100vh}
+  .side{width:212px;background:var(--navy);color:#cdd6e6;flex-shrink:0;padding:20px 0}
+  .logo{font-family:'Montserrat';font-weight:800;color:#fff;font-size:18px;padding:4px 22px 22px;letter-spacing:-.3px}
+  .logo span{color:var(--sky)}
+  .nav-i{display:flex;align-items:center;gap:10px;padding:11px 22px;font-size:13.5px;color:#aeb9cd;cursor:pointer;border-left:3px solid transparent}
+  .nav-i:hover{background:rgba(255,255,255,.04)}
+  .nav-i.on{background:rgba(91,184,212,.12);border-left-color:var(--sky);color:#fff;font-weight:700}
+  .nav-i .dot{width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.5}
+  .nav-sep{font-size:10.5px;letter-spacing:1px;color:#5e6c85;padding:18px 22px 7px;text-transform:uppercase}
+  .main{flex:1;display:flex;flex-direction:column;min-width:0}
+  .top{height:58px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 26px}
+  .top h1{font-size:17px;font-weight:700}
+  .top .who{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--muted)}
+  .who b{color:var(--ink)}
+  .av{width:30px;height:30px;border-radius:50%;background:var(--navy);color:#fff;display:grid;place-items:center;font-size:12px;font-weight:700}
+  .content{padding:22px 26px;overflow:auto}
+
+  .toolbar{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px}
+  .toolbar .lead{font-size:12.5px;color:var(--muted);margin-top:4px;max-width:520px}
+  .btn{border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;transition:.15s}
+  .btn-pri{background:var(--navy);color:#fff} .btn-pri:hover{background:var(--navy-2)}
+  .btn-sky{background:var(--sky);color:#06263a} .btn-sky:hover{background:var(--sky-d);color:#fff}
+  .btn-ok{background:var(--ok);color:#fff} .btn-ok:hover{filter:brightness(.93)}
+  .btn-ghost{background:#fff;border:1px solid var(--line);color:var(--ink)} .btn-ghost:hover{border-color:var(--sky);color:var(--sky-d)}
+  .btn-warn{background:#fff;border:1px solid #ECC58E;color:var(--warn)} .btn-warn:hover{background:#FCF6EC}
+  .btn-sm{padding:6px 11px;font-size:12px}
+  .btn-row{display:flex;gap:8px}
+
+  /* status chips */
+  .chips{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+  .chip{background:#fff;border:1px solid var(--line);border-radius:10px;padding:9px 14px;cursor:pointer;display:flex;align-items:center;gap:9px;transition:.15s}
+  .chip:hover{border-color:var(--sky)}
+  .chip.on{border-color:var(--navy);background:#F3F7FC}
+  .chip .n{font-family:'Montserrat';font-weight:800;font-size:16px;color:var(--navy)}
+  .chip .l{font-size:11.5px;color:var(--muted);font-weight:700}
+  .chip .led{width:8px;height:8px;border-radius:50%}
+
+  /* batch bar */
+  .batch{display:none;align-items:center;justify-content:space-between;background:var(--navy);color:#fff;border-radius:10px;padding:11px 16px;margin-bottom:12px;animation:slide .2s ease}
+  .batch.show{display:flex}
+  @keyframes slide{from{transform:translateY(-6px);opacity:0}to{transform:none;opacity:1}}
+  .batch .bt{font-size:13px;font-weight:700}
+  .batch .bt b{color:var(--sky);font-family:'Montserrat'}
+  .batch .ba{display:flex;gap:8px;align-items:center}
+  .batch .link{background:none;border:none;color:#9fb0cb;font-size:12.5px;cursor:pointer;text-decoration:underline}
+
+  table{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(15,31,61,.06)}
+  th{background:#FAFBFD;text-align:left;font-size:11px;letter-spacing:.3px;color:var(--muted);font-weight:700;padding:12px 14px;border-bottom:1px solid var(--line)}
+  td{padding:13px 14px;border-bottom:1px solid var(--line-2);font-size:13px;vertical-align:middle}
+  tr:last-child td{border-bottom:none}
+  tr:hover td{background:#FBFCFE}
+  .cbx{width:16px;height:16px;cursor:pointer;accent-color:var(--navy)}
+  .sid{font-family:'Montserrat';font-weight:700;color:var(--navy);font-size:12px}
+  .stitle{font-weight:500} .smeta{font-size:11px;color:var(--muted)}
+  .fmt{font-family:'Montserrat';font-size:11px;font-weight:600;color:var(--muted);background:#EEF1F5;padding:2px 7px;border-radius:5px}
+
+  .pill{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:20px;white-space:nowrap}
+  .led{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+  .p-blue{background:#E8F0FE;color:var(--blue)} .l-blue{background:var(--blue)}
+  .p-ok{background:#E6F5EE;color:var(--ok)} .l-ok{background:var(--ok)}
+  .p-warn{background:#FCF2E2;color:var(--warn)} .l-warn{background:var(--warn)}
+  .p-red{background:#FBEAEA;color:var(--danger)} .l-red{background:var(--danger)}
+  .p-gray{background:#EEF1F5;color:var(--muted)} .l-gray{background:var(--muted)}
+  .spin{width:11px;height:11px;border:2px solid #cfe0fa;border-top-color:var(--blue);border-radius:50%;display:inline-block;animation:sp .8s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+
+  .mpp{font-family:'Montserrat';font-weight:600;font-size:12px}
+  .mpp-in{display:flex;gap:5px;align-items:center}
+  .mpp-in input{width:62px;border:1px solid var(--warn);border-radius:6px;padding:5px 7px;font-size:12px;font-family:'Montserrat'}
+  .reason{font-size:11px;color:var(--danger);margin-top:3px;cursor:help}
+
+  .actions{display:flex;gap:6px;justify-content:flex-end}
+  .chips-edit{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:7px}
+  .kchip{background:#EEF3F8;color:var(--navy);font-size:12px;padding:5px 9px;border-radius:7px;display:inline-flex;gap:7px;align-items:center}
+  .kchip b{font-family:'Montserrat';font-weight:600}
+  .kchip .rm{cursor:pointer;color:var(--muted);font-weight:700}
+  .kadd{border:1px dashed var(--line)!important;border-radius:7px;padding:6px 9px;font-size:12px;width:180px!important}
+  .kb-field{margin-bottom:15px}
+
+  /* modal */
+  .overlay{position:fixed;inset:0;background:rgba(10,18,35,.55);backdrop-filter:blur(2px);display:none;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto;z-index:50}
+  .overlay.show{display:flex}
+  .modal{background:#fff;width:100%;max-width:540px;border-radius:16px;box-shadow:var(--shadow);overflow:hidden;animation:pop .2s ease}
+  .modal.wide{max-width:620px}
+  @keyframes pop{from{transform:translateY(12px) scale(.98);opacity:0}to{transform:none;opacity:1}}
+  .m-head{background:var(--navy);color:#fff;padding:17px 22px;display:flex;justify-content:space-between;align-items:center}
+  .m-head h2{font-size:15.5px;font-weight:700}
+  .m-head p{font-size:12px;color:#9fb0cb;margin-top:2px}
+  .x{background:rgba(255,255,255,.1);border:none;color:#fff;width:30px;height:30px;border-radius:8px;font-size:17px;cursor:pointer}
+  .x:hover{background:rgba(255,255,255,.2)}
+  .m-body{padding:20px 22px}
+  .m-foot{padding:14px 22px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:9px;background:#FBFCFE}
+  label{font-size:12px;font-weight:700;color:#3c4759;display:block;margin-bottom:6px}
+  select,textarea,.m-body input{border:1px solid var(--line);border-radius:8px;padding:9px 11px;font-size:13px;font-family:inherit;width:100%;color:var(--ink)}
+  textarea{resize:vertical;min-height:72px;line-height:1.5}
+  select:focus,textarea:focus,.m-body input:focus{outline:none;border-color:var(--sky);box-shadow:0 0 0 3px rgba(91,184,212,.18)}
+  .infobox{background:#F6F8FB;border-radius:9px;padding:11px 13px;font-size:12.5px;margin-bottom:15px;display:flex;gap:10px;align-items:center}
+  .infobox .sid{font-size:13px}
+  .note{font-size:11.5px;color:var(--muted);margin-top:9px}
+  .note.warn{color:var(--warn)}
+
+  /* log timeline */
+  .tl{display:flex;align-items:center;gap:0;margin-bottom:16px}
+  .tl-step{display:flex;flex-direction:column;align-items:center;flex:1}
+  .tl-dot{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:800;color:#fff;font-family:'Montserrat'}
+  .tl-l{font-size:10.5px;margin-top:5px;color:var(--muted);font-weight:700}
+  .tl-bar{height:3px;flex:1;background:var(--line);margin-top:-18px}
+  .tl-done .tl-dot{background:var(--ok)} .tl-fail .tl-dot{background:var(--danger)}
+  .tl-todo .tl-dot{background:var(--line);color:var(--muted)}
+  .logbox{background:#0F1B2E;color:#cfe0fa;font-family:'JetBrains Mono',monospace;font-size:11.5px;border-radius:9px;padding:13px 15px;line-height:1.7;white-space:pre-wrap;max-height:180px;overflow:auto}
+  .logbox .e{color:#ff8b8b} .logbox .o{color:#7fe0a8} .logbox .w{color:#ffcf8b}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="logo">Slide<span>Atlas</span></div>
+    <div class="nav-sep">운영</div>
+    <div class="nav-i"><span class="dot"></span>대시보드</div>
+    <div class="nav-i"><span class="dot"></span>기관 관리</div>
+    <div class="nav-i on"><span class="dot"></span>슬라이드 관리</div>
+    <div class="nav-i"><span class="dot"></span>접근 제어</div>
+    <div class="nav-i"><span class="dot"></span>이용 리포트</div>
+    <div class="nav-i"><span class="dot"></span>특별 계정</div>
+    <div class="nav-sep">고객 응대</div>
+    <div class="nav-i"><span class="dot"></span>공지 관리</div>
+    <div class="nav-i"><span class="dot"></span>1:1 문의</div>
+  </aside>
+
+  <div class="main">
+    <header class="top">
+      <h1>슬라이드 관리 · QC / 파이프라인</h1>
+      <div class="who">접속 <b>김보람</b><span class="pill p-ok" style="font-size:10.5px">super_admin</span><div class="av">보</div></div>
+    </header>
+
+    <div class="content">
+      <div class="toolbar">
+        <div>
+          <div class="btn-row" style="margin-bottom:6px">
+            <button class="btn btn-pri">＋ 엑셀 배치 업로드</button>
+            <button class="btn btn-ghost" onclick="openAdd()">개별 추가</button>
+            <button class="btn btn-ghost">검수결과 일괄 반영 (엑셀)</button>
+          </div>
+          <div class="lead">변환은 파이프라인이 자동 처리합니다. <b>배포(학생 노출)</b>는 검수자 보고를 확인한 뒤 슈퍼관리자가 결정합니다. 자동 변환이 끝나도 "QC완료·배포"를 눌러야 학생에게 공개됩니다.</div>
+        </div>
+      </div>
+
+      <!-- status chips (filters) -->
+      <div class="chips">
+        <div class="chip on"><span class="n">28</span><span class="l">전체</span></div>
+        <div class="chip"><span class="led l-blue"></span><span class="n">2</span><span class="l">처리 중</span></div>
+        <div class="chip"><span class="led l-gray"></span><span class="n">3</span><span class="l">배포 대기</span></div>
+        <div class="chip"><span class="led l-warn"></span><span class="n">1</span><span class="l">MPP 없음</span></div>
+        <div class="chip"><span class="led l-red"></span><span class="n">2</span><span class="l">실패 · 반려</span></div>
+        <div class="chip"><span class="led l-ok"></span><span class="n">20</span><span class="l">배포 중</span></div>
+      </div>
+
+      <!-- batch action bar -->
+      <div class="batch" id="batch">
+        <div class="bt">선택 <b id="bcount">0</b>건</div>
+        <div class="ba">
+          <button class="btn btn-ok btn-sm" onclick="batchDeploy()">선택 항목 일괄 배포</button>
+          <button class="btn btn-warn btn-sm" onclick="alert('선택 항목을 일괄 반려합니다 (사유 입력)')">일괄 반려</button>
+          <button class="link" onclick="clearSel()">선택 해제</button>
+        </div>
+      </div>
+
+      <table>
+        <thead><tr>
+          <th style="width:34px"><input type="checkbox" class="cbx" id="allcb" onclick="toggleAll(this)"></th>
+          <th>슬라이드</th>
+          <th style="width:64px">원본</th>
+          <th style="width:128px">변환 상태</th>
+          <th style="width:128px">배포 상태</th>
+          <th style="width:96px">MPP</th>
+          <th style="width:210px"></th>
+        </tr></thead>
+        <tbody id="tb">
+          <!-- 배포중 -->
+          <tr data-state="deployed">
+            <td><input type="checkbox" class="cbx rcb" onclick="syncSel()"></td>
+            <td><div class="sid">HS-HST-001</div><div class="stitle">소장 (Small Intestine)</div><div class="smeta">소화기 · H&amp;E</div></td>
+            <td><span class="fmt">SVS</span></td>
+            <td><span class="pill p-ok"><span class="led l-ok"></span>변환완료</span></td>
+            <td class="dep"><span class="pill p-ok"><span class="led l-ok"></span>배포 중</span></td>
+            <td class="mpp">0.25 μm</td>
+            <td><div class="actions"><button class="btn btn-warn btn-sm" onclick="revoke(this)">배포 철회</button></div></td>
+          </tr>
+          <!-- 배포대기 1 -->
+          <tr data-state="pending">
+            <td><input type="checkbox" class="cbx rcb" onclick="syncSel()"></td>
+            <td><div class="sid">HS-HST-002</div><div class="stitle">위 (Stomach)</div><div class="smeta">소화기 · H&amp;E</div></td>
+            <td><span class="fmt">SVS</span></td>
+            <td><span class="pill p-ok"><span class="led l-ok"></span>변환완료</span></td>
+            <td class="dep"><span class="pill p-gray"><span class="led l-gray"></span>배포 대기</span></td>
+            <td class="mpp">0.25 μm</td>
+            <td><div class="actions"><button class="btn btn-ghost btn-sm" onclick="openKb('HS-HST-002')">검수</button><button class="btn btn-warn btn-sm" onclick="openReject('HS-HST-002','위 (Stomach)')">반려</button></div></td>
+          </tr>
+          <!-- 배포대기 2 -->
+          <tr data-state="pending">
+            <td><input type="checkbox" class="cbx rcb" onclick="syncSel()"></td>
+            <td><div class="sid">HS-PATH-004</div><div class="stitle">림프절 (Lymph Node)</div><div class="smeta">병리 · H&amp;E</div></td>
+            <td><span class="fmt">SVS</span></td>
+            <td><span class="pill p-ok"><span class="led l-ok"></span>변환완료</span></td>
+            <td class="dep"><span class="pill p-gray"><span class="led l-gray"></span>배포 대기</span></td>
+            <td class="mpp">0.25 μm</td>
+            <td><div class="actions"><button class="btn btn-ghost btn-sm" onclick="openKb('HS-PATH-004')">검수</button><button class="btn btn-warn btn-sm" onclick="openReject('HS-PATH-004','림프절 (Lymph Node)')">반려</button></div></td>
+          </tr>
+          <!-- MPP 없음 -->
+          <tr data-state="nompp">
+            <td><input type="checkbox" class="cbx rcb" disabled></td>
+            <td><div class="sid">HS-HST-005</div><div class="stitle">기관지 (Bronchus)</div><div class="smeta">호흡기 · H&amp;E</div></td>
+            <td><span class="fmt">TIFF</span></td>
+            <td><span class="pill p-warn"><span class="led l-warn"></span>MPP 없음</span></td>
+            <td class="dep"><span class="pill p-gray">— 배율 비활성</span></td>
+            <td><div class="mpp-in"><input id="mpp5" placeholder="0.25" type="number" step="0.01"><span style="font-size:11px;color:var(--muted)">μm</span></div></td>
+            <td><div class="actions"><button class="btn btn-sky btn-sm" onclick="retryMpp(this,'mpp5')">MPP 입력·재처리</button></div></td>
+          </tr>
+          <!-- 변환중 -->
+          <tr data-state="proc">
+            <td><input type="checkbox" class="cbx rcb" disabled></td>
+            <td><div class="sid">YU-HST-003</div><div class="stitle">신장 (Kidney)</div><div class="smeta">비뇨기 · H&amp;E</div></td>
+            <td><span class="fmt">NDPI</span></td>
+            <td><span class="pill p-blue"><span class="spin"></span>변환 중 62%</span></td>
+            <td class="dep"><span class="pill p-gray">—</span></td>
+            <td class="mpp">—</td>
+            <td><div class="actions"><span class="smeta">처리 대기 중</span></div></td>
+          </tr>
+          <!-- 검증중 -->
+          <tr data-state="proc">
+            <td><input type="checkbox" class="cbx rcb" disabled></td>
+            <td><div class="sid">HS-HST-007</div><div class="stitle">간 (Liver)</div><div class="smeta">소화기 · H&amp;E</div></td>
+            <td><span class="fmt">SVS</span></td>
+            <td><span class="pill p-blue"><span class="spin"></span>자동 QC 검증 중</span></td>
+            <td class="dep"><span class="pill p-gray">—</span></td>
+            <td class="mpp">0.50 μm</td>
+            <td><div class="actions"><span class="smeta">처리 대기 중</span></div></td>
+          </tr>
+          <!-- 변환 실패 -->
+          <tr data-state="failed">
+            <td><input type="checkbox" class="cbx rcb" disabled></td>
+            <td><div class="sid">HS-HST-008</div><div class="stitle">피부 (Skin)</div><div class="smeta">피부 · H&amp;E</div></td>
+            <td><span class="fmt">SVS</span></td>
+            <td><span class="pill p-red"><span class="led l-red"></span>변환 실패</span></td>
+            <td class="dep"><span class="pill p-gray">—</span></td>
+            <td class="mpp">—</td>
+            <td><div class="actions"><button class="btn btn-ghost btn-sm" onclick="openLog()">로그 보기</button><button class="btn btn-sky btn-sm" onclick="alert('재변환을 시작합니다')">재변환</button></div></td>
+          </tr>
+          <!-- 반려 (검수자 보고) -->
+          <tr data-state="rejected">
+            <td><input type="checkbox" class="cbx rcb" disabled></td>
+            <td><div class="sid">HS-HST-009</div><div class="stitle">식도 (Esophagus)</div><div class="smeta">소화기 · H&amp;E</div></td>
+            <td><span class="fmt">SVS</span></td>
+            <td><span class="pill p-ok"><span class="led l-ok"></span>변환완료</span></td>
+            <td class="dep"><span class="pill p-red"><span class="led l-red"></span>반려</span><div class="reason" title="검수자: 조직 일부 찢어짐, 점막하층 판독 불가">⚠ 조직 찢어짐 (검수자 보고)</div></td>
+            <td class="mpp">0.25 μm</td>
+            <td><div class="actions"><button class="btn btn-ghost btn-sm" onclick="alert('공급사 재공급/재스캔 요청 목록에 추가')">재공급 요청</button></div></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ===== REJECT MODAL ===== -->
+<div class="overlay" id="ov-reject">
+  <div class="modal">
+    <div class="m-head"><div><h2>슬라이드 반려</h2><p>검수자 보고 기반으로 배포를 보류합니다</p></div><button class="x" onclick="close_('ov-reject')">×</button></div>
+    <div class="m-body">
+      <div class="infobox"><span class="sid" id="rej-sid">HS-HST-002</span><span id="rej-title">위 (Stomach)</span></div>
+      <label>반려 사유 <span style="color:var(--danger)">*</span></label>
+      <select id="rej-reason" style="margin-bottom:12px">
+        <option value="">사유 선택 (검수자 보고)</option>
+        <option>조직 찢어짐 / 절편 손상</option>
+        <option>초점 흐림 (out of focus)</option>
+        <option>염색 불균질 / 과염색</option>
+        <option>공기방울 · 이물질</option>
+        <option>조직 영역 누락 / 절편 부족</option>
+        <option>스캔 영역 어긋남</option>
+        <option>기타 (상세 사유 입력)</option>
+      </select>
+      <label>상세 사유</label>
+      <textarea id="rej-detail" placeholder="예: 점막하층 일부가 찢어져 판독 불가. 동일 블록 재절편 필요."></textarea>
+      <div class="note warn">반려된 슬라이드는 학생에게 노출되지 않으며, 공급사 재공급/재스캔 대상으로 표시됩니다. 사유는 계약·공급사 커뮤니케이션 기록으로 보존됩니다.</div>
+    </div>
+    <div class="m-foot"><button class="btn btn-ghost" onclick="close_('ov-reject')">취소</button><button class="btn btn-warn" onclick="confirmReject()">반려 확정</button></div>
+  </div>
+</div>
+
+<!-- ===== LOG MODAL ===== -->
+<div class="overlay" id="ov-log">
+  <div class="modal wide">
+    <div class="m-head"><div><h2>변환 실패 로그 — HS-HST-008</h2><p>피부 (Skin) · SVS</p></div><button class="x" onclick="close_('ov-log')">×</button></div>
+    <div class="m-body">
+      <div class="tl">
+        <div class="tl-step tl-done"><div class="tl-dot">✓</div><div class="tl-l">대기</div></div>
+        <div class="tl-bar" style="background:var(--ok)"></div>
+        <div class="tl-step tl-done"><div class="tl-dot">✓</div><div class="tl-l">변환</div></div>
+        <div class="tl-bar" style="background:var(--ok)"></div>
+        <div class="tl-step tl-fail"><div class="tl-dot">✕</div><div class="tl-l">QC 검증</div></div>
+        <div class="tl-bar"></div>
+        <div class="tl-step tl-todo"><div class="tl-dot">·</div><div class="tl-l">완료</div></div>
+      </div>
+      <label>QC 검증 결과</label>
+      <div class="logbox" style="margin-bottom:13px"><span class="o">[extract_meta]   OK</span>  MPP=0.25, 56000×42000, SVS
+<span class="o">[convert_cog]    OK</span>  256px tile, JPEG Q85, overview 7lv
+<span class="o">[tile_http]      OK</span>  low/mid/high → 200/200/200
+<span class="e">[white_tile]     FAIL</span> 흰 타일 비율 0.97 > 임계값 0.95
+<span class="o">[dzi_levels]     OK</span>  expected 9 = actual 9
+<span class="e">→ run_qc(): FAILED</span>  conversion_status = failed</div>
+      <div class="note">원인 추정: 조직 영역이 슬라이드 가장자리에 치우쳐 스캔되어 빈 배경 비율 초과. 공급사에 재스캔 요청하거나 유리슬라이드 재수령 후 재변환이 필요합니다.</div>
+    </div>
+    <div class="m-foot"><button class="btn btn-ghost" onclick="close_('ov-log')">닫기</button><button class="btn btn-sky" onclick="close_('ov-log')">재변환</button></div>
+  </div>
+</div>
+
+<!-- ===== INDIVIDUAL ADD MODAL ===== -->
+<div class="overlay" id="ov-add">
+  <div class="modal wide">
+    <div class="m-head"><div><h2>슬라이드 개별 추가</h2><p>파일 업로드 후 메타데이터를 입력하면 변환 파이프라인이 자동 시작됩니다</p></div><button class="x" onclick="close_('ov-add')">×</button></div>
+    <div class="m-body">
+      <!-- file upload -->
+      <label>슬라이드 파일 <span style="color:var(--danger)">*</span></label>
+      <div id="drop" onclick="document.getElementById('file').click()" style="border:2px dashed var(--line);border-radius:11px;padding:22px;text-align:center;cursor:pointer;margin-bottom:6px;transition:.15s">
+        <div id="drop-empty">
+          <div style="font-size:26px;margin-bottom:4px">⬆</div>
+          <div style="font-weight:700;font-size:13px">파일을 끌어다 놓거나 클릭해 선택</div>
+          <div class="smeta" style="margin-top:3px">SVS · TIFF · NDPI · DCM · VSI 지원 · 단일 파일 최대 4GB</div>
+        </div>
+        <div id="drop-filled" style="display:none;align-items:center;justify-content:center;gap:10px">
+          <span style="font-size:20px">📄</span>
+          <div style="text-align:left"><div id="fname" style="font-weight:700;font-size:13px"></div><div class="smeta">변환 파이프라인 대기열에 등록됩니다</div></div>
+          <span class="fmt" id="fformat" style="margin-left:6px"></span>
+        </div>
+      </div>
+      <input type="file" id="file" style="display:none" accept=".svs,.tiff,.tif,.ndpi,.dcm,.vsi" onchange="onFile(this)">
+      <div class="infobox" style="margin-top:12px;align-items:flex-start;gap:9px"><span style="font-size:15px">🔍</span><div><b style="font-size:12.5px">MPP(배율 정보)는 변환 시 파일에서 자동 추출됩니다.</b><div class="smeta" style="margin-top:2px">직접 입력하지 않습니다. 파일에 MPP 태그가 없으면 'MPP 없음' 상태로 표시되며, 이후 QC 화면에서 수동 입력 후 재처리할 수 있습니다.</div></div></div>
+
+      <div style="border-top:1px dashed var(--line);margin:18px 0 16px"></div>
+
+      <!-- metadata -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:13px">
+        <div><label>과목 <span style="color:var(--danger)">*</span></label>
+          <select id="a-subj" onchange="updSid()">
+            <option value="HST">HST · 조직학</option>
+            <option value="PATH">PATH · 병리학</option>
+            <option value="PARA">PARA · 기생충학</option>
+            <option value="ANAT">ANAT · 해부학</option>
+            <option value="EMBRY">EMBRY · 발생학</option>
+          </select>
+        </div>
+        <div><label>슬라이드 ID <span class="smeta" style="font-weight:500">(자동 채번)</span></label>
+          <input id="a-sid" readonly value="SA-HST-010" style="font-family:'Montserrat';font-weight:700;background:#F6F8FB;color:var(--navy)">
+          <div class="smeta" style="margin-top:4px">v1.0 콘텐츠는 자체 라이선스 기준 <b>SA</b>로 채번</div>
+        </div>
+        <div><label>공급원 (Acknowledgement)</label>
+          <select id="a-src" onchange="updAck()">
+            <option value="self">자체 제작</option>
+            <option value="tcga">오픈소스 (TCGA 등)</option>
+            <option value="yulin">Yulin 율린</option>
+            <option value="vic">Vic Science</option>
+            <option value="hs">Happy Science</option>
+            <option value="etc">기타</option>
+          </select>
+        </div>
+        <div><label>뷰어 푸터 표기 <span class="smeta" style="font-weight:500">(선택)</span></label>
+          <input id="a-ack" placeholder="표기 불필요 시 비워두기">
+          <div class="smeta" style="margin-top:4px">공급원이 표기를 요구하면 뷰어 하단에 자동 노출</div>
+        </div>
+        <div><label>제목 (한국어) <span style="color:var(--danger)">*</span></label><input placeholder="예: 식도"></div>
+        <div><label>제목 (영어)</label><input placeholder="예: Esophagus"></div>
+        <div><label>장기 (organ)</label><input placeholder="예: 소화기 / Digestive"></div>
+        <div><label>염색 (stain)</label><input placeholder="예: H&amp;E" value="H&amp;E"></div>
+        <div><label>종 (species)</label><select><option>human</option><option>rat</option><option>mouse</option><option>기타</option></select></div>
+        <div></div>
+        <div style="grid-column:1/-1"><label>설명 (description)</label><textarea placeholder="검수·AI 튜터용 참고 설명 (선택)" style="min-height:58px"></textarea></div>
+      </div>
+      <div class="note">저장 시 상태는 <b>대기 → 변환 중</b>으로 진입하며, knowledge_base JSON 자동 생성과 자동 QC를 거쳐 '배포 대기'가 됩니다.</div>
+    </div>
+    <div class="m-foot"><button class="btn btn-ghost" onclick="close_('ov-add')">취소</button><button class="btn btn-pri" onclick="saveAdd()">업로드 및 변환 시작</button></div>
+  </div>
+</div>
+
+<!-- ===== KB REVIEW (검수) MODAL ===== -->
+<div class="overlay" id="ov-kb">
+  <div class="modal wide">
+    <div class="m-head"><div><h2>검수 · 슬라이드 학습 내용</h2><p>AI 자동 초안을 검증·보완한 뒤 배포합니다</p></div><button class="x" onclick="close_('ov-kb')">×</button></div>
+    <div class="m-body">
+      <div class="infobox"><span class="sid" id="kb-sid">HS-HST-002</span><span id="kb-title">위 (Stomach)</span><span class="pill p-blue" style="margin-left:auto"><span class="led l-blue"></span>AI 자동 초안</span></div>
+      <div class="note" style="margin-bottom:16px">파이프라인의 <b>generate_kb_json()</b>이 메타데이터 기반으로 생성한 초안입니다. 검수자가 검증·보완 후 배포하세요. 이 내용이 AI 튜터의 컨텍스트가 됩니다.</div>
+
+      <div class="kb-field">
+        <label>핵심 구조 — 꼭 봐야 할 조직</label>
+        <div class="chips-edit" id="kb-ks"></div>
+        <input class="kadd" id="kb-ksadd" placeholder="+ 구조 추가 후 Enter" onkeydown="if(event.key==='Enter'){addKs();event.preventDefault();}">
+      </div>
+      <div class="kb-field"><label>시험 포인트 (exam points)</label><textarea id="kb-ex"></textarea></div>
+      <div class="kb-field"><label>혼동 주의 (common confusions)</label><textarea id="kb-cf"></textarea></div>
+      <div class="kb-field"><label>한국어 관찰 포인트 — 관찰 순서 · 키워드</label><textarea id="kb-ko"></textarea><div class="smeta" style="margin-top:5px">Histology Guide류 무료 사이트 대비 핵심 차별점 — 한국어 관찰 가이드</div></div>
+    </div>
+    <div class="m-foot"><button class="btn btn-warn" onclick="rejectFromKb()">반려</button><button class="btn btn-ok" onclick="deployFromKb()">검증 완료 · 배포</button></div>
+  </div>
+</div>
+
+<script>
+  function close_(id){document.getElementById(id).classList.remove('show')}
+  document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('show')}));
+
+  // ---- selection / batch ----
+  function activeCbs(){return [...document.querySelectorAll('.rcb')].filter(c=>!c.disabled)}
+  function selected(){return activeCbs().filter(c=>c.checked)}
+  function syncSel(){
+    const n=selected().length;
+    const bar=document.getElementById('batch');
+    document.getElementById('bcount').textContent=n;
+    bar.classList.toggle('show',n>0);
+    const all=document.getElementById('allcb'); const tot=activeCbs().length;
+    all.checked=n===tot&&tot>0; all.indeterminate=n>0&&n<tot;
+  }
+  function toggleAll(cb){activeCbs().forEach(c=>c.checked=cb.checked);syncSel()}
+  function clearSel(){activeCbs().forEach(c=>c.checked=false);syncSel()}
+
+  // ---- deploy / revoke ----
+  function setDep(row,html){row.querySelector('.dep').innerHTML=html}
+  function deployRow(row){
+    setDep(row,'<span class="pill p-ok"><span class="led l-ok"></span>배포 중</span>');
+    row.dataset.state='deployed';
+    row.querySelector('.actions').innerHTML='<button class="btn btn-warn btn-sm" onclick="revoke(this)">배포 철회</button>';
+  }
+  function deploy(btn){deployRow(btn.closest('tr'))}
+  function revoke(btn){
+    const row=btn.closest('tr');
+    setDep(row,'<span class="pill p-gray"><span class="led l-gray"></span>배포 대기</span>');
+    row.dataset.state='pending';
+    const sid=row.querySelector('.sid').textContent, t=row.querySelector('.stitle').textContent;
+    row.querySelector('.actions').innerHTML='<button class="btn btn-ghost btn-sm" onclick="openKb(\''+sid+'\')">검수</button><button class="btn btn-warn btn-sm" onclick="openReject(\''+sid+'\',\''+t+'\')">반려</button>';
+  }
+  function batchDeploy(){
+    selected().forEach(c=>{const row=c.closest('tr'); if(row.dataset.state==='pending')deployRow(row)});
+    clearSel();
+  }
+
+  // ---- reject ----
+  let rejRow=null;
+  function openReject(sid,title){
+    document.getElementById('rej-sid').textContent=sid;
+    document.getElementById('rej-title').textContent=title;
+    document.getElementById('rej-reason').value='';
+    document.getElementById('rej-detail').value='';
+    rejRow=[...document.querySelectorAll('tr')].find(r=>r.querySelector('.sid')&&r.querySelector('.sid').textContent===sid);
+    document.getElementById('ov-reject').classList.add('show');
+  }
+  function confirmReject(){
+    const reason=document.getElementById('rej-reason').value;
+    if(!reason){alert('반려 사유를 선택하세요');return}
+    if(rejRow){
+      const detail=document.getElementById('rej-detail').value;
+      setDep(rejRow,'<span class="pill p-red"><span class="led l-red"></span>반려</span><div class="reason" title="'+(detail||reason)+'">⚠ '+reason+'</div>');
+      rejRow.dataset.state='rejected';
+      rejRow.querySelector('.rcb').disabled=true;
+      rejRow.querySelector('.actions').innerHTML='<button class="btn btn-ghost btn-sm" onclick="alert(\'공급사 재공급/재스캔 요청 목록에 추가\')">재공급 요청</button>';
+    }
+    close_('ov-reject'); syncSel();
+  }
+
+  // ---- mpp retry ----
+  function retryMpp(btn,id){
+    const v=parseFloat(document.getElementById(id).value);
+    if(!v||v<=0){alert('유효한 MPP 값을 입력하세요 (예: 0.25)');return}
+    const row=btn.closest('tr');
+    row.querySelector('td:nth-child(4)').innerHTML='<span class="pill p-blue"><span class="spin"></span>재처리 중</span>';
+    row.querySelector('td:nth-child(6)').innerHTML='<span class="mpp">'+v.toFixed(2)+' μm</span>';
+    row.querySelector('.actions').innerHTML='<span class="smeta">파이프라인 재진입</span>';
+  }
+
+  function openLog(){document.getElementById('ov-log').classList.add('show')}
+
+  // ---- KB review (검수) ----
+  const KB={
+    'HS-HST-002':{title:'위 (Stomach)',ks:['점막 (mucosa)','위소와 (gastric pit)','벽세포 (parietal cell)','주세포 (chief cell)','점막근판 (muscularis mucosae)'],
+      ex:'위저선에서 호산성(분홍)인 벽세포와 호염기성(보라)인 주세포를 구분할 수 있어야 한다.',
+      cf:'위저부 vs 유문부 — 유문부는 점액분비선이 우세하고 위소와가 더 깊다.',
+      ko:'점막 표면의 위소와를 먼저 찾고, 그 아래 위저선으로 내려가며 벽세포(분홍)와 주세포(보라)를 구분한다.'},
+    'HS-PATH-004':{title:'림프절 (Lymph Node)',ks:['피막 (capsule)','피질 (cortex)','림프소절 (lymphoid follicle)','배중심 (germinal center)','부피질 (paracortex)','수질삭 (medullary cord)'],
+      ex:'배중심을 가진 이차 림프소절이 피질에 위치함을 확인. 피질 → 부피질 → 수질 순서로 관찰.',
+      cf:'림프절 vs 비장 vs 흉선 — 림프절은 피막하동과 수질동이 뚜렷하다.',
+      ko:'피막 바로 안쪽 피질에서 밝게 보이는 배중심을 먼저 찾고, 안쪽 수질삭·수질동으로 이동하며 관찰한다.'}
+  };
+  let kbRow=null,kbSid='',kbTitle='',kbKs=[];
+  function renderKs(){document.getElementById('kb-ks').innerHTML=kbKs.map((s,i)=>'<span class="kchip"><b>'+s+'</b><span class="rm" onclick="rmKs('+i+')">×</span></span>').join('')}
+  function rmKs(i){kbKs.splice(i,1);renderKs()}
+  function addKs(){const el=document.getElementById('kb-ksadd');const v=el.value.trim();if(v){kbKs.push(v);renderKs();el.value=''}}
+  function openKb(sid){
+    const d=KB[sid]||{title:sid,ks:[],ex:'',cf:'',ko:''};
+    kbSid=sid;kbTitle=d.title;kbKs=[...d.ks];
+    document.getElementById('kb-sid').textContent=sid;
+    document.getElementById('kb-title').textContent=d.title;
+    document.getElementById('kb-ex').value=d.ex;
+    document.getElementById('kb-cf').value=d.cf;
+    document.getElementById('kb-ko').value=d.ko;
+    renderKs();
+    kbRow=[...document.querySelectorAll('tr')].find(r=>r.querySelector('.sid')&&r.querySelector('.sid').textContent===sid);
+    document.getElementById('ov-kb').classList.add('show');
+  }
+  function deployFromKb(){if(kbRow)deployRow(kbRow);close_('ov-kb')}
+  function rejectFromKb(){close_('ov-kb');openReject(kbSid,kbTitle)}
+
+  // ---- individual add ----
+  const NEXTNUM={'SA-HST':'010','SA-PATH':'004','SA-PARA':'001','SA-ANAT':'001','SA-EMBRY':'001'};
+  function updSid(){
+    const subj=document.getElementById('a-subj').value;
+    const num=NEXTNUM['SA-'+subj]||'001';
+    document.getElementById('a-sid').value='SA-'+subj+'-'+num;
+  }
+  const ACK={self:'',tcga:'Source: TCGA (open access)',yulin:'Provided by Yulin',vic:'Provided by Vic Science',hs:'Provided by Happy Science',etc:''};
+  function updAck(){document.getElementById('a-ack').value=ACK[document.getElementById('a-src').value]||''}
+  function openAdd(){
+    document.getElementById('file').value='';
+    document.getElementById('drop-empty').style.display='block';
+    document.getElementById('drop-filled').style.display='none';
+    updSid();
+    updAck();
+    document.getElementById('ov-add').classList.add('show');
+  }
+  function onFile(inp){
+    if(!inp.files.length)return;
+    const f=inp.files[0];
+    const ext=(f.name.split('.').pop()||'').toUpperCase();
+    document.getElementById('fname').textContent=f.name;
+    document.getElementById('fformat').textContent=ext==='TIF'?'TIFF':ext;
+    document.getElementById('drop-empty').style.display='none';
+    document.getElementById('drop-filled').style.display='flex';
+  }
+  function saveAdd(){
+    const sid=document.getElementById('a-sid').value;
+    const tb=document.getElementById('tb');
+    const tr=document.createElement('tr');
+    tr.dataset.state='proc';
+    tr.innerHTML='<td><input type="checkbox" class="cbx rcb" disabled></td>'+
+      '<td><div class="sid">'+sid+'</div><div class="stitle">신규 슬라이드</div><div class="smeta">개별 추가 · 방금</div></td>'+
+      '<td><span class="fmt">'+(document.getElementById('fformat').textContent||'TIFF')+'</span></td>'+
+      '<td><span class="pill p-blue"><span class="spin"></span>변환 중 0%</span></td>'+
+      '<td class="dep"><span class="pill p-gray">—</span></td>'+
+      '<td class="mpp">자동 추출 중</td>'+
+      '<td><div class="actions"><span class="smeta">처리 대기 중</span></div></td>';
+    tb.insertBefore(tr,tb.firstChild);
+    close_('ov-add');
+  }
+</script>
+</body>
+</html>

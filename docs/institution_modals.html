@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SlideAtlas 슈퍼관리자 — 기관 관리 모달</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --navy:#0F1F3D; --navy-2:#1B2F52; --sky:#5BB8D4; --sky-d:#3A93AE;
+    --ink:#1a2434; --muted:#6B7689; --line:#E2E7EF; --line-2:#EDF1F6;
+    --bg:#F4F6FA; --white:#fff; --ok:#1E9E6A; --warn:#E08A1E; --danger:#D14C4C;
+    --shadow:0 10px 40px rgba(15,31,61,.18);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.5}
+  .mono{font-family:'Montserrat',sans-serif}
+  .app{display:flex;min-height:100vh}
+  .side{width:212px;background:var(--navy);color:#cdd6e6;flex-shrink:0;padding:20px 0}
+  .logo{font-family:'Montserrat';font-weight:800;color:#fff;font-size:18px;padding:4px 22px 22px;letter-spacing:-.3px}
+  .logo span{color:var(--sky)}
+  .nav-i{display:flex;align-items:center;gap:10px;padding:11px 22px;font-size:13.5px;color:#aeb9cd;cursor:pointer;border-left:3px solid transparent}
+  .nav-i:hover{background:rgba(255,255,255,.04)}
+  .nav-i.on{background:rgba(91,184,212,.12);border-left-color:var(--sky);color:#fff;font-weight:700}
+  .nav-i .dot{width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.5}
+  .nav-sep{font-size:10.5px;letter-spacing:1px;color:#5e6c85;padding:18px 22px 7px;text-transform:uppercase}
+  .main{flex:1;display:flex;flex-direction:column;min-width:0}
+  .top{height:58px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 26px}
+  .top h1{font-size:17px;font-weight:700}
+  .top .who{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--muted)}
+  .who b{color:var(--ink)}
+  .av{width:30px;height:30px;border-radius:50%;background:var(--navy);color:#fff;display:grid;place-items:center;font-size:12px;font-weight:700}
+  .content{padding:24px 26px;overflow:auto}
+  .toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+  .search{display:flex;gap:8px}
+  .search input{border:1px solid var(--line);border-radius:8px;padding:9px 13px;font-size:13px;width:240px;font-family:inherit}
+  .btn{border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;transition:.15s}
+  .btn-pri{background:var(--navy);color:#fff}
+  .btn-pri:hover{background:var(--navy-2)}
+  .btn-sky{background:var(--sky);color:#06263a}
+  .btn-sky:hover{background:var(--sky-d);color:#fff}
+  .btn-ghost{background:#fff;border:1px solid var(--line);color:var(--ink)}
+  .btn-ghost:hover{border-color:var(--sky);color:var(--sky-d)}
+  .btn-sm{padding:6px 12px;font-size:12px}
+  table{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(15,31,61,.06)}
+  th{background:#FAFBFD;text-align:left;font-size:11.5px;letter-spacing:.3px;color:var(--muted);font-weight:700;padding:13px 16px;border-bottom:1px solid var(--line)}
+  td{padding:14px 16px;border-bottom:1px solid var(--line-2);font-size:13px}
+  tr:last-child td{border-bottom:none}
+  tr:hover td{background:#FBFCFE}
+  .pill{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:700;padding:3px 10px;border-radius:20px}
+  .pill.ok{background:#E6F5EE;color:var(--ok)}
+  .pill.warn{background:#FCF2E2;color:var(--warn)}
+  .pill.gray{background:#EEF1F5;color:var(--muted)}
+  .sem{font-family:'Montserrat';font-weight:700;font-size:11.5px;color:var(--navy);background:#EEF3F8;padding:2px 8px;border-radius:5px}
+  .dday{font-family:'Montserrat';font-weight:700}
+  .row-act{display:flex;gap:6px}
+  .hint{font-size:11px;color:var(--muted)}
+
+  .overlay{position:fixed;inset:0;background:rgba(10,18,35,.55);backdrop-filter:blur(2px);display:none;align-items:flex-start;justify-content:center;padding:34px 16px;overflow:auto;z-index:50}
+  .overlay.show{display:flex}
+  .modal{background:#fff;width:100%;max-width:680px;border-radius:16px;box-shadow:var(--shadow);overflow:hidden;animation:pop .22s ease}
+  @keyframes pop{from{transform:translateY(14px) scale(.98);opacity:0}to{transform:none;opacity:1}}
+  .m-head{background:var(--navy);color:#fff;padding:18px 24px;display:flex;justify-content:space-between;align-items:center}
+  .m-head h2{font-size:16.5px;font-weight:700}
+  .m-head p{font-size:12px;color:#9fb0cb;margin-top:2px}
+  .x{background:rgba(255,255,255,.1);border:none;color:#fff;width:30px;height:30px;border-radius:8px;font-size:17px;cursor:pointer}
+  .x:hover{background:rgba(255,255,255,.2)}
+  .m-body{padding:8px 24px 4px;max-height:66vh;overflow:auto}
+  .m-foot{padding:16px 24px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;background:#FBFCFE}
+  .m-foot .note{font-size:11.5px;color:var(--muted)}
+  .sec{padding:18px 0;border-bottom:1px dashed var(--line)}
+  .sec:last-child{border-bottom:none}
+  .sec-t{display:flex;align-items:center;gap:8px;font-weight:700;font-size:13.5px;margin-bottom:14px;color:var(--navy)}
+  .sec-n{font-family:'Montserrat';font-weight:800;font-size:11px;background:var(--sky);color:#06263a;width:20px;height:20px;border-radius:6px;display:grid;place-items:center}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:13px}
+  .fld{display:flex;flex-direction:column;gap:5px}
+  .fld.full{grid-column:1/-1}
+  label{font-size:12px;font-weight:700;color:#3c4759}
+  label .req{color:var(--danger)}
+  input,select{border:1px solid var(--line);border-radius:8px;padding:9px 11px;font-size:13px;font-family:inherit;color:var(--ink);background:#fff;width:100%}
+  input:focus,select:focus{outline:none;border-color:var(--sky);box-shadow:0 0 0 3px rgba(91,184,212,.18)}
+  input[readonly]{background:#F6F8FB;color:var(--navy);font-family:'Montserrat';font-weight:700}
+
+  .plans{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
+  .plan{border:1.5px solid var(--line);border-radius:10px;padding:11px 10px;cursor:pointer;text-align:center;transition:.15s;position:relative}
+  .plan:hover{border-color:var(--sky)}
+  .plan.on{border-color:var(--navy);background:#F3F7FC}
+  .plan.on::after{content:"\2713";position:absolute;top:6px;right:8px;color:var(--navy);font-weight:800;font-size:12px}
+  .plan .pn{font-family:'Montserrat';font-weight:800;font-size:12px;color:var(--navy)}
+  .plan .ps{font-size:11px;color:var(--muted);margin-top:3px}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .seg button{background:#fff;border:none;padding:8px 14px;font-size:12.5px;cursor:pointer;font-family:inherit;color:var(--muted);border-right:1px solid var(--line)}
+  .seg button:last-child{border-right:none}
+  .seg button.on{background:var(--navy);color:#fff;font-weight:700}
+
+  /* auto-computed access window box */
+  .window{background:#F3F7FC;border:1px solid #DCE7F1;border-radius:10px;padding:13px 15px;display:flex;align-items:center;gap:14px;margin-top:4px}
+  .window .wcol{flex:1}
+  .window .wk{font-size:10.5px;color:var(--muted);font-weight:700;margin-bottom:3px;display:flex;align-items:center;gap:5px}
+  .window .wv{font-family:'Montserrat';font-weight:800;font-size:15px;color:var(--navy)}
+  .window .arrow{color:var(--sky-d);font-size:18px;font-weight:800}
+  .window .badge{font-size:10px;font-weight:700;color:#06263a;background:var(--sky);padding:2px 7px;border-radius:10px}
+
+  .adm{display:grid;grid-template-columns:1.1fr .9fr 1.4fr 1.1fr 30px;gap:8px;align-items:center;margin-bottom:8px}
+  .adm input,.adm select{padding:8px 9px;font-size:12.5px}
+  .adm .del{background:#FBECEC;border:none;color:var(--danger);width:30px;height:34px;border-radius:7px;cursor:pointer;font-size:15px}
+  .adm .del:hover{background:#f5dada}
+  .adm-add{font-size:12.5px;color:var(--sky-d);font-weight:700;background:none;border:1px dashed var(--sky);padding:8px;border-radius:8px;width:100%;cursor:pointer;margin-top:4px}
+  .adm-head{display:grid;grid-template-columns:1.1fr .9fr 1.4fr 1.1fr 30px;gap:8px;font-size:10.5px;color:var(--muted);font-weight:700;margin-bottom:7px;padding:0 2px}
+  .cap{font-size:11px;color:var(--muted);text-align:right;margin-top:2px}
+  .subcard{border:1px solid var(--line);border-radius:12px;padding:14px 15px;margin-bottom:11px;background:#FCFDFE}
+  .subcard-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+  .sc-subj{width:auto!important;font-weight:700;color:var(--navy);border-color:var(--sky)!important;max-width:62%}
+  .sc-del{background:#FBECEC;border:none;color:var(--danger);padding:6px 11px;border-radius:7px;font-size:11.5px;cursor:pointer;font-family:inherit;font-weight:700}
+  .sc-del:hover{background:#f5dada}
+
+  .summary{background:#F3F7FC;border:1px solid #DCE7F1;border-radius:10px;padding:14px 16px;display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:4px}
+  .summary .k{font-size:11px;color:var(--muted);font-weight:700;margin-bottom:3px}
+  .summary .v{font-size:15px;font-weight:700;color:var(--navy);font-family:'Montserrat'}
+  .summary .v small{font-family:'Noto Sans KR';font-size:11px;color:var(--muted);font-weight:500}
+  .hist{margin-top:4px}
+  .hist-row{display:flex;align-items:center;gap:10px;font-size:12px;padding:9px 0;border-bottom:1px solid var(--line-2)}
+  .hist-row:last-child{border-bottom:none}
+  .hist-dot{width:8px;height:8px;border-radius:50%;background:var(--sky);flex-shrink:0}
+  .hist-row.first .hist-dot{background:var(--muted)}
+  .hist-row .when{font-family:'Montserrat';font-weight:700;color:var(--navy);width:84px;flex-shrink:0}
+  .hist-row .desc{color:var(--ink)}
+  .hist-row .tag{margin-left:auto;font-size:10.5px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="logo">Slide<span>Atlas</span></div>
+    <div class="nav-sep">운영</div>
+    <div class="nav-i"><span class="dot"></span>대시보드</div>
+    <div class="nav-i on"><span class="dot"></span>기관 관리</div>
+    <div class="nav-i"><span class="dot"></span>슬라이드 관리</div>
+    <div class="nav-i"><span class="dot"></span>접근 제어</div>
+    <div class="nav-i"><span class="dot"></span>이용 리포트</div>
+    <div class="nav-i"><span class="dot"></span>특별 계정</div>
+    <div class="nav-sep">고객 응대</div>
+    <div class="nav-i"><span class="dot"></span>공지 관리</div>
+    <div class="nav-i"><span class="dot"></span>1:1 문의</div>
+  </aside>
+
+  <div class="main">
+    <header class="top">
+      <h1>기관 관리</h1>
+      <div class="who">접속 <b>김보람</b><span class="pill ok" style="font-size:10.5px">super_admin</span><div class="av">보</div></div>
+    </header>
+
+    <div class="content">
+      <div class="toolbar">
+        <div class="search">
+          <input placeholder="학교명 · 단과대 검색">
+          <select style="width:140px;border:1px solid var(--line);border-radius:8px;padding:9px 11px;font-family:inherit;font-size:13px"><option>전체 상태</option><option>구독중</option><option>만료임박</option><option>오픈예정</option></select>
+        </div>
+        <button class="btn btn-pri" onclick="open_('add')">＋ 기관 추가</button>
+      </div>
+
+      <table>
+        <thead><tr>
+          <th>기관</th><th style="width:130px">구독 학기</th><th>플랜</th><th>좌석</th><th style="width:155px">오픈 → 만료</th><th style="width:90px">상태</th><th style="width:160px">관리</th>
+        </tr></thead>
+        <tbody>
+          <tr>
+            <td>충남대학교 <b>의과대학</b><div class="hint">Chungnam Nat'l Univ.</div></td>
+            <td><span class="sem">2026 가을</span></td>
+            <td>Standard <span class="hint">+50</span></td>
+            <td>148 / 200</td>
+            <td><span class="dday">08.01 → 27.02.28</span><div class="hint" style="color:var(--ok)">D-275 만료</div></td>
+            <td><span class="pill ok">구독중</span></td>
+            <td><div class="row-act"><button class="btn btn-ghost btn-sm" onclick="open_('edit')">수정</button><button class="btn btn-sky btn-sm" onclick="open_('renew')">갱신</button></div></td>
+          </tr>
+          <tr>
+            <td>단국대학교 <b>한의과대학</b><div class="hint">Dankook Univ.</div></td>
+            <td><span class="sem">2026 가을</span></td>
+            <td>Department</td>
+            <td>44 / 50</td>
+            <td><span class="dday">08.01 → 27.02.28</span><div class="hint" style="color:var(--warn)">D-22 오픈</div></td>
+            <td><span class="pill warn">오픈예정</span></td>
+            <td><div class="row-act"><button class="btn btn-ghost btn-sm" onclick="open_('edit')">수정</button><button class="btn btn-sky btn-sm" onclick="open_('renew')">갱신</button></div></td>
+          </tr>
+          <tr>
+            <td>경희대학교 <b>의과대학</b><div class="hint">Kyung Hee Univ.</div></td>
+            <td><span class="sem">2027 봄</span></td>
+            <td>Campus</td>
+            <td>0 / 300</td>
+            <td><span class="dday">27.02.01 → 27.08.31</span><div class="hint" style="color:var(--muted)">오픈 전</div></td>
+            <td><span class="pill gray">대기</span></td>
+            <td><div class="row-act"><button class="btn btn-ghost btn-sm" onclick="open_('edit')">수정</button><button class="btn btn-sky btn-sm" onclick="open_('renew')">갱신</button></div></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== ADD / EDIT MODAL ===================== -->
+<div class="overlay" id="ov-form">
+  <div class="modal">
+    <div class="m-head">
+      <div><h2 id="form-title">기관 추가</h2><p id="form-sub">신규 기관을 등록하고 포털 안내를 발송합니다</p></div>
+      <button class="x" onclick="close_('ov-form')">×</button>
+    </div>
+    <div class="m-body">
+      <!-- 섹션 1 -->
+      <div class="sec">
+        <div class="sec-t"><span class="sec-n">1</span>기관 기본 정보</div>
+        <div class="grid">
+          <div class="fld"><label>학교명 <span class="req">*</span></label><input id="f-uni" placeholder="예: 충남대학교"></div>
+          <div class="fld"><label>단과대 <span class="req">*</span></label><input id="f-col" placeholder="예: 의과대학"></div>
+          <div class="fld"><label>영문 표기 <span class="hint" style="font-weight:500">(선택)</span></label><input placeholder="예: Chungnam National Univ."></div>
+          <div class="fld"><label>이메일 도메인 <span class="req">*</span></label><input placeholder="예: o.cnu.ac.kr"><div class="hint">학생 가입 시 도메인 자가인증에 사용</div></div>
+        </div>
+      </div>
+
+      <!-- 섹션 2 -->
+      <div class="sec">
+        <div class="sec-t"><span class="sec-n">2</span>구독 과목 <span style="font-weight:500;color:var(--muted);font-size:11.5px">(과목별 좌석·학기 독립)</span></div>
+        <div id="sub-list"></div>
+        <button class="adm-add" onclick="addSub()">＋ 과목 구독 추가</button>
+        <div class="hint" style="margin-top:7px">과목마다 좌석·학기·구독료를 따로 둡니다. 예: 조직학 150석(의대 전체) + 기생충학 30석(기생충학교실). v1.0은 조직학만 제공되며, 새 과목 출시 시 줄을 추가해 add-on으로 판매합니다.</div>
+      </div>
+
+      <!-- 섹션 3 -->
+      <div class="sec">
+        <div class="sec-t"><span class="sec-n">3</span>기관 관리자 등록 <span style="font-weight:500;color:var(--muted);font-size:11.5px">(최대 5명)</span></div>
+        <div class="adm-head"><div>이름</div><div>지위</div><div>이메일</div><div>전화번호</div><div></div></div>
+        <div id="adm-list">
+          <div class="adm">
+            <input placeholder="홍길동">
+            <select><option>교수</option><option>조교</option><option>행정직원</option><option>기타</option></select>
+            <input placeholder="name@cnu.ac.kr">
+            <input placeholder="010-0000-0000">
+            <button class="del" onclick="delAdm(this)">×</button>
+          </div>
+        </div>
+        <button class="adm-add" onclick="addAdm()">＋ 관리자 추가</button>
+        <div class="cap" id="adm-cap">1 / 5명</div>
+      </div>
+    </div>
+    <div class="m-foot">
+      <span class="note">💌 저장 시 등록된 관리자 이메일로 포털 접속 안내가 자동 발송됩니다 (SES)</span>
+      <button class="btn btn-pri" id="form-save">기관 추가 및 포털 안내 발송</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== RENEW MODAL ===================== -->
+<div class="overlay" id="ov-renew">
+  <div class="modal" style="max-width:600px">
+    <div class="m-head">
+      <div><h2>구독 갱신 — 충남대 의과대학 · 조직학</h2><p>해당 과목 구독을 다음 학기로 이어서 갱신합니다 (과목별 독립)</p></div>
+      <button class="x" onclick="close_('ov-renew')">×</button>
+    </div>
+    <div class="m-body">
+      <div class="sec" style="border-bottom:1px solid var(--line)">
+        <div class="sec-t"><span class="sec-n">현</span>현재 구독 현황</div>
+        <div class="summary">
+          <div><div class="k">현재 학기 / 만료</div><div class="v" style="font-size:13.5px">2026 가을 <small>~27.02.28</small></div></div>
+          <div><div class="k">현재 플랜</div><div class="v" style="font-size:13.5px">STANDARD <small>+50 / 200석</small></div></div>
+          <div><div class="k">현재 구독료</div><div class="v">₩5,000,000<small> /학기</small></div></div>
+        </div>
+      </div>
+
+      <div class="sec">
+        <div class="sec-t"><span class="sec-n">갱</span>갱신 조건</div>
+        <div class="fld" style="margin-bottom:13px">
+          <label>플랜</label>
+          <div class="plans">
+            <div class="plan" onclick="pickPlan(this)"><div class="pn">DEPARTMENT</div><div class="ps">50명</div></div>
+            <div class="plan on" onclick="pickPlan(this)"><div class="pn">STANDARD</div><div class="ps">150명</div></div>
+            <div class="plan" onclick="pickPlan(this)"><div class="pn">CAMPUS</div><div class="ps">300명</div></div>
+            <div class="plan" onclick="pickPlan(this)"><div class="pn">INSTITUTION</div><div class="ps">500명+</div></div>
+          </div>
+          <div class="hint">유지하거나 변경할 수 있습니다 (현재: STANDARD)</div>
+        </div>
+        <div class="grid">
+          <div class="fld"><label>갱신 시작 학기 <span class="hint" style="font-weight:500">(자동)</span></label>
+            <input id="r-startsem" value="2027 봄학기" readonly>
+            <div class="hint">현재 학기 다음 학기로 자동 설정</div>
+          </div>
+          <div class="fld"><label>갱신 학기 수 <span class="req">*</span></label>
+            <select id="r-count" onchange="recalcRenew()">
+              <option value="1">1학기</option>
+              <option value="2" selected>2학기 (1년)</option>
+              <option value="4">4학기 (2년)</option>
+            </select>
+          </div>
+        </div>
+        <div class="window">
+          <div class="wcol"><div class="wk">🔓 접근 오픈일 <span class="badge">학기 −30일</span></div><div class="wv" id="r-open">—</div></div>
+          <div class="arrow">→</div>
+          <div class="wcol"><div class="wk">🔒 라이선스 만료일</div><div class="wv" id="r-end">—</div></div>
+        </div>
+        <div class="hint" style="margin-top:7px">오픈일(27.02.01)이 현재 만료일(27.02.28)보다 앞서므로 공백 없이 매끄럽게 이어집니다.</div>
+        <div class="grid" style="margin-top:14px">
+          <div class="fld"><label>추가 좌석 블록</label>
+            <div class="seg"><button onclick="seg(this)">없음</button><button class="on" onclick="seg(this)">+50명</button></div>
+          </div>
+          <div class="fld"><label>갱신 구독료 (원) <span class="req">*</span></label><input value="5,000,000" style="font-family:'Montserrat';font-weight:700"></div>
+        </div>
+      </div>
+
+      <div class="sec">
+        <div class="sec-t"><span class="sec-n">📜</span>계약 이력 <span style="font-weight:500;color:var(--muted);font-size:11.5px">(누적 보존 · 덮어쓰지 않음)</span></div>
+        <div class="hist">
+          <div class="hist-row first"><span class="hist-dot"></span><span class="when">2026 봄</span><span class="desc">최초 계약 · Standard 150석 · ₩4,000,000</span><span class="tag">1학기</span></div>
+          <div class="hist-row"><span class="hist-dot"></span><span class="when">2026 가을</span><span class="desc">좌석 증설 · +50석 (200석) · ₩5,000,000</span><span class="tag">변경</span></div>
+          <div class="hist-row" style="opacity:.55"><span class="hist-dot" style="background:var(--warn)"></span><span class="when">2027 봄~</span><span class="desc">갱신 예정 · Standard +50 · ₩5,000,000</span><span class="tag">신규</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="m-foot">
+      <span class="note">갱신 내역은 기존 계약 위에 새 학기로 누적됩니다</span>
+      <button class="btn btn-sky" onclick="close_('ov-renew')">갱신 확정</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ---- semester model ----
+  // index = year*2 + (term: spring=0, fall=1)
+  const MON=['01','02','03','04','05','06','07','08','09','10','11','12'];
+  function lastFebDay(y){return new Date(y,2,0).getDate();} // day 0 of Mar = last of Feb
+  function semFromIndex(i){return {year:Math.floor(i/2), term:(i%2===0)?'spring':'fall'};}
+  function semLabel(i){const s=semFromIndex(i);return s.year+' '+(s.term==='spring'?'봄학기':'가을학기');}
+  function semDates(i){ // returns {open, end} as 'YY.MM.DD'
+    const s=semFromIndex(i); const Y=s.year;
+    if(s.term==='spring'){
+      return {open:fmt(Y,2,1), end:fmt(Y,8,31)};      // open 2/1, semester 3/1~8/31
+    }else{
+      return {open:fmt(Y,8,1), end:fmt(Y+1,2,lastFebDay(Y+1))}; // open 8/1, semester 9/1~익년2월말
+    }
+  }
+  function fmt(y,m,d){return String(y).slice(2)+'.'+String(m).padStart(2,'0')+'.'+String(d).padStart(2,'0');}
+
+  // populate any start-semester <select>
+  function buildSemOptions(sel){
+    sel.innerHTML=''; const base=2026*2+1; // 2026 fall
+    for(let k=0;k<8;k++){const i=base+k;const o=document.createElement('option');o.value=i;o.textContent=semLabel(i);sel.appendChild(o);}
+    sel.value=base;
+  }
+
+  // ---- per-subject subscription cards ----
+  function subCardHTML(){
+    return '<div class="subcard">'+
+      '<div class="subcard-head">'+
+        '<select class="sc-subj"><option value="HST">조직학 (HST)</option><option value="PATH" disabled>병리학 (PATH) · 출시 예정</option><option value="PARA" disabled>기생충학 (PARA) · 출시 예정</option></select>'+
+        '<button class="sc-del" onclick="delSub(this)">× 삭제</button>'+
+      '</div>'+
+      '<div class="grid">'+
+        '<div class="fld"><label>좌석 플랜</label><select class="sc-plan" onchange="planToSeats(this)"><option value="50">Department · 50석</option><option value="150" selected>Standard · 150석</option><option value="300">Campus · 300석</option><option value="500">Institution · 500석+</option><option value="">직접 입력</option></select></div>'+
+        '<div class="fld"><label>좌석 수</label><input type="number" class="sc-seats" value="150" style="font-family:\'Montserrat\';font-weight:700"><div class="hint">플랜 선택 시 자동 · 직접 수정 가능 (예: 30석)</div></div>'+
+        '<div class="fld"><label>시작 학기</label><select class="sc-startsem" onchange="recalcCard(this)"></select></div>'+
+        '<div class="fld"><label>학기 수</label><select class="sc-count" onchange="recalcCard(this)"><option value="1">1학기</option><option value="2" selected>2학기 (1년)</option><option value="3">3학기</option><option value="4">4학기 (2년)</option></select></div>'+
+      '</div>'+
+      '<div class="window" style="margin-top:12px"><div class="wcol"><div class="wk">🔓 접근 오픈일 <span class="badge">학기 −30일</span></div><div class="wv sc-open">—</div></div><div class="arrow">→</div><div class="wcol"><div class="wk">🔒 만료일</div><div class="wv sc-end">—</div></div></div>'+
+      '<div class="grid" style="margin-top:12px">'+
+        '<div class="fld"><label>구독료 (원)</label><input class="sc-fee" placeholder="예: 4,000,000" style="font-family:\'Montserrat\';font-weight:700"></div>'+
+        '<div class="fld"><label>결제 방식</label><select><option>연간 선불</option><option>학기 선불</option><option>기타</option></select></div>'+
+      '</div>'+
+    '</div>';
+  }
+  function recalcCard(el){
+    const card=el.closest('.subcard');
+    const start=parseInt(card.querySelector('.sc-startsem').value);
+    const cnt=parseInt(card.querySelector('.sc-count').value);
+    card.querySelector('.sc-open').textContent='20'+semDates(start).open;
+    card.querySelector('.sc-end').textContent='20'+semDates(start+cnt-1).end;
+  }
+  function planToSeats(sel){if(sel.value)sel.closest('.subcard').querySelector('.sc-seats').value=sel.value;}
+  function addSub(){
+    const wrap=document.createElement('div'); wrap.innerHTML=subCardHTML();
+    const card=wrap.firstElementChild;
+    document.getElementById('sub-list').appendChild(card);
+    buildSemOptions(card.querySelector('.sc-startsem'));
+    recalcCard(card.querySelector('.sc-startsem'));
+    updateSubDel();
+  }
+  function delSub(btn){const list=document.getElementById('sub-list'); if(list.querySelectorAll('.subcard').length<=1)return; btn.closest('.subcard').remove(); updateSubDel();}
+  function updateSubDel(){const cards=document.querySelectorAll('#sub-list .subcard'); cards.forEach(c=>{c.querySelector('.sc-del').style.display=cards.length>1?'inline-block':'none'});}
+  function initSubs(){document.getElementById('sub-list').innerHTML=''; addSub();}
+
+  // ---- renew (single subject) ----
+  function recalcRenew(){
+    const start=2027*2+0; // 2027 spring = current(2026 fall)+1
+    const cnt=parseInt(document.getElementById('r-count').value);
+    document.getElementById('r-open').textContent='20'+semDates(start).open;
+    document.getElementById('r-end').textContent='20'+semDates(start+cnt-1).end;
+  }
+
+  function open_(type){
+    if(type==='renew'){document.getElementById('ov-renew').classList.add('show');recalcRenew();return;}
+    const isEdit=type==='edit';
+    document.getElementById('form-title').textContent=isEdit?'기관 수정 — 충남대학교 의과대학':'기관 추가';
+    document.getElementById('form-sub').textContent=isEdit?'기관 정보와 구독 조건을 수정합니다':'신규 기관을 등록하고 포털 안내를 발송합니다';
+    document.getElementById('form-save').textContent=isEdit?'변경사항 저장':'기관 추가 및 포털 안내 발송';
+    document.getElementById('f-uni').value=isEdit?'충남대학교':'';
+    document.getElementById('f-col').value=isEdit?'의과대학':'';
+    initSubs();
+    document.getElementById('ov-form').classList.add('show');
+  }
+  function close_(id){document.getElementById(id).classList.remove('show')}
+  document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('show')}));
+
+  function pickPlan(el){el.parentElement.querySelectorAll('.plan').forEach(p=>p.classList.remove('on'));el.classList.add('on')}
+  function seg(el){el.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('on'));el.classList.add('on')}
+
+  function admCount(){return document.querySelectorAll('#adm-list .adm').length}
+  function refreshCap(){document.getElementById('adm-cap').textContent=admCount()+' / 5명'}
+  function addAdm(){
+    if(admCount()>=5)return;
+    const d=document.createElement('div');d.className='adm';
+    d.innerHTML='<input placeholder="홍길동"><select><option>교수</option><option>조교</option><option>행정직원</option><option>기타</option></select><input placeholder="name@example.ac.kr"><input placeholder="010-0000-0000"><button class="del" onclick="delAdm(this)">×</button>';
+    document.getElementById('adm-list').appendChild(d);refreshCap();
+  }
+  function delAdm(b){if(admCount()<=1)return;b.closest('.adm').remove();refreshCap()}
+
+  initSubs();
+</script>
+</body>
+</html>

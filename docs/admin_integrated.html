@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SlideAtlas 슈퍼관리자 — 통합 대시보드</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --navy:#0F1F3D; --navy-2:#1B2F52; --sky:#5BB8D4; --sky-d:#3A93AE;
+    --ink:#1a2434; --muted:#6B7689; --line:#E2E7EF; --line-2:#EDF1F6;
+    --bg:#F4F6FA; --ok:#1E9E6A; --warn:#E08A1E; --danger:#D14C4C; --blue:#2F6FE0;
+    --shadow:0 10px 40px rgba(15,31,61,.18);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.5}
+  .app{display:flex;min-height:100vh}
+  .side{width:214px;background:var(--navy);color:#cdd6e6;flex-shrink:0;padding:20px 0}
+  .logo{font-family:'Montserrat';font-weight:800;color:#fff;font-size:18px;padding:4px 22px 16px;letter-spacing:-.3px}
+  .logo span{color:var(--sky)}
+  .role-tag{margin:0 22px 14px;font-size:10.5px;font-weight:700;padding:4px 10px;border-radius:6px;text-align:center}
+  .role-super{background:rgba(91,184,212,.18);color:var(--sky)}
+  .role-staff{background:rgba(224,138,30,.2);color:#f0b566}
+  .nav-i{display:flex;align-items:center;gap:10px;padding:10.5px 22px;font-size:13.5px;color:#aeb9cd;cursor:pointer;border-left:3px solid transparent}
+  .nav-i:hover{background:rgba(255,255,255,.04)}
+  .nav-i.on{background:rgba(91,184,212,.12);border-left-color:var(--sky);color:#fff;font-weight:700}
+  .nav-i .dot{width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.5}
+  .nav-i .bdg{margin-left:auto;font-size:10px;background:var(--danger);color:#fff;font-weight:700;padding:1px 7px;border-radius:10px;font-family:'Montserrat'}
+  .nav-i .ro{margin-left:auto;font-size:9.5px;color:#5e6c85;font-weight:700}
+  .nav-sep{font-size:10.5px;letter-spacing:1px;color:#5e6c85;padding:16px 22px 7px;text-transform:uppercase}
+  body.staff .ops{display:none!important}
+  body.staff .superonly{display:none!important}
+  .main{flex:1;display:flex;flex-direction:column;min-width:0}
+  .top{height:58px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 26px}
+  .top h1{font-size:17px;font-weight:700}
+  .top .right{display:flex;align-items:center;gap:14px}
+  .who{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--muted)}
+  .who b{color:var(--ink)}
+  .av{width:30px;height:30px;border-radius:50%;background:var(--navy);color:#fff;display:grid;place-items:center;font-size:12px;font-weight:700}
+  .roleswitch{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .roleswitch button{border:none;background:#fff;padding:7px 13px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--muted)}
+  .roleswitch button.on{background:var(--navy);color:#fff}
+  .content{padding:24px 26px;overflow:auto}
+  .pane{display:none} .pane.on{display:block}
+  .lead{font-size:12.5px;color:var(--muted);margin-bottom:16px;max-width:680px}
+  .lead b{color:var(--ink)}
+
+  .btn{border:none;border-radius:8px;padding:9px 15px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;transition:.15s}
+  .btn-pri{background:var(--navy);color:#fff} .btn-pri:hover{background:var(--navy-2)}
+  .btn-sky{background:var(--sky);color:#06263a} .btn-sky:hover{background:var(--sky-d);color:#fff}
+  .btn-ghost{background:#fff;border:1px solid var(--line);color:var(--ink)} .btn-ghost:hover{border-color:var(--sky);color:var(--sky-d)}
+  .btn-sm{padding:6px 11px;font-size:12px}
+  select{border:1px solid var(--line);border-radius:8px;padding:8px 11px;font-size:13px;font-family:inherit;background:#fff;color:var(--ink)}
+
+  .card{background:#fff;border-radius:12px;box-shadow:0 1px 3px rgba(15,31,61,.06);padding:18px 20px;margin-bottom:16px}
+  .card-t{font-size:13.5px;font-weight:700;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between}
+  .card-t a{font-size:11.5px;color:var(--sky-d);font-weight:700;cursor:pointer;text-decoration:none}
+  .badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:#EEF1F5;color:var(--muted)}
+
+  table{width:100%;border-collapse:collapse}
+  th{text-align:left;font-size:11px;letter-spacing:.3px;color:var(--muted);font-weight:700;padding:11px 13px;border-bottom:1px solid var(--line);background:#FAFBFD}
+  td{padding:12px 13px;border-bottom:1px solid var(--line-2);font-size:13px;vertical-align:middle}
+  tr:last-child td{border-bottom:none}
+  tr:hover td{background:#FBFCFE}
+  .code{font-family:'Montserrat';font-weight:700;color:var(--navy);background:#EEF3F8;padding:2px 8px;border-radius:5px;font-size:11px}
+  .pill{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:20px;white-space:nowrap}
+  .led{width:7px;height:7px;border-radius:50%}
+  .p-ok{background:#E6F5EE;color:var(--ok)} .l-ok{background:var(--ok)}
+  .p-warn{background:#FCF2E2;color:var(--warn)} .l-warn{background:var(--warn)}
+  .p-gray{background:#EEF1F5;color:var(--muted)} .l-gray{background:var(--muted)}
+  .p-red{background:#FBEAEA;color:var(--danger)} .l-red{background:var(--danger)}
+  .p-blue{background:#E8F0FE;color:var(--blue)} .l-blue{background:var(--blue)}
+  .row-act{display:flex;gap:6px;justify-content:flex-end}
+  .sub{font-size:11px;color:var(--muted)}
+
+  /* dashboard */
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:13px;margin-bottom:16px}
+  .kpi{background:#fff;border-radius:12px;padding:15px 17px;box-shadow:0 1px 3px rgba(15,31,61,.06);position:relative;overflow:hidden}
+  .kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--sky)}
+  .kpi.warn::before{background:var(--warn)} .kpi.red::before{background:var(--danger)}
+  .kpi .k{font-size:11.5px;color:var(--muted);font-weight:700}
+  .kpi .v{font-family:'Montserrat';font-weight:800;font-size:25px;color:var(--navy);margin-top:6px}
+  .kpi .v small{font-size:12px;color:var(--muted);font-weight:600;font-family:'Noto Sans KR'}
+  .kpi .d{font-size:11px;font-weight:700;margin-top:3px;color:var(--ok)}
+  .grid2{display:grid;grid-template-columns:1.3fr 1fr;gap:16px}
+  .grid2b{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .dday{font-family:'Montserrat';font-weight:800;font-size:12.5px}
+  .bars{display:flex;align-items:flex-end;gap:12px;height:130px;padding-top:6px}
+  .bar{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;justify-content:flex-end}
+  .bar .b{width:64%;background:linear-gradient(180deg,var(--sky),var(--sky-d));border-radius:5px 5px 0 0;min-height:3px}
+  .bar .b.fut{background:linear-gradient(180deg,#cfe0ee,#a9c5d6)}
+  .bar .bl{font-size:10px;color:var(--muted);text-align:center}
+  .bar .bv{font-size:10px;font-weight:700;color:var(--navy);font-family:'Montserrat'}
+  .todo{display:flex;flex-direction:column;gap:10px}
+  .todo a{display:flex;align-items:center;justify-content:space-between;text-decoration:none;color:var(--ink);padding:11px 13px;border:1px solid var(--line);border-radius:9px;cursor:pointer;font-size:13px;font-weight:500}
+  .todo a:hover{border-color:var(--sky);background:#FBFDFE}
+  .todo .cnt{font-family:'Montserrat';font-weight:800;font-size:15px}
+  .pipe{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+  .pipe .pc{border:1px solid var(--line);border-radius:9px;padding:11px 12px;text-align:center}
+  .pipe .pn{font-family:'Montserrat';font-weight:800;font-size:20px}
+  .pipe .pl{font-size:11px;color:var(--muted);font-weight:700;margin-top:2px}
+
+  /* access matrix mini */
+  .mtx td,.mtx th{text-align:center}.mtx td:first-child,.mtx th:first-child{text-align:left}
+  .tog{width:32px;height:18px;border-radius:20px;background:var(--ok);position:relative;display:inline-block}
+  .tog::after{content:"";position:absolute;width:14px;height:14px;border-radius:50%;background:#fff;top:2px;right:2px}
+  .tog.off{background:#D7DCE5}.tog.off::after{right:auto;left:2px}
+  /* reports mini */
+  .toplist .r{display:flex;align-items:center;gap:10px;margin-bottom:9px}
+  .toplist .nm{width:110px;font-size:12px}.toplist .tr{flex:1;background:#EEF1F5;border-radius:6px;height:13px;overflow:hidden}
+  .toplist .fl{height:100%;background:linear-gradient(90deg,var(--sky),var(--navy))}.toplist .vl{font-family:'Montserrat';font-weight:700;font-size:11.5px;width:40px;text-align:right}
+  .hintbox{background:#F6F8FB;border-radius:9px;padding:11px 14px;font-size:11.5px;color:var(--muted);margin-top:6px}
+</style>
+</head>
+<body class="super">
+<div class="app">
+  <aside class="side">
+    <div class="logo">Slide<span>Atlas</span></div>
+    <div class="role-tag role-super" id="roletag">SUPER ADMIN</div>
+    <div class="nav-sep">운영</div>
+    <div class="nav-i on" data-p="dash" onclick="nav(this)"><span class="dot"></span>대시보드<span class="ro staffonly" style="display:none">읽기</span></div>
+    <div class="nav-i ops" data-p="inst" onclick="nav(this)"><span class="dot"></span>기관 관리</div>
+    <div class="nav-i ops" data-p="slide" onclick="nav(this)"><span class="dot"></span>슬라이드 관리</div>
+    <div class="nav-i ops" data-p="access" onclick="nav(this)"><span class="dot"></span>접근 제어</div>
+    <div class="nav-i ops" data-p="reports" onclick="nav(this)"><span class="dot"></span>이용 리포트</div>
+    <div class="nav-i ops" data-p="special" onclick="nav(this)"><span class="dot"></span>특별 계정</div>
+    <div class="nav-sep">고객 응대</div>
+    <div class="nav-i" data-p="notice" onclick="nav(this)"><span class="dot"></span>공지 관리</div>
+    <div class="nav-i" data-p="inquiry" onclick="nav(this)"><span class="dot"></span>1:1 문의<span class="bdg">2</span></div>
+  </aside>
+
+  <div class="main">
+    <header class="top">
+      <h1 id="page-title">대시보드</h1>
+      <div class="right">
+        <div class="roleswitch">
+          <button class="on" onclick="setRole('super',this)">super_admin</button>
+          <button onclick="setRole('staff',this)">staff</button>
+        </div>
+        <div class="who">접속 <b id="whoname">김보람</b><div class="av" id="whoav">보</div></div>
+      </div>
+    </header>
+
+    <div class="content">
+
+      <!-- ===================== DASHBOARD ===================== -->
+      <section class="pane on" id="p-dash">
+        <div class="kpis">
+          <div class="kpi"><div class="k">활성 구독 기관</div><div class="v">3 <small>개교</small></div><div class="d">2026 가을학기 기준</div></div>
+          <div class="kpi"><div class="k">이번 학기 확정 매출</div><div class="v">₩13.0<small>M</small></div><div class="d">조직학 단일 모듈</div></div>
+          <div class="kpi"><div class="k">활성 사용자 / 좌석</div><div class="v">192 <small>/ 450</small></div><div class="d">소진율 43%</div></div>
+          <div class="kpi red"><div class="k">만료 임박 (D-90 내)</div><div class="v">1 <small>개교</small></div><div class="d" style="color:var(--danger)">갱신 협의 필요</div></div>
+        </div>
+
+        <div class="grid2">
+          <div class="card">
+            <div class="card-t">만료 · 갱신 임박 <a onclick="goto('inst')">기관 관리 →</a></div>
+            <table>
+              <thead><tr><th>기관 · 과목</th><th>만료일</th><th>D-day</th><th></th></tr></thead>
+              <tbody>
+                <tr><td>가천대 의과대학 · <span class="sub">조직학</span></td><td>2026-08-31</td><td><span class="dday" style="color:var(--danger)">D-93</span></td><td style="text-align:right"><button class="btn btn-sky btn-sm superonly" onclick="goto('inst')">갱신</button></td></tr>
+                <tr><td>충남대 의과대학 · <span class="sub">조직학</span></td><td>2027-02-28</td><td><span class="dday" style="color:var(--warn)">D-274</span></td><td style="text-align:right"><button class="btn btn-ghost btn-sm superonly" onclick="goto('inst')">갱신</button></td></tr>
+                <tr><td>단국대 한의과대학 · <span class="sub">조직학</span></td><td>2027-02-28</td><td><span class="dday" style="color:var(--warn)">D-274</span></td><td style="text-align:right"><button class="btn btn-ghost btn-sm superonly" onclick="goto('inst')">갱신</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="card">
+            <div class="card-t">학기별 매출 추이 <span class="badge">확정 · 예상</span></div>
+            <div class="bars">
+              <div class="bar"><div class="bv">8.0M</div><div class="b" style="height:50%"></div><div class="bl">2026<br>봄</div></div>
+              <div class="bar"><div class="bv">13.0M</div><div class="b" style="height:81%"></div><div class="bl">2026<br>가을</div></div>
+              <div class="bar"><div class="bv">16.0M</div><div class="b fut" style="height:100%"></div><div class="bl">2027<br>봄(예상)</div></div>
+              <div class="bar"><div class="bv">20.0M</div><div class="b fut" style="height:90%;opacity:.7"></div><div class="bl">2027<br>가을(목표)</div></div>
+            </div>
+            <div class="hintbox">초창패 신청은 9월 매출 데이터 확보 후. 학기 단위 갱신 매출이 누적되는 구조.</div>
+          </div>
+        </div>
+
+        <div class="grid2b">
+          <div class="card">
+            <div class="card-t">슬라이드 파이프라인 현황 <a onclick="goto('slide')">슬라이드 관리 →</a></div>
+            <div class="pipe">
+              <div class="pc"><div class="pn" style="color:var(--ok)">20</div><div class="pl">배포 중</div></div>
+              <div class="pc"><div class="pn" style="color:var(--muted)">3</div><div class="pl">배포 대기</div></div>
+              <div class="pc"><div class="pn" style="color:var(--blue)">2</div><div class="pl">처리 중</div></div>
+              <div class="pc"><div class="pn" style="color:var(--danger)">2</div><div class="pl">실패·반려</div></div>
+            </div>
+            <div class="hintbox">율린 134장 스캔분 순차 변환 중. 배포 대기 3건은 검수 후 게시 예정.</div>
+          </div>
+          <div class="card">
+            <div class="card-t">처리 대기 (할 일)</div>
+            <div class="todo">
+              <a onclick="goto('inquiry')"><span>미답변 1:1 문의</span><span class="cnt" style="color:var(--danger)">2</span></a>
+              <a onclick="goto('slide')"><span>검수·배포 대기 슬라이드</span><span class="cnt" style="color:var(--warn)">3</span></a>
+              <a onclick="goto('slide')"><span>MPP 없음 (수동 입력 필요)</span><span class="cnt" style="color:var(--warn)">1</span></a>
+              <a onclick="goto('inst')"><span>만료 임박 갱신 협의</span><span class="cnt" style="color:var(--danger)">1</span></a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== 기관 관리 ===================== -->
+      <section class="pane" id="p-inst">
+        <div class="lead">기관 = 과목별 구독 줄(좌석·학기·구독료 독립). 추가/수정/갱신 모달의 상세 동작은 <b>기관 모달 목업</b>에 구현되어 있습니다.</div>
+        <div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="btn btn-pri superonly">＋ 기관 추가</button></div>
+        <div class="card" style="padding:0">
+          <table>
+            <thead><tr><th>기관</th><th>구독 과목</th><th>좌석</th><th>오픈 → 만료</th><th>상태</th><th class="superonly"></th></tr></thead>
+            <tbody>
+              <tr><td>충남대 <b>의과대학</b></td><td><span class="code">HST</span> 조직학</td><td>148/200</td><td>26.08.01 → 27.02.28</td><td><span class="pill p-ok"><span class="led l-ok"></span>구독중</span></td><td class="superonly" style="text-align:right"><div class="row-act"><button class="btn btn-ghost btn-sm">수정</button><button class="btn btn-sky btn-sm">갱신</button></div></td></tr>
+              <tr><td>단국대 <b>한의과대학</b></td><td><span class="code">HST</span> 조직학</td><td>44/50</td><td>26.08.01 → 27.02.28</td><td><span class="pill p-ok"><span class="led l-ok"></span>구독중</span></td><td class="superonly" style="text-align:right"><div class="row-act"><button class="btn btn-ghost btn-sm">수정</button><button class="btn btn-sky btn-sm">갱신</button></div></td></tr>
+              <tr><td>경희대 <b>의과대학</b></td><td><span class="code">HST</span> 조직학</td><td>0/300</td><td>27.02.01 → 27.08.31</td><td><span class="pill p-gray"><span class="led l-gray"></span>오픈전</span></td><td class="superonly" style="text-align:right"><div class="row-act"><button class="btn btn-ghost btn-sm">수정</button><button class="btn btn-sky btn-sm">갱신</button></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ===================== 슬라이드 관리 ===================== -->
+      <section class="pane" id="p-slide">
+        <div class="lead">변환(자동) ↔ 배포(사람 결정) 두 축. 배치 QC·검수·반려·MPP 재처리·개별추가 상세는 <b>슬라이드 QC 목업</b>에 구현되어 있습니다.</div>
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+          <span class="pill p-gray">전체 28</span><span class="pill p-blue"><span class="led l-blue"></span>처리중 2</span><span class="pill p-gray"><span class="led l-gray"></span>배포대기 3</span><span class="pill p-warn"><span class="led l-warn"></span>MPP없음 1</span><span class="pill p-red"><span class="led l-red"></span>실패·반려 2</span><span class="pill p-ok"><span class="led l-ok"></span>배포중 20</span>
+        </div>
+        <div class="card" style="padding:0">
+          <table>
+            <thead><tr><th>슬라이드</th><th>변환 상태</th><th>배포 상태</th><th>MPP</th><th class="superonly"></th></tr></thead>
+            <tbody>
+              <tr><td><span class="code">SA-HST-001</span> 소장</td><td><span class="pill p-ok"><span class="led l-ok"></span>변환완료</span></td><td><span class="pill p-ok"><span class="led l-ok"></span>배포 중</span></td><td>0.25μm</td><td class="superonly" style="text-align:right"><button class="btn btn-ghost btn-sm">배포 철회</button></td></tr>
+              <tr><td><span class="code">SA-HST-002</span> 위</td><td><span class="pill p-ok"><span class="led l-ok"></span>변환완료</span></td><td><span class="pill p-gray"><span class="led l-gray"></span>배포 대기</span></td><td>0.25μm</td><td class="superonly" style="text-align:right"><div class="row-act"><button class="btn btn-ghost btn-sm">검수</button><button class="btn btn-ghost btn-sm" style="color:var(--warn)">반려</button></div></td></tr>
+              <tr><td><span class="code">SA-HST-005</span> 기관지</td><td><span class="pill p-warn"><span class="led l-warn"></span>MPP 없음</span></td><td><span class="pill p-gray">배율 비활성</span></td><td><span class="sub">수동 입력</span></td><td class="superonly" style="text-align:right"><button class="btn btn-sky btn-sm">MPP·재처리</button></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ===================== 접근 제어 ===================== -->
+      <section class="pane" id="p-access">
+        <div class="lead">좌석(규모)과 콘텐츠(과목)는 분리. v1.0은 조직학 단일 자동 부여. 두 번째 모듈 출시 시 기관×모듈 매트릭스로 확장(기관 관리 데이터에 연동).</div>
+        <div class="card">
+          <div class="card-t">콘텐츠 모듈 레지스트리</div>
+          <table>
+            <thead><tr><th>모듈</th><th>슬라이드</th><th>접근 부여</th><th>상태</th></tr></thead>
+            <tbody>
+              <tr><td><span class="code">HST</span> 조직학</td><td>134장</td><td>전 구독 자동</td><td><span class="pill p-ok"><span class="led l-ok"></span>활성</span></td></tr>
+              <tr style="color:#9aa4b4"><td><span class="code" style="opacity:.6">PATH</span> 병리학</td><td>—</td><td>기관별 토글(출시후)</td><td><span class="pill p-gray"><span class="led l-gray"></span>준비중</span></td></tr>
+              <tr style="color:#9aa4b4"><td><span class="code" style="opacity:.6">PARA</span> 기생충학</td><td>—</td><td>기관별 토글(출시후)</td><td><span class="pill p-gray"><span class="led l-gray"></span>준비중</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card">
+          <div class="card-t">기관별 모듈 접근 <span class="badge">두 번째 모듈 출시 후 활성화 · 미리보기</span></div>
+          <table class="mtx">
+            <thead><tr><th>기관</th><th>조직학</th><th style="color:#b7c0cf">병리학</th><th style="color:#b7c0cf">기생충학</th></tr></thead>
+            <tbody>
+              <tr><td>충남대 의과대학</td><td><span class="tog"></span></td><td><span class="tog off"></span></td><td><span class="tog off"></span></td></tr>
+              <tr><td>단국대 한의과대학</td><td><span class="tog"></span></td><td><span class="tog off"></span></td><td><span class="tog off"></span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ===================== 이용 리포트 ===================== -->
+      <section class="pane" id="p-reports">
+        <div class="lead">기관 관리자 포털과 동일한 리포트를, 슈퍼관리자는 학교를 골라 열람. 갱신 설득·콘텐츠 가치 판단용.</div>
+        <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+          <select><option>충남대 의과대학</option><option>단국대 한의과대학</option></select>
+          <select><option>이번 학기 (2026 가을)</option></select>
+          <button class="btn btn-ghost btn-sm">엑셀</button><button class="btn btn-ghost btn-sm">PDF</button>
+        </div>
+        <div class="kpis">
+          <div class="kpi"><div class="k">활성 / 좌석</div><div class="v">148<small>/200</small></div><div class="d">소진 74%</div></div>
+          <div class="kpi"><div class="k">총 열람</div><div class="v">3,914</div><div class="d">+12%</div></div>
+          <div class="kpi"><div class="k">AI 튜터 질문</div><div class="v">682</div><div class="d">/명 4.6</div></div>
+          <div class="kpi"><div class="k">마지막 활동</div><div class="v" style="font-size:18px">오늘</div><div class="d" style="color:var(--muted)">14:22</div></div>
+        </div>
+        <div class="card">
+          <div class="card-t">많이 본 슬라이드 Top 5</div>
+          <div class="toplist">
+            <div class="r"><div class="nm">소장 (H&amp;E)</div><div class="tr"><div class="fl" style="width:100%"></div></div><div class="vl">412</div></div>
+            <div class="r"><div class="nm">간 (H&amp;E)</div><div class="tr"><div class="fl" style="width:82%"></div></div><div class="vl">338</div></div>
+            <div class="r"><div class="nm">신장 (H&amp;E)</div><div class="tr"><div class="fl" style="width:74%"></div></div><div class="vl">305</div></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== 특별 계정 ===================== -->
+      <section class="pane" id="p-special">
+        <div class="lead">자문위원·검수자·데모 등 구독 만료 무관 접근 계정. 전체 콘텐츠 열람, 워터마킹 동일, 선택적 만료+사전 알림.</div>
+        <div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="btn btn-pri superonly">＋ 특별 계정 발급</button></div>
+        <div class="card" style="padding:0">
+          <table>
+            <thead><tr><th>이메일 / 이름</th><th>용도</th><th>만료 · 재검토</th><th>상태</th><th class="superonly"></th></tr></thead>
+            <tbody>
+              <tr><td><b>song.kim@cnu.ac.kr</b><div class="sub">김송계 (자문 교수)</div></td><td>자문위원</td><td>2026-12-31 <span class="pill p-warn">D-215</span></td><td><span class="pill p-ok"><span class="led l-ok"></span>활성</span></td><td class="superonly" style="text-align:right"><button class="btn btn-ghost btn-sm">비활성화</button></td></tr>
+              <tr><td><b>demo@atlaslab.co.kr</b><div class="sub">학회 부스 데모용</div></td><td>데모</td><td><span style="color:var(--danger)">무기한</span> <span class="pill p-red">검토 권장</span></td><td><span class="pill p-ok"><span class="led l-ok"></span>활성</span></td><td class="superonly" style="text-align:right"><button class="btn btn-ghost btn-sm">비활성화</button></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ===================== 공지 관리 ===================== -->
+      <section class="pane" id="p-notice">
+        <div class="lead">랜딩페이지 공지 (최대 5개 노출). 게시/숨김·소프트 삭제(보관함)·복원·완전삭제 상세는 <b>공지·문의 목업</b>에 구현. super_admin·staff 모두 가능.</div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:12px"><span class="sub" style="align-self:center">랜딩 노출 <b style="color:var(--navy)">3</b> / 5</span><button class="btn btn-pri">＋ 공지 작성</button></div>
+        <div class="card" style="padding:0">
+          <table>
+            <thead><tr><th>순서</th><th>제목</th><th>노출</th><th>작성자</th><th></th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td><b>2026 가을학기 신규 슬라이드 12종 추가</b></td><td><span class="pill p-ok"><span class="led l-ok"></span>게시중</span></td><td>김보람 <span class="sub">(super)</span></td><td style="text-align:right"><button class="btn btn-ghost btn-sm">수정</button></td></tr>
+              <tr><td>2</td><td><b>서버 점검 안내 (6/2 02:00~04:00)</b></td><td><span class="pill p-ok"><span class="led l-ok"></span>게시중</span></td><td>이수민 <span class="sub">(staff)</span></td><td style="text-align:right"><button class="btn btn-ghost btn-sm">수정</button></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ===================== 1:1 문의 ===================== -->
+      <section class="pane" id="p-inquiry">
+        <div class="lead">사이트 사용 전반 문의(FAQ 미해결). 문의자의 <b>기관 정보 자동 첨부</b>로 staff도 운영 탭 접근 없이 응대. 답변 SES 발송 + 작성자 기록.</div>
+        <div class="card" style="padding:0">
+          <table>
+            <thead><tr><th>상태</th><th>문의자 · 기관</th><th>제목</th><th>접수</th><th></th></tr></thead>
+            <tbody>
+              <tr><td><span class="pill p-red"><span class="led l-red"></span>미답변</span></td><td><b>최민준</b><div class="sub">충남대 의과대학 · 학생</div></td><td>AI 튜터 답변이 영어로만 나와요</td><td>05-30</td><td style="text-align:right"><button class="btn btn-sky btn-sm">답변</button></td></tr>
+              <tr><td><span class="pill p-red"><span class="led l-red"></span>미답변</span></td><td><b>박지우</b><div class="sub">단국대 한의과대학 · 교수</div></td><td>로그인이 다른 기기에서 자꾸 풀려요</td><td>05-29</td><td style="text-align:right"><button class="btn btn-sky btn-sm">답변</button></td></tr>
+              <tr><td><span class="pill p-ok"><span class="led l-ok"></span>완료</span></td><td><b>김서연</b><div class="sub">충남대 의과대학 · 학생</div></td><td>슬라이드 배율 버튼이 안 눌려요</td><td>05-28</td><td style="text-align:right"><button class="btn btn-ghost btn-sm">보기</button></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<script>
+  const TITLES={dash:'대시보드',inst:'기관 관리',slide:'슬라이드 관리',access:'접근 제어',reports:'이용 리포트',special:'특별 계정',notice:'공지 관리',inquiry:'1:1 문의'};
+  function nav(el){
+    document.querySelectorAll('.nav-i').forEach(n=>n.classList.remove('on'));
+    el.classList.add('on');
+    const p=el.dataset.p;
+    document.querySelectorAll('.pane').forEach(s=>s.classList.remove('on'));
+    document.getElementById('p-'+p).classList.add('on');
+    document.getElementById('page-title').textContent=TITLES[p];
+    document.querySelector('.content').scrollTop=0;
+  }
+  function goto(p){
+    const el=document.querySelector('.nav-i[data-p="'+p+'"]');
+    if(el && getComputedStyle(el).display!=='none') nav(el);
+  }
+  function setRole(role,btn){
+    document.querySelectorAll('.roleswitch button').forEach(b=>b.classList.remove('on'));btn.classList.add('on');
+    const tag=document.getElementById('roletag');
+    const staffMark=document.querySelector('.staffonly');
+    if(role==='staff'){
+      document.body.classList.add('staff');document.body.classList.remove('super');
+      tag.className='role-tag role-staff';tag.textContent='STAFF';
+      document.getElementById('whoname').textContent='이수민';document.getElementById('whoav').textContent='수';
+      staffMark.style.display='inline';
+      // staff가 운영 탭(현재 활성)에 있으면 대시보드로 이동
+      const cur=document.querySelector('.nav-i.on');
+      if(cur && cur.classList.contains('ops')) goto('dash');
+    }else{
+      document.body.classList.add('super');document.body.classList.remove('staff');
+      tag.className='role-tag role-super';tag.textContent='SUPER ADMIN';
+      document.getElementById('whoname').textContent='김보람';document.getElementById('whoav').textContent='보';
+      staffMark.style.display='none';
+    }
+  }
+</script>
+</body>
+</html>

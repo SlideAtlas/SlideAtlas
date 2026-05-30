@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SlideAtlas 슈퍼관리자 — 공지·문의</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --navy:#0F1F3D; --navy-2:#1B2F52; --sky:#5BB8D4; --sky-d:#3A93AE;
+    --ink:#1a2434; --muted:#6B7689; --line:#E2E7EF; --line-2:#EDF1F6;
+    --bg:#F4F6FA; --ok:#1E9E6A; --warn:#E08A1E; --danger:#D14C4C; --blue:#2F6FE0;
+    --shadow:0 10px 40px rgba(15,31,61,.18);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.5}
+  .app{display:flex;min-height:100vh}
+  .side{width:212px;background:var(--navy);color:#cdd6e6;flex-shrink:0;padding:20px 0}
+  .logo{font-family:'Montserrat';font-weight:800;color:#fff;font-size:18px;padding:4px 22px 18px;letter-spacing:-.3px}
+  .logo span{color:var(--sky)}
+  .role-tag{margin:0 22px 14px;font-size:10.5px;font-weight:700;padding:4px 10px;border-radius:6px;text-align:center}
+  .role-super{background:rgba(91,184,212,.18);color:var(--sky)}
+  .role-staff{background:rgba(224,138,30,.2);color:#f0b566}
+  .nav-i{display:flex;align-items:center;gap:10px;padding:11px 22px;font-size:13.5px;color:#aeb9cd;cursor:pointer;border-left:3px solid transparent}
+  .nav-i:hover{background:rgba(255,255,255,.04)}
+  .nav-i.on{background:rgba(91,184,212,.12);border-left-color:var(--sky);color:#fff;font-weight:700}
+  .nav-i .dot{width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.5}
+  .nav-i .ro{margin-left:auto;font-size:9.5px;color:#5e6c85;font-weight:700}
+  .nav-sep{font-size:10.5px;letter-spacing:1px;color:#5e6c85;padding:18px 22px 7px;text-transform:uppercase}
+  body.staff .ops{display:none!important}
+  .main{flex:1;display:flex;flex-direction:column;min-width:0}
+  .top{height:58px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 26px}
+  .top h1{font-size:17px;font-weight:700}
+  .top .right{display:flex;align-items:center;gap:14px}
+  .who{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--muted)}
+  .who b{color:var(--ink)}
+  .av{width:30px;height:30px;border-radius:50%;background:var(--navy);color:#fff;display:grid;place-items:center;font-size:12px;font-weight:700}
+  .roleswitch{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .roleswitch button{border:none;background:#fff;padding:7px 13px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--muted)}
+  .roleswitch button.on{background:var(--navy);color:#fff}
+  .content{padding:24px 26px;overflow:auto}
+  .pane{display:none} .pane.on{display:block}
+  .lead{font-size:12.5px;color:var(--muted);margin-bottom:18px;max-width:660px}
+  .lead b{color:var(--ink)}
+
+  .btn{border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;transition:.15s}
+  .btn-pri{background:var(--navy);color:#fff} .btn-pri:hover{background:var(--navy-2)}
+  .btn-sky{background:var(--sky);color:#06263a} .btn-sky:hover{background:var(--sky-d);color:#fff}
+  .btn-ghost{background:#fff;border:1px solid var(--line);color:var(--ink)} .btn-ghost:hover{border-color:var(--sky);color:var(--sky-d)}
+  .btn-sm{padding:6px 12px;font-size:12px}
+
+  .toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+  .count{font-size:12.5px;color:var(--muted);font-weight:700}
+  .count b{color:var(--navy);font-family:'Montserrat'}
+  .ftabs{display:flex;gap:7px}
+  .ftab{padding:7px 14px;border:1px solid var(--line);border-radius:20px;font-size:12.5px;font-weight:700;cursor:pointer;background:#fff;color:var(--muted)}
+  .ftab.on{background:var(--navy);color:#fff;border-color:var(--navy)}
+
+  .card{background:#fff;border-radius:12px;box-shadow:0 1px 3px rgba(15,31,61,.06)}
+  table{width:100%;border-collapse:collapse}
+  th{text-align:left;font-size:11px;letter-spacing:.3px;color:var(--muted);font-weight:700;padding:12px 14px;border-bottom:1px solid var(--line);background:#FAFBFD}
+  td{padding:13px 14px;border-bottom:1px solid var(--line-2);font-size:13px;vertical-align:middle}
+  tr:last-child td{border-bottom:none}
+  tr:hover td{background:#FBFCFE}
+  .pill{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:20px;white-space:nowrap}
+  .led{width:7px;height:7px;border-radius:50%}
+  .p-ok{background:#E6F5EE;color:var(--ok)} .l-ok{background:var(--ok)}
+  .p-warn{background:#FCF2E2;color:var(--warn)} .l-warn{background:var(--warn)}
+  .p-gray{background:#EEF1F5;color:var(--muted)} .l-gray{background:var(--muted)}
+  .p-red{background:#FBEAEA;color:var(--danger)} .l-red{background:var(--danger)}
+  .code{font-family:'Montserrat';font-weight:700;color:var(--navy);background:#EEF3F8;padding:2px 8px;border-radius:5px;font-size:11px}
+  .ord{font-family:'Montserrat';font-weight:800;color:var(--sky-d);font-size:14px}
+  .by{font-size:11px;color:var(--muted)}
+  .row-act{display:flex;gap:6px;justify-content:flex-end}
+  .ctx{font-size:11.5px;color:var(--muted)}
+  .ctx b{color:var(--navy)}
+
+  /* modal */
+  .overlay{position:fixed;inset:0;background:rgba(10,18,35,.55);backdrop-filter:blur(2px);display:none;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto;z-index:50}
+  .overlay.show{display:flex}
+  .modal{background:#fff;width:100%;max-width:560px;border-radius:16px;box-shadow:var(--shadow);overflow:hidden}
+  .modal.wide{max-width:620px}
+  .m-head{background:var(--navy);color:#fff;padding:17px 22px;display:flex;justify-content:space-between;align-items:center}
+  .m-head h2{font-size:15.5px;font-weight:700}
+  .m-head p{font-size:12px;color:#9fb0cb;margin-top:2px}
+  .x{background:rgba(255,255,255,.1);border:none;color:#fff;width:30px;height:30px;border-radius:8px;font-size:17px;cursor:pointer}
+  .m-body{padding:20px 22px;max-height:66vh;overflow:auto}
+  .m-foot{padding:14px 22px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;background:#FBFCFE}
+  .m-foot .r{display:flex;gap:9px}
+  label{font-size:12px;font-weight:700;color:#3c4759;display:block;margin-bottom:6px}
+  .m-body input,.m-body textarea,.m-body select{width:100%;border:1px solid var(--line);border-radius:8px;padding:9px 11px;font-size:13px;font-family:inherit;margin-bottom:14px}
+  textarea{resize:vertical;line-height:1.55}
+  .note{font-size:11.5px;color:var(--muted)}
+  .switch{display:inline-flex;align-items:center;gap:8px;font-size:12.5px}
+  .tog{width:38px;height:22px;border-radius:20px;background:var(--ok);position:relative;cursor:pointer}
+  .tog::after{content:"";position:absolute;width:18px;height:18px;border-radius:50%;background:#fff;top:2px;right:2px}
+  .tog.off{background:#D7DCE5} .tog.off::after{right:auto;left:2px}
+
+  /* inquiry context box */
+  .ctxbox{background:#F3F7FC;border:1px solid #DCE7F1;border-radius:10px;padding:13px 15px;margin-bottom:15px}
+  .ctxbox .ch{font-size:10.5px;font-weight:700;color:var(--sky-d);margin-bottom:8px;display:flex;align-items:center;gap:6px}
+  .ctxrow{display:flex;gap:18px;flex-wrap:wrap}
+  .ctxrow .it{font-size:12.5px}
+  .ctxrow .it .k{font-size:10.5px;color:var(--muted);font-weight:700}
+  .ctxrow .it .v{font-weight:700;color:var(--ink)}
+  .msg{background:#fff;border:1px solid var(--line);border-radius:10px;padding:13px 15px;font-size:13px;margin-bottom:14px;line-height:1.6}
+  .reply-prev{background:#FCFDF8;border-left:3px solid var(--ok);padding:11px 14px;border-radius:0 8px 8px 0;font-size:12.5px;margin-bottom:14px}
+  .reply-prev .rh{font-size:11px;color:var(--muted);font-weight:700;margin-bottom:4px}
+</style>
+</head>
+<body class="super">
+<div class="app">
+  <aside class="side">
+    <div class="logo">Slide<span>Atlas</span></div>
+    <div class="role-tag role-super" id="roletag">SUPER ADMIN</div>
+    <div class="nav-sep">운영</div>
+    <div class="nav-i ops"><span class="dot"></span>대시보드</div>
+    <div class="nav-i ops"><span class="dot"></span>기관 관리</div>
+    <div class="nav-i ops"><span class="dot"></span>슬라이드 관리</div>
+    <div class="nav-i ops"><span class="dot"></span>접근 제어</div>
+    <div class="nav-i ops"><span class="dot"></span>이용 리포트</div>
+    <div class="nav-i ops"><span class="dot"></span>특별 계정</div>
+    <div class="nav-i dash-staff" style="display:none"><span class="dot"></span>대시보드<span class="ro">읽기</span></div>
+    <div class="nav-sep">고객 응대</div>
+    <div class="nav-i on" data-p="notice" onclick="nav(this)"><span class="dot"></span>공지 관리</div>
+    <div class="nav-i" data-p="inquiry" onclick="nav(this)"><span class="dot"></span>1:1 문의</div>
+  </aside>
+
+  <div class="main">
+    <header class="top">
+      <h1 id="page-title">공지 관리</h1>
+      <div class="right">
+        <div class="roleswitch">
+          <button class="on" onclick="setRole('super',this)">super_admin 화면</button>
+          <button onclick="setRole('staff',this)">staff 화면</button>
+        </div>
+        <div class="who">접속 <b id="whoname">김보람</b><div class="av" id="whoav">보</div></div>
+      </div>
+    </header>
+
+    <div class="content">
+
+      <!-- ============ NOTICES ============ -->
+      <section class="pane on" id="p-notice">
+        <div class="lead">랜딩페이지 상단에 노출되는 공지입니다. <b>최대 5개까지 동시 노출</b>되며 순서대로 표시됩니다. super_admin·staff 모두 작성·수정할 수 있고, 모든 변경에는 작성자가 기록됩니다.</div>
+        <div class="toolbar">
+          <div class="ftabs">
+            <div class="ftab on" onclick="noticeView('active',this)">현재 공지</div>
+            <div class="ftab" onclick="noticeView('archive',this)">보관함 <span class="pill p-gray" style="margin-left:4px;padding:1px 7px" id="arch-n">1</span></div>
+          </div>
+          <button class="btn btn-pri" onclick="openNotice()">＋ 공지 작성</button>
+        </div>
+
+        <div id="notice-active-wrap">
+          <div class="count" style="margin-bottom:10px">랜딩 노출 <b id="pub-n">3</b> / 5</div>
+          <div class="card">
+            <table>
+              <thead><tr><th style="width:54px">순서</th><th>제목</th><th style="width:110px">노출</th><th style="width:150px">작성자</th><th style="width:90px">수정일</th><th style="width:190px"></th></tr></thead>
+              <tbody id="tb-active">
+                <tr><td><span class="ord">1</span></td><td><b>2026 가을학기 신규 슬라이드 12종 추가</b></td><td><span class="pill p-ok"><span class="led l-ok"></span>게시 중</span></td><td>김보람 <span class="by">(super)</span></td><td>05-28</td><td><div class="row-act"><button class="btn btn-ghost btn-sm" onclick="openNotice()">수정</button><button class="btn btn-ghost btn-sm" onclick="toggleVis(this)">숨김</button><button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="softDel(this)">삭제</button></div></td></tr>
+                <tr><td><span class="ord">2</span></td><td><b>AI 튜터 한국어 답변 품질 개선 안내</b></td><td><span class="pill p-ok"><span class="led l-ok"></span>게시 중</span></td><td>이수민 <span class="by">(staff)</span></td><td>05-25</td><td><div class="row-act"><button class="btn btn-ghost btn-sm" onclick="openNotice()">수정</button><button class="btn btn-ghost btn-sm" onclick="toggleVis(this)">숨김</button><button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="softDel(this)">삭제</button></div></td></tr>
+                <tr><td><span class="ord">3</span></td><td><b>서버 점검 안내 (6/2 02:00~04:00)</b></td><td><span class="pill p-ok"><span class="led l-ok"></span>게시 중</span></td><td>이수민 <span class="by">(staff)</span></td><td>05-24</td><td><div class="row-act"><button class="btn btn-ghost btn-sm" onclick="openNotice()">수정</button><button class="btn btn-ghost btn-sm" onclick="toggleVis(this)">숨김</button><button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="softDel(this)">삭제</button></div></td></tr>
+                <tr style="color:#9aa4b4"><td><span class="ord" style="opacity:.4">—</span></td><td><b>모바일 뷰어 터치 개선 (초안)</b></td><td><span class="pill p-gray"><span class="led l-gray"></span>숨김</span></td><td>김보람 <span class="by">(super)</span></td><td>05-20</td><td><div class="row-act"><button class="btn btn-ghost btn-sm" onclick="openNotice()">수정</button><button class="btn btn-ghost btn-sm" onclick="toggleVis(this)">게시</button><button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="softDel(this)">삭제</button></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="note" style="margin-top:10px">게시 ↔ 숨김은 노출만 끄고 내용은 보존합니다. 삭제하면 보관함으로 이동하며(소프트 삭제), 작성 이력은 보존됩니다. 6개째 게시 시 노출 수가 빨갛게 경고됩니다.</div>
+        </div>
+
+        <div id="notice-archive-wrap" style="display:none">
+          <div class="note" style="margin-bottom:10px">삭제된 공지가 보관됩니다. <b>복원</b>하면 숨김 상태로 되돌아오고, <b>완전 삭제</b>는 확인 후 영구 제거되어 복구할 수 없습니다.</div>
+          <div class="card">
+            <table>
+              <thead><tr><th>제목</th><th style="width:150px">작성자</th><th style="width:90px">삭제일</th><th style="width:180px"></th></tr></thead>
+              <tbody id="tb-archive">
+                <tr><td>구 버전 이용 안내 (사용 중단)</td><td>김보람 <span class="by">(super)</span></td><td>04-30</td><td><div class="row-act"><button class="btn btn-ghost btn-sm" onclick="restore(this)">복원</button><button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="hardDel(this)">완전 삭제</button></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ INQUIRIES ============ -->
+      <section class="pane" id="p-inquiry">
+        <div class="lead">사용자 1:1 문의입니다. 각 문의에는 <b>문의자의 기관 정보가 자동으로 따라붙어</b>, staff도 기관 관리 탭 접근 없이 어느 학교 사용자인지 바로 보고 답변할 수 있습니다. (사이트 사용 전반 문의 · FAQ로 풀리지 않는 건) 답변은 SES로 발송되며 작성자가 기록됩니다.</div>
+        <div class="toolbar">
+          <div class="ftabs">
+            <div class="ftab on">전체 4</div>
+            <div class="ftab">미답변 <span class="pill p-red" style="margin-left:4px;padding:1px 7px">2</span></div>
+            <div class="ftab">답변완료 2</div>
+          </div>
+        </div>
+        <div class="card">
+          <table>
+            <thead><tr><th style="width:90px">상태</th><th>문의자 · 기관</th><th>제목</th><th style="width:90px">접수</th><th style="width:80px"></th></tr></thead>
+            <tbody>
+              <tr>
+                <td><span class="pill p-red"><span class="led l-red"></span>미답변</span></td>
+                <td><b>최민준</b><div class="ctx">충남대 의과대학 · 학생</div></td>
+                <td>AI 튜터 답변이 영어로만 나와요</td>
+                <td>05-30</td>
+                <td><button class="btn btn-sky btn-sm" onclick="openInq(0)">답변</button></td>
+              </tr>
+              <tr>
+                <td><span class="pill p-red"><span class="led l-red"></span>미답변</span></td>
+                <td><b>박지우</b><div class="ctx">단국대 한의과대학 · 교수</div></td>
+                <td>로그인이 다른 기기에서 자꾸 풀려요</td>
+                <td>05-29</td>
+                <td><button class="btn btn-sky btn-sm" onclick="openInq(1)">답변</button></td>
+              </tr>
+              <tr>
+                <td><span class="pill p-ok"><span class="led l-ok"></span>답변완료</span></td>
+                <td><b>김서연</b><div class="ctx">충남대 의과대학 · 학생</div></td>
+                <td>슬라이드 배율 버튼이 안 눌려요</td>
+                <td>05-28</td>
+                <td><button class="btn btn-ghost btn-sm" onclick="openInq(2)">보기</button></td>
+              </tr>
+              <tr>
+                <td><span class="pill p-ok"><span class="led l-ok"></span>답변완료</span></td>
+                <td><b>정해린</b><div class="ctx">경희대 의과대학 · 행정</div></td>
+                <td>학생 명단 일괄 등록 방법 문의</td>
+                <td>05-27</td>
+                <td><button class="btn btn-ghost btn-sm" onclick="openInq(3)">보기</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<!-- NOTICE MODAL -->
+<div class="overlay" id="ov-notice">
+  <div class="modal">
+    <div class="m-head"><div><h2>공지 작성 · 수정</h2><p>랜딩페이지에 노출되는 공지입니다</p></div><button class="x" onclick="close_('ov-notice')">×</button></div>
+    <div class="m-body">
+      <label>제목 <span style="color:var(--danger)">*</span></label>
+      <input placeholder="예: 2026 가을학기 신규 슬라이드 12종 추가">
+      <label>내용 <span style="color:var(--danger)">*</span></label>
+      <textarea rows="5" placeholder="공지 본문을 입력하세요"></textarea>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div class="switch"><span class="tog" onclick="this.classList.toggle('off')"></span> 랜딩페이지 노출</div>
+        <div style="display:flex;align-items:center;gap:8px"><label style="margin:0">노출 순서</label><input type="number" value="1" style="width:70px;margin:0;font-family:'Montserrat';font-weight:700"></div>
+      </div>
+      <div class="note" style="margin-top:10px">동시에 5개까지만 노출됩니다. 저장 시 작성자·수정 시각이 기록됩니다.</div>
+    </div>
+    <div class="m-foot"><span class="note" id="notice-by">작성자: 김보람 (super_admin)</span><div class="r"><button class="btn btn-ghost" onclick="close_('ov-notice')">취소</button><button class="btn btn-pri" onclick="close_('ov-notice')">저장</button></div></div>
+  </div>
+</div>
+
+<!-- INQUIRY MODAL -->
+<div class="overlay" id="ov-inq">
+  <div class="modal wide">
+    <div class="m-head"><div><h2 id="inq-title">문의 답변</h2><p>답변은 문의자 이메일로 SES 발송됩니다</p></div><button class="x" onclick="close_('ov-inq')">×</button></div>
+    <div class="m-body">
+      <div class="ctxbox">
+        <div class="ch">🔗 자동 첨부된 문의 맥락 <span class="note" style="font-weight:500;color:var(--sky-d)">— 기관 관리 탭 접근 없이 표시</span></div>
+        <div class="ctxrow">
+          <div class="it"><div class="k">문의자</div><div class="v" id="inq-user">최민준</div></div>
+          <div class="it"><div class="k">이메일</div><div class="v" id="inq-email">minjun@cnu.ac.kr</div></div>
+          <div class="it"><div class="k">기관</div><div class="v" id="inq-inst">충남대 의과대학</div></div>
+          
+        </div>
+      </div>
+      <label>문의 내용</label>
+      <div class="msg" id="inq-msg"></div>
+      <div id="inq-prev"></div>
+      <label id="inq-rlabel">답변 작성</label>
+      <textarea id="inq-reply" rows="5" placeholder="답변을 작성하세요. 전송 시 SES로 문의자에게 발송됩니다."></textarea>
+    </div>
+    <div class="m-foot"><span class="note" id="inq-by">답변자: 김보람 (super_admin)</span><div class="r"><button class="btn btn-ghost" onclick="close_('ov-inq')">닫기</button><button class="btn btn-sky" onclick="close_('ov-inq')">답변 전송 (SES)</button></div></div>
+  </div>
+</div>
+
+<script>
+  const INQ=[
+    {u:'최민준',e:'minjun@cnu.ac.kr',inst:'충남대 의과대학 · 학생',slide:'HS-PATH-004 · 림프절',
+     msg:'림프절 슬라이드에서 AI 튜터에게 질문하면 답변이 영어로만 나옵니다. 한국어로 보고 싶어요.',prev:null},
+    {u:'박지우',e:'jiwoo@dankook.ac.kr',inst:'단국대 한의과대학 · 교수',slide:'—',
+     msg:'연구실 PC와 노트북을 번갈아 쓰는데, 한쪽에서 로그인하면 다른 쪽 세션이 풀립니다. 둘 다 쓰고 싶습니다.',prev:null},
+    {u:'김서연',e:'seoyeon@cnu.ac.kr',inst:'충남대 의과대학 · 학생',slide:'SA-HST-005 · 기관지',
+     msg:'기관지 슬라이드에서 10x/20x/40x 배율 버튼이 눌리지 않습니다.',
+     prev:{by:'이수민 (staff)',at:'05-28 16:40',text:'해당 슬라이드는 원본에 배율(MPP) 정보가 없어 배율 버튼이 비활성화된 상태입니다. 현재 원본을 다시 받아 처리 중이며, 6/2까지 정상화 예정입니다.'}},
+    {u:'정해린',e:'haerin@khu.ac.kr',inst:'경희대 의과대학 · 행정',slide:'—',
+     msg:'학생 명단을 한 번에 등록하고 싶습니다. 엑셀 양식이 있나요?',
+     prev:{by:'김보람 (super_admin)',at:'05-27 11:10',text:'기관 관리자 포털(/portal)에서 이름·이메일 2개 열의 xlsx 또는 csv를 업로드하시면 일괄 등록됩니다. 양식을 메일로 첨부해 드렸습니다.'}}
+  ];
+  function openInq(i){
+    const d=INQ[i];
+    document.getElementById('inq-title').textContent=d.prev?'문의 보기':'문의 답변';
+    document.getElementById('inq-user').textContent=d.u;
+    document.getElementById('inq-email').textContent=d.e;
+    document.getElementById('inq-inst').textContent=d.inst;
+    document.getElementById('inq-msg').textContent=d.msg;
+    const prev=document.getElementById('inq-prev');
+    if(d.prev){prev.innerHTML='<div class="reply-prev"><div class="rh">답변 · '+d.prev.by+' · '+d.prev.at+'</div>'+d.prev.text+'</div>';
+      document.getElementById('inq-rlabel').textContent='추가 답변 작성';}
+    else{prev.innerHTML='';document.getElementById('inq-rlabel').textContent='답변 작성';}
+    document.getElementById('ov-inq').classList.add('show');
+  }
+  function openNotice(){document.getElementById('ov-notice').classList.add('show')}
+
+  // ---- notice archive / soft-delete ----
+  function noticeView(view,el){
+    document.querySelectorAll('#p-notice .ftab').forEach(t=>t.classList.remove('on'));el.classList.add('on');
+    document.getElementById('notice-active-wrap').style.display=view==='active'?'block':'none';
+    document.getElementById('notice-archive-wrap').style.display=view==='archive'?'block':'none';
+  }
+  function toggleVis(btn){
+    const row=btn.closest('tr');
+    const pub=btn.textContent.trim()==='숨김';
+    row.querySelector('td:nth-child(3)').innerHTML = pub
+      ? '<span class="pill p-gray"><span class="led l-gray"></span>숨김</span>'
+      : '<span class="pill p-ok"><span class="led l-ok"></span>게시 중</span>';
+    btn.textContent = pub ? '게시' : '숨김';
+    row.style.color = pub ? '#9aa4b4' : '';
+    noticeCounts();
+  }
+  function softDel(btn){
+    const row=btn.closest('tr');
+    const title=row.querySelector('td:nth-child(2)').innerText.trim();
+    const author=row.querySelector('td:nth-child(4)').innerHTML;
+    row.remove();
+    const tr=document.createElement('tr');
+    tr.innerHTML='<td>'+title+'</td><td>'+author+'</td><td>방금</td><td><div class="row-act"><button class="btn btn-ghost btn-sm" onclick="restore(this)">복원</button><button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="hardDel(this)">완전 삭제</button></div></td>';
+    document.getElementById('tb-archive').appendChild(tr);
+    noticeCounts();
+  }
+  function restore(btn){
+    const row=btn.closest('tr');
+    const title=row.querySelector('td:nth-child(1)').innerText.trim();
+    const author=row.querySelector('td:nth-child(2)').innerHTML;
+    row.remove();
+    const tr=document.createElement('tr');
+    tr.style.color='#9aa4b4';
+    tr.innerHTML='<td><span class="ord" style="opacity:.4">—</span></td><td><b>'+title+'</b></td><td><span class="pill p-gray"><span class="led l-gray"></span>숨김</span></td><td>'+author+'</td><td>방금</td><td><div class="row-act"><button class="btn btn-ghost btn-sm" onclick="openNotice()">수정</button><button class="btn btn-ghost btn-sm" onclick="toggleVis(this)">게시</button><button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="softDel(this)">삭제</button></div></td>';
+    document.getElementById('tb-active').appendChild(tr);
+    noticeCounts();
+  }
+  function hardDel(btn){
+    if(confirm('이 공지를 완전히 삭제할까요? 복구할 수 없습니다.')){btn.closest('tr').remove();noticeCounts();}
+  }
+  function noticeCounts(){
+    let pub=0;
+    document.querySelectorAll('#tb-active tr').forEach(r=>{
+      const isPub=r.querySelector('td:nth-child(3)').innerText.includes('게시');
+      const ord=r.querySelector('.ord');
+      if(isPub){pub++;ord.textContent=pub;ord.style.opacity='1';}
+      else{ord.textContent='—';ord.style.opacity='.4';}
+    });
+    const pn=document.getElementById('pub-n');pn.textContent=pub;pn.style.color=pub>5?'var(--danger)':'';
+    document.getElementById('arch-n').textContent=document.querySelectorAll('#tb-archive tr').length;
+  }
+  noticeCounts();
+  function close_(id){document.getElementById(id).classList.remove('show')}
+  document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('show')}));
+
+  const TITLES={notice:'공지 관리',inquiry:'1:1 문의'};
+  function nav(el){
+    document.querySelectorAll('.nav-i').forEach(n=>n.classList.remove('on'));
+    el.classList.add('on');
+    const p=el.dataset.p;
+    document.querySelectorAll('.pane').forEach(s=>s.classList.remove('on'));
+    document.getElementById('p-'+p).classList.add('on');
+    document.getElementById('page-title').textContent=TITLES[p];
+  }
+
+  function setRole(role,btn){
+    document.querySelectorAll('.roleswitch button').forEach(b=>b.classList.remove('on'));btn.classList.add('on');
+    const tag=document.getElementById('roletag');
+    if(role==='staff'){
+      document.body.classList.add('staff');document.body.classList.remove('super');
+      tag.className='role-tag role-staff';tag.textContent='STAFF';
+      document.querySelector('.dash-staff').style.display='flex';
+      document.getElementById('whoname').textContent='이수민';document.getElementById('whoav').textContent='수';
+      document.getElementById('notice-by').textContent='작성자: 이수민 (staff)';
+      document.getElementById('inq-by').textContent='답변자: 이수민 (staff)';
+    }else{
+      document.body.classList.add('super');document.body.classList.remove('staff');
+      tag.className='role-tag role-super';tag.textContent='SUPER ADMIN';
+      document.querySelector('.dash-staff').style.display='none';
+      document.getElementById('whoname').textContent='김보람';document.getElementById('whoav').textContent='보';
+      document.getElementById('notice-by').textContent='작성자: 김보람 (super_admin)';
+      document.getElementById('inq-by').textContent='답변자: 김보람 (super_admin)';
+    }
+  }
+</script>
+</body>
+</html>

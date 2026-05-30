@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SlideAtlas 슈퍼관리자 — 접근제어·리포트·특별계정</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --navy:#0F1F3D; --navy-2:#1B2F52; --sky:#5BB8D4; --sky-d:#3A93AE;
+    --ink:#1a2434; --muted:#6B7689; --line:#E2E7EF; --line-2:#EDF1F6;
+    --bg:#F4F6FA; --ok:#1E9E6A; --warn:#E08A1E; --danger:#D14C4C; --blue:#2F6FE0;
+    --shadow:0 10px 40px rgba(15,31,61,.18);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.5}
+  .app{display:flex;min-height:100vh}
+  .side{width:212px;background:var(--navy);color:#cdd6e6;flex-shrink:0;padding:20px 0}
+  .logo{font-family:'Montserrat';font-weight:800;color:#fff;font-size:18px;padding:4px 22px 22px;letter-spacing:-.3px}
+  .logo span{color:var(--sky)}
+  .nav-i{display:flex;align-items:center;gap:10px;padding:11px 22px;font-size:13.5px;color:#aeb9cd;cursor:pointer;border-left:3px solid transparent}
+  .nav-i:hover{background:rgba(255,255,255,.04)}
+  .nav-i.on{background:rgba(91,184,212,.12);border-left-color:var(--sky);color:#fff;font-weight:700}
+  .nav-i .dot{width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.5}
+  .nav-sep{font-size:10.5px;letter-spacing:1px;color:#5e6c85;padding:18px 22px 7px;text-transform:uppercase}
+  .main{flex:1;display:flex;flex-direction:column;min-width:0}
+  .top{height:58px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 26px}
+  .top h1{font-size:17px;font-weight:700}
+  .top .who{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--muted)}
+  .who b{color:var(--ink)}
+  .av{width:30px;height:30px;border-radius:50%;background:var(--navy);color:#fff;display:grid;place-items:center;font-size:12px;font-weight:700}
+  .content{padding:24px 26px;overflow:auto}
+  .pane{display:none} .pane.on{display:block}
+  .lead{font-size:12.5px;color:var(--muted);margin-bottom:18px;max-width:640px}
+  .lead b{color:var(--ink)}
+
+  .btn{border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;transition:.15s}
+  .btn-pri{background:var(--navy);color:#fff} .btn-pri:hover{background:var(--navy-2)}
+  .btn-sky{background:var(--sky);color:#06263a} .btn-sky:hover{background:var(--sky-d);color:#fff}
+  .btn-ghost{background:#fff;border:1px solid var(--line);color:var(--ink)} .btn-ghost:hover{border-color:var(--sky);color:var(--sky-d)}
+  .btn-sm{padding:6px 12px;font-size:12px}
+  select{border:1px solid var(--line);border-radius:8px;padding:9px 11px;font-size:13px;font-family:inherit;color:var(--ink);background:#fff}
+
+  .card{background:#fff;border-radius:12px;box-shadow:0 1px 3px rgba(15,31,61,.06);padding:18px 20px;margin-bottom:16px}
+  .card-t{font-size:14px;font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+  .badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:#EEF1F5;color:var(--muted)}
+
+  table{width:100%;border-collapse:collapse}
+  th{text-align:left;font-size:11px;letter-spacing:.3px;color:var(--muted);font-weight:700;padding:11px 12px;border-bottom:1px solid var(--line)}
+  td{padding:13px 12px;border-bottom:1px solid var(--line-2);font-size:13px}
+  tr:last-child td{border-bottom:none}
+  .code{font-family:'Montserrat';font-weight:700;color:var(--navy);background:#EEF3F8;padding:2px 8px;border-radius:5px;font-size:11.5px}
+  .pill{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:20px}
+  .led{width:7px;height:7px;border-radius:50%}
+  .p-ok{background:#E6F5EE;color:var(--ok)} .l-ok{background:var(--ok)}
+  .p-warn{background:#FCF2E2;color:var(--warn)} .l-warn{background:var(--warn)}
+  .p-gray{background:#EEF1F5;color:var(--muted)} .l-gray{background:var(--muted)}
+  .p-red{background:#FBEAEA;color:var(--danger)} .l-red{background:var(--danger)}
+
+  /* access matrix */
+  .mtx td,.mtx th{text-align:center}
+  .mtx td:first-child,.mtx th:first-child{text-align:left}
+  .tog{width:34px;height:20px;border-radius:20px;background:var(--ok);position:relative;display:inline-block}
+  .tog::after{content:"";position:absolute;width:16px;height:16px;border-radius:50%;background:#fff;top:2px;right:2px}
+  .tog.off{background:#D7DCE5} .tog.off::after{right:auto;left:2px}
+  .tog.lock{opacity:.85}
+  .disabled-col{color:#b7c0cf}
+
+  /* reports */
+  .controls{display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap}
+  .controls .sp{flex:1}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:13px;margin-bottom:16px}
+  .kpi{background:#fff;border-radius:12px;padding:15px 17px;box-shadow:0 1px 3px rgba(15,31,61,.06)}
+  .kpi .k{font-size:11.5px;color:var(--muted);font-weight:700}
+  .kpi .v{font-family:'Montserrat';font-weight:800;font-size:24px;color:var(--navy);margin-top:5px}
+  .kpi .v small{font-size:12px;color:var(--muted);font-weight:600;font-family:'Noto Sans KR'}
+  .kpi .sub{font-size:11px;color:var(--ok);font-weight:700;margin-top:3px}
+  .two{display:grid;grid-template-columns:1.15fr 1fr;gap:16px}
+  .bars{display:flex;align-items:flex-end;gap:10px;height:140px;padding-top:8px}
+  .bar{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;justify-content:flex-end}
+  .bar .b{width:60%;background:linear-gradient(180deg,var(--sky),var(--sky-d));border-radius:5px 5px 0 0;min-height:3px}
+  .bar .bl{font-size:10.5px;color:var(--muted)}
+  .toplist .row{display:flex;align-items:center;gap:10px;margin-bottom:11px}
+  .toplist .nm{width:120px;font-size:12px;flex-shrink:0}
+  .toplist .track{flex:1;background:#EEF1F5;border-radius:6px;height:14px;overflow:hidden}
+  .toplist .fill{height:100%;background:linear-gradient(90deg,var(--sky),var(--navy));border-radius:6px}
+  .toplist .val{font-family:'Montserrat';font-weight:700;font-size:11.5px;color:var(--navy);width:42px;text-align:right}
+
+  /* modal */
+  .overlay{position:fixed;inset:0;background:rgba(10,18,35,.55);backdrop-filter:blur(2px);display:none;align-items:flex-start;justify-content:center;padding:48px 16px;overflow:auto;z-index:50}
+  .overlay.show{display:flex}
+  .modal{background:#fff;width:100%;max-width:500px;border-radius:16px;box-shadow:var(--shadow);overflow:hidden}
+  .m-head{background:var(--navy);color:#fff;padding:17px 22px;display:flex;justify-content:space-between;align-items:center}
+  .m-head h2{font-size:15.5px;font-weight:700}
+  .m-head p{font-size:12px;color:#9fb0cb;margin-top:2px}
+  .x{background:rgba(255,255,255,.1);border:none;color:#fff;width:30px;height:30px;border-radius:8px;font-size:17px;cursor:pointer}
+  .m-body{padding:20px 22px}
+  .m-foot{padding:14px 22px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:9px;background:#FBFCFE}
+  label{font-size:12px;font-weight:700;color:#3c4759;display:block;margin-bottom:6px}
+  .m-body input,.m-body select{width:100%;border:1px solid var(--line);border-radius:8px;padding:9px 11px;font-size:13px;font-family:inherit;margin-bottom:13px}
+  .note{font-size:11.5px;color:var(--muted);margin-top:4px}
+  .note.warn{color:var(--warn)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .grid2 input,.grid2 select{margin-bottom:0}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="logo">Slide<span>Atlas</span></div>
+    <div class="nav-sep">운영</div>
+    <div class="nav-i"><span class="dot"></span>대시보드</div>
+    <div class="nav-i"><span class="dot"></span>기관 관리</div>
+    <div class="nav-i"><span class="dot"></span>슬라이드 관리</div>
+    <div class="nav-i on" data-p="access" onclick="nav(this)"><span class="dot"></span>접근 제어</div>
+    <div class="nav-i" data-p="reports" onclick="nav(this)"><span class="dot"></span>이용 리포트</div>
+    <div class="nav-i" data-p="special" onclick="nav(this)"><span class="dot"></span>특별 계정</div>
+    <div class="nav-sep">고객 응대</div>
+    <div class="nav-i"><span class="dot"></span>공지 관리</div>
+    <div class="nav-i"><span class="dot"></span>1:1 문의</div>
+  </aside>
+
+  <div class="main">
+    <header class="top">
+      <h1 id="page-title">접근 제어 · 콘텐츠 모듈</h1>
+      <div class="who">접속 <b>김보람</b><span class="pill p-ok" style="font-size:10.5px">super_admin</span><div class="av">보</div></div>
+    </header>
+
+    <div class="content">
+
+      <!-- ================= ACCESS CONTROL ================= -->
+      <section class="pane on" id="p-access">
+        <div class="lead"><b>좌석(규모)과 콘텐츠(과목)는 분리됩니다.</b> 좌석 플랜은 가격·정원만 정하고, 어떤 과목을 열어줄지는 여기서 관리합니다. v1.0은 조직학 단일 — 모든 구독에 자동 부여되며, 새 과목 출시 시 아래 모듈을 활성화해 add-on으로 판매합니다.</div>
+
+        <div class="card">
+          <div class="card-t">콘텐츠 모듈 레지스트리</div>
+          <table>
+            <thead><tr><th style="width:200px">모듈 (과목)</th><th>슬라이드 수</th><th>접근 부여 방식</th><th>add-on 판매</th><th style="width:110px">상태</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><span class="code">HST</span> 조직학</td>
+                <td>134장</td>
+                <td>전 구독 자동 부여 (기본 모듈)</td>
+                <td>—</td>
+                <td><span class="pill p-ok"><span class="led l-ok"></span>활성</span></td>
+              </tr>
+              <tr style="color:#9aa4b4">
+                <td><span class="code" style="opacity:.6">PATH</span> 병리학</td>
+                <td>—</td>
+                <td>기관별 토글 (출시 후)</td>
+                <td>과목별 독립 좌석</td>
+                <td><span class="pill p-gray"><span class="led l-gray"></span>준비 중</span></td>
+              </tr>
+              <tr style="color:#9aa4b4">
+                <td><span class="code" style="opacity:.6">PARA</span> 기생충학</td>
+                <td>—</td>
+                <td>기관별 토글 (출시 후)</td>
+                <td>과목별 독립 좌석</td>
+                <td><span class="pill p-gray"><span class="led l-gray"></span>준비 중</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <div class="card-t">기관별 모듈 접근 <span class="badge">두 번째 모듈 출시 후 활성화 · 미리보기</span></div>
+          <table class="mtx">
+            <thead><tr><th style="width:240px">기관</th><th>조직학 (HST)</th><th class="disabled-col">병리학 (PATH)</th><th class="disabled-col">기생충학 (PARA)</th></tr></thead>
+            <tbody>
+              <tr><td>충남대 의과대학</td><td><span class="tog lock"></span></td><td><span class="tog off lock"></span></td><td><span class="tog off lock"></span></td></tr>
+              <tr><td>단국대 한의과대학</td><td><span class="tog lock"></span></td><td><span class="tog off lock"></span></td><td><span class="tog off lock"></span></td></tr>
+              <tr><td>경희대 의과대학</td><td><span class="tog lock"></span></td><td><span class="tog off lock"></span></td><td><span class="tog off lock"></span></td></tr>
+            </tbody>
+          </table>
+          <div class="note" style="margin-top:12px">조직학은 모든 구독에 자동 부여되어 잠겨 있습니다(끌 수 없음). 병리·기생충 열은 해당 과목 출시 후 기관별로 토글되며, 켜는 순간 그 기관의 "과목별 구독 줄"(좌석·학기·구독료)이 생성됩니다.</div>
+        </div>
+      </section>
+
+      <!-- ================= USAGE REPORTS ================= -->
+      <section class="pane" id="p-reports">
+        <div class="lead">기관 관리자가 포털에서 보는 리포트와 <b>동일한 화면</b>입니다. 슈퍼관리자는 상단에서 학교를 골라 어느 기관이든 열람할 수 있습니다. 갱신 설득·콘텐츠 가치 판단에 사용하세요.</div>
+
+        <div class="controls">
+          <select id="r-inst"><option>충남대 의과대학</option><option>단국대 한의과대학</option><option>경희대 의과대학</option></select>
+          <select><option>조직학 (HST)</option></select>
+          <select><option>이번 학기 (2026 가을)</option><option>최근 30일</option><option>전체 기간</option></select>
+          <div class="sp"></div>
+          <button class="btn btn-ghost btn-sm">엑셀 내보내기</button>
+          <button class="btn btn-ghost btn-sm">PDF 내보내기</button>
+        </div>
+
+        <div class="kpis">
+          <div class="kpi"><div class="k">활성 사용자 / 좌석</div><div class="v">148 <small>/ 200</small></div><div class="sub">좌석 소진율 74%</div></div>
+          <div class="kpi"><div class="k">총 슬라이드 열람</div><div class="v">3,914 <small>회</small></div><div class="sub">전주 대비 +12%</div></div>
+          <div class="kpi"><div class="k">AI 튜터 질문</div><div class="v">682 <small>건</small></div><div class="sub">사용자당 4.6건</div></div>
+          <div class="kpi"><div class="k">마지막 활동</div><div class="v" style="font-size:18px">오늘</div><div class="sub" style="color:var(--muted)">2026-05-30 14:22</div></div>
+        </div>
+
+        <div class="two">
+          <div class="card">
+            <div class="card-t">주간 로그인 추세</div>
+            <div class="bars">
+              <div class="bar"><div class="b" style="height:38%"></div><div class="bl">W1</div></div>
+              <div class="bar"><div class="b" style="height:55%"></div><div class="bl">W2</div></div>
+              <div class="bar"><div class="b" style="height:48%"></div><div class="bl">W3</div></div>
+              <div class="bar"><div class="b" style="height:72%"></div><div class="bl">W4</div></div>
+              <div class="bar"><div class="b" style="height:88%"></div><div class="bl">W5</div></div>
+              <div class="bar"><div class="b" style="height:100%"></div><div class="bl">W6</div></div>
+            </div>
+            <div class="note" style="margin-top:10px">시험·실습 주차에 열람이 몰리는 패턴 — 갱신 협상 시 활용</div>
+          </div>
+          <div class="card">
+            <div class="card-t">많이 본 슬라이드 Top 5</div>
+            <div class="toplist">
+              <div class="row"><div class="nm">소장 (H&amp;E)</div><div class="track"><div class="fill" style="width:100%"></div></div><div class="val">412</div></div>
+              <div class="row"><div class="nm">간 (H&amp;E)</div><div class="track"><div class="fill" style="width:82%"></div></div><div class="val">338</div></div>
+              <div class="row"><div class="nm">신장 (H&amp;E)</div><div class="track"><div class="fill" style="width:74%"></div></div><div class="val">305</div></div>
+              <div class="row"><div class="nm">위 (H&amp;E)</div><div class="track"><div class="fill" style="width:61%"></div></div><div class="val">251</div></div>
+              <div class="row"><div class="nm">림프절 (H&amp;E)</div><div class="track"><div class="fill" style="width:53%"></div></div><div class="val">218</div></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= SPECIAL ACCOUNTS ================= -->
+      <section class="pane" id="p-special">
+        <div class="lead">자문위원·검수자·데모·공급사 평가 등 <b>구독 만료와 무관하게 접근</b>하는 계정입니다. 콘텐츠 전체를 열람하며, 워터마킹은 일반 계정과 동일하게 적용되어 유출 추적이 유지됩니다.</div>
+
+        <div style="display:flex;justify-content:flex-end;margin-bottom:14px">
+          <button class="btn btn-pri" onclick="document.getElementById('ov-sp').classList.add('show')">＋ 특별 계정 발급</button>
+        </div>
+
+        <div class="card" style="padding:0">
+          <table>
+            <thead><tr><th>이메일 / 이름</th><th>용도</th><th>접근 범위</th><th>만료 · 재검토</th><th>발급자</th><th style="width:120px">상태</th><th style="width:90px"></th></tr></thead>
+            <tbody>
+              <tr>
+                <td><b>song.kim@cnu.ac.kr</b><div class="note">김송계 (자문 교수)</div></td>
+                <td>자문위원</td>
+                <td>전체 콘텐츠</td>
+                <td>2026-12-31 <span class="pill p-warn" style="margin-left:4px"><span class="led l-warn"></span>D-215</span></td>
+                <td>김보람</td>
+                <td><span class="pill p-ok"><span class="led l-ok"></span>활성</span></td>
+                <td><button class="btn btn-ghost btn-sm">비활성화</button></td>
+              </tr>
+              <tr>
+                <td><b>ta.park@cnu.ac.kr</b><div class="note">박조교 (검수자 · 대학원생)</div></td>
+                <td>검수자</td>
+                <td>전체 콘텐츠</td>
+                <td>2026-08-31 <span class="pill p-warn" style="margin-left:4px"><span class="led l-warn"></span>D-93</span></td>
+                <td>김보람</td>
+                <td><span class="pill p-ok"><span class="led l-ok"></span>활성</span></td>
+                <td><button class="btn btn-ghost btn-sm">비활성화</button></td>
+              </tr>
+              <tr>
+                <td><b>demo@atlaslab.co.kr</b><div class="note">학회 부스 데모용</div></td>
+                <td>데모</td>
+                <td>전체 콘텐츠</td>
+                <td><span style="color:var(--danger)">무기한</span> <span class="pill p-red" style="margin-left:4px"><span class="led l-red"></span>검토 권장</span></td>
+                <td>김보람</td>
+                <td><span class="pill p-ok"><span class="led l-ok"></span>활성</span></td>
+                <td><button class="btn btn-ghost btn-sm">비활성화</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="note" style="margin-top:10px">⚠ 무기한 계정은 시간이 지나면 잊힌 채 살아남아 보안·라이선스 구멍이 됩니다. 가능하면 만료일을 두고, 만료 14일 전 사전 알림을 받으세요.</div>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<!-- special account modal -->
+<div class="overlay" id="ov-sp">
+  <div class="modal">
+    <div class="m-head"><div><h2>특별 계정 발급</h2><p>구독 만료와 무관하게 전체 콘텐츠에 접근합니다</p></div><button class="x" onclick="document.getElementById('ov-sp').classList.remove('show')">×</button></div>
+    <div class="m-body">
+      <label>이메일 <span style="color:var(--danger)">*</span></label>
+      <input placeholder="name@university.ac.kr">
+      <div class="grid2" style="margin-bottom:13px">
+        <div><label>이름</label><input placeholder="홍길동"></div>
+        <div><label>용도 <span style="color:var(--danger)">*</span></label><select><option>자문위원</option><option>검수자 (대학원생)</option><option>데모</option><option>공급사 평가</option><option>기타</option></select></div>
+      </div>
+      <label>접근 범위</label>
+      <select disabled style="background:#F6F8FB;color:var(--muted)"><option>전체 콘텐츠 (고정)</option></select>
+      <div class="grid2" style="margin:0 0 6px">
+        <div><label>만료일 <span class="note" style="font-weight:500">(선택)</span></label><input type="date"></div>
+        <div><label>사전 알림</label><select><option>만료 14일 전</option><option>만료 30일 전</option><option>알림 없음</option></select></div>
+      </div>
+      <div class="note warn">만료일을 비우면 무기한 계정이 됩니다(권장하지 않음). 워터마킹은 일반 계정과 동일하게 적용됩니다.</div>
+    </div>
+    <div class="m-foot"><button class="btn btn-ghost" onclick="document.getElementById('ov-sp').classList.remove('show')">취소</button><button class="btn btn-pri" onclick="document.getElementById('ov-sp').classList.remove('show')">발급 및 안내 발송</button></div>
+  </div>
+</div>
+
+<script>
+  const TITLES={access:'접근 제어 · 콘텐츠 모듈',reports:'이용 리포트',special:'특별 계정'};
+  function nav(el){
+    document.querySelectorAll('.nav-i').forEach(n=>n.classList.remove('on'));
+    el.classList.add('on');
+    const p=el.dataset.p;
+    document.querySelectorAll('.pane').forEach(s=>s.classList.remove('on'));
+    document.getElementById('p-'+p).classList.add('on');
+    document.getElementById('page-title').textContent=TITLES[p];
+  }
+  document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('show')}));
+</script>
+</body>
+</html>
