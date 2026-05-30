@@ -75,7 +75,7 @@
 | 뷰어 | OpenSeadragon |
 | 배포 | Render Starter ($7/월) |
 | 저장소 | AWS S3 (ap-northeast-2, 버킷: slideatlas-slides) |
-| 타일서버 | AWS EC2 t3.medium (slideatlas-tileserver, ec2-13-209-99-51.ap-northeast-2) — 동적 워터마킹 처리 포함 (~$40/월) |
+| 타일서버 | AWS EC2 t3.medium (slideatlas-tileserver, ec2-3-34-35-58.ap-northeast-2) — 동적 워터마킹 처리 포함 (~$40/월) |
 | 타일엔진 | titiler + 커스텀 타일서버 (~/tileserver/main.py, rasterio 기반) |
 | 파이프라인 | SVS/DCM/TIFF → COG TIFF → S3 → titiler |
 | 데이터 관리 | slides.json + institutions.json → **RDS PostgreSQL (slideatlas-db, ap-northeast-2c) 구축 완료, 마이그레이션 진행 중** |
@@ -625,12 +625,13 @@ psql -h slideatlas-db.c94iwikwox6l.ap-northeast-2.rds.amazonaws.com \
 
 | 항목 | 값 |
 |------|------|
+| 고정 IP (탄력적 IP) | 3.34.35.58 |
 | PEM 파일 경로 | C:\Users\아무개\slideatlas-key.pem |
-| 접속 명령어 | ssh -i "C:\Users\아무개\slideatlas-key.pem" ubuntu@ec2-13-209-99-51.ap-northeast-2.compute.amazonaws.com |
+| 접속 명령어 | ssh -i "C:\Users\아무개\slideatlas-key.pem" ubuntu@3.34.35.58 |
 | PowerShell 종류 | 반드시 비관리자 PowerShell 사용 |
 
-**주의**: 관리자 PowerShell에서 실행하면 "계정 이름과 보안 식별자 사이에 매핑이 이루어지지 않았습니다" 오류 발생.
-외장하드(E:) 경로 직접 사용 불가 — 반드시 C:\Users\아무개\ 경로 사용.
+**주의**: 관리자 PowerShell에서 실행하면 계정 매핑 오류 발생.
+탄력적 IP 할당 완료 (2026-05-30) — 재시작해도 IP 고정.
 
 ---
 
