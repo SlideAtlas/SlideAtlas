@@ -621,6 +621,17 @@ psql -h slideatlas-db.c94iwikwox6l.ap-northeast-2.rds.amazonaws.com \
 
 **보안 원칙**: RDS Security Group은 EC2 인스턴스 IP만 인바운드 허용. 로컬 PC에서 직접 접속 불가 (VPC 내부 전용).
 
+### EC2 SSH 접속 (Windows)
+
+| 항목 | 값 |
+|------|------|
+| PEM 파일 경로 | C:\Users\아무개\slideatlas-key.pem |
+| 접속 명령어 | ssh -i "C:\Users\아무개\slideatlas-key.pem" ubuntu@ec2-13-209-99-51.ap-northeast-2.compute.amazonaws.com |
+| PowerShell 종류 | 반드시 비관리자 PowerShell 사용 |
+
+**주의**: 관리자 PowerShell에서 실행하면 "계정 이름과 보안 식별자 사이에 매핑이 이루어지지 않았습니다" 오류 발생.
+외장하드(E:) 경로 직접 사용 불가 — 반드시 C:\Users\아무개\ 경로 사용.
+
 ---
 
 *최종 업데이트: 2026-05-30 v2.8 | 변경 내용: JWT 인증 보안 결함 수정 2회차 완료 (타일토큰 TTL, CSRF 검증, 계정잠금, 재발송, 구독만료 매요청 검사, 탈옥방어) | 다음 업데이트: 포털 명단 관리 구현 완료 시점*
