@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}SlideAtlas{% endblock %}</title>
+  <link rel="icon" href="/static/slideatlas_logo.png">
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@800&family=Noto+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/base.css">
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+
+  <!-- ── Navbar ─────────────────────────────────────── -->
+  <nav class="navbar" role="navigation" aria-label="메인 메뉴">
+    <div class="navbar-inner">
+      <a href="/" class="navbar-logo">
+        <img src="/static/SlideAtlas_White_Hor_trans.png" alt="SlideAtlas">
+      </a>
+      <ul class="navbar-menu">
+        <li><a href="/">HOME</a></li>
+        <li>
+          <a href="#"
+             onclick="navRequireLogin(event, '/lectures', '/login?next=/lectures')">내 강의</a>
+        </li>
+        <li>
+          <a href="#"
+             onclick="navRequireLogin(event, '/slides', '/login?next=/slides')">슬라이드 열람</a>
+        </li>
+        <li class="has-dropdown">
+          <a href="#" aria-haspopup="true">고객센터</a>
+          <ul class="dropdown-menu" role="menu">
+            <li role="none"><a href="/faq"     role="menuitem">FAQ</a></li>
+            <li role="none"><a href="/support" role="menuitem">1:1 문의</a></li>
+            <li role="none"><a href="/manual"  role="menuitem">사용자 매뉴얼</a></li>
+          </ul>
+        </li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- ── Toast ──────────────────────────────────────── -->
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <!-- ── Content ────────────────────────────────────── -->
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- ── Footer ─────────────────────────────────────── -->
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-contact">
+        <p>고객센터: <span>placeholder</span></p>
+        <p>응대시간: <span>placeholder</span></p>
+      </div>
+      <p class="footer-copy">ⓒ 2026 Atlas Lab Co., Ltd. All rights reserved.</p>
+    </div>
+  </footer>
+
+  <script>
+    /* 서버에서 주입하는 로그인 상태 (base.html을 render_template 할 때 is_logged 전달 필요) */
+    const IS_LOGGED = {{ is_logged | tojson }};
+
+    function navRequireLogin(e, dest, loginUrl) {
+      e.preventDefault();
+      if (IS_LOGGED) {
+        location.href = dest;
+      } else {
+        showToast('로그인이 필요합니다');
+        setTimeout(function () { location.href = loginUrl; }, 1200);
+      }
+    }
+
+    function showToast(msg, duration) {
+      var toast = document.getElementById('toast');
+      toast.textContent = msg;
+      toast.classList.add('show');
+      setTimeout(function () { toast.classList.remove('show'); }, duration || 2200);
+    }
+  </script>
+
+  {% block extra_js %}{% endblock %}
+</body>
+</html>

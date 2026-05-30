@@ -1,0 +1,163 @@
+/* ── Reset ─────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    font-family: 'Noto Sans KR', sans-serif;
+    background: #FAF8F5;
+    color: #0F1F3D;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* ── Navbar ─────────────────────────────────────────── */
+.navbar {
+    background: #0F1F3D;
+    position: sticky;
+    top: 0;
+    z-index: 200;
+}
+
+.navbar-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+    height: 64px;
+}
+
+.navbar-logo {
+    display: flex;
+    align-items: center;
+    text-decoration: none;
+}
+
+.navbar-logo img {
+    height: 40px;
+    display: block;
+}
+
+.navbar-menu {
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.navbar-menu > li > a {
+    display: block;
+    color: #fff;
+    text-decoration: none;
+    font-family: 'Noto Sans KR', sans-serif;
+    font-weight: 600;
+    font-size: 14px;
+    padding: 8px 16px;
+    border-radius: 6px;
+    transition: background 0.2s;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.navbar-menu > li > a:hover {
+    background: rgba(91, 184, 212, 0.25);
+}
+
+/* ── Dropdown ────────────────────────────────────────── */
+.has-dropdown {
+    position: relative;
+}
+
+.dropdown-menu {
+    display: none;
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: 0 8px 28px rgba(15, 31, 61, 0.18);
+    list-style: none;
+    min-width: 160px;
+    overflow: hidden;
+    z-index: 300;
+}
+
+.has-dropdown:hover .dropdown-menu {
+    display: block;
+}
+
+.dropdown-menu li a {
+    display: block;
+    padding: 12px 20px;
+    color: #0F1F3D;
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 400;
+    transition: background 0.15s, color 0.15s;
+}
+
+.dropdown-menu li a:hover {
+    background: #FAF8F5;
+    color: #5BB8D4;
+}
+
+.dropdown-menu li + li {
+    border-top: 1px solid #f0ede9;
+}
+
+/* ── Main ────────────────────────────────────────────── */
+main {
+    flex: 1;
+}
+
+/* ── Footer ──────────────────────────────────────────── */
+.footer {
+    background: #0F1F3D;
+    color: rgba(255, 255, 255, 0.65);
+    padding: 36px 24px;
+}
+
+.footer-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.footer-contact p {
+    font-size: 13px;
+    line-height: 1.7;
+}
+
+.footer-copy {
+    margin-top: 12px;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.4);
+}
+
+/* ── Toast ───────────────────────────────────────────── */
+.toast {
+    position: fixed;
+    bottom: 36px;
+    left: 50%;
+    transform: translateX(-50%) translateY(12px);
+    background: #0F1F3D;
+    color: #fff;
+    padding: 12px 28px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    opacity: 0;
+    transition: opacity 0.28s ease, transform 0.28s ease;
+    pointer-events: none;
+    z-index: 9999;
+    white-space: nowrap;
+    box-shadow: 0 4px 20px rgba(15, 31, 61, 0.3);
+}
+
+.toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
