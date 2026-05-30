@@ -1,12 +1,24 @@
 <!DOCTYPE html>
-<html lang="ko">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>관리자 로그인 — SlideAtlas</title>
-  <link rel="icon" href="/static/slideatlas_logo.png">
-  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@800&family=Noto+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
-</head>
-<body>
-</body>
-</html>
+<html lang="ko"><head><meta charset="UTF-8"><title>SlideAtlas Admin</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:sans-serif;background:#0F1F3D;display:flex;align-items:center;justify-content:center;min-height:100vh;}
+.box{background:#fff;border-radius:12px;padding:48px 40px;width:360px;}
+.logo{text-align:center;margin-bottom:32px;}
+.ls{font-size:9px;letter-spacing:0.22em;color:#2A9D8F;}
+.la{font-size:24px;font-weight:800;color:#0F1F3D;}
+.lad{font-size:11px;color:#9B9490;letter-spacing:0.08em;margin-top:4px;}
+label{font-size:13px;font-weight:600;color:#0F1F3D;display:block;margin-bottom:8px;}
+input[type=password]{width:100%;padding:11px 14px;border:1.5px solid #E5E0D8;border-radius:7px;font-size:14px;outline:none;}
+input[type=password]:focus{border-color:#2A9D8F;}
+.btn{width:100%;padding:12px;background:#2A9D8F;color:#fff;border:none;border-radius:7px;font-size:14px;font-weight:600;cursor:pointer;margin-top:16px;}
+.err{color:#e76f51;font-size:13px;margin-top:12px;text-align:center;}
+</style></head>
+<body><div class="box">
+<div class="logo"><div class="ls">SLIDE</div><div class="la">ATLAS</div><div class="lad">ADMIN CONSOLE</div></div>
+<form method="POST">
+<label>관리자 비밀번호</label>
+<input type="password" name="password" autofocus>
+<button class="btn" type="submit">로그인</button>
+{% if error %}<div class="err">{{ error }}</div>{% endif %}
+</form></div></body></html>

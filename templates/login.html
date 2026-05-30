@@ -1,12 +1,76 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>로그인 — SlideAtlas</title>
-  <link rel="icon" href="/static/slideatlas_logo.png">
-  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@800&family=Noto+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>로그인 — SlideAtlas</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+@import url('https://cdn.jsdelivr.net/gh/sunn-us/SUIT/fonts/variable/woff2/SUIT-Variable.css');
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: "SUIT Variable", "SUIT", sans-serif; background: #0F1F3D; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+.box { background: #fff; border-radius: 12px; padding: 48px 40px; width: 380px; }
+.logo { text-align: center; margin-bottom: 32px; }
+.ls { font-size: 9px; letter-spacing: 0.22em; color: #2A9D8F; font-family: "DM Mono", monospace; }
+.la { font-size: 24px; font-weight: 800; color: #0F1F3D; }
+.lad { font-size: 11px; color: #9B9490; letter-spacing: 0.08em; margin-top: 4px; font-family: "DM Mono", monospace; }
+label { font-size: 13px; font-weight: 600; color: #0F1F3D; display: block; margin-bottom: 8px; }
+input[type=email], input[type=password] { width: 100%; padding: 11px 14px; border: 1.5px solid #E5E0D8; border-radius: 7px; font-size: 14px; font-family: "SUIT Variable", sans-serif; outline: none; margin-bottom: 16px; }
+input[type=email]:focus, input[type=password]:focus { border-color: #2A9D8F; }
+.btn { width: 100%; padding: 12px; background: #2A9D8F; color: #fff; border: none; border-radius: 7px; font-size: 14px; font-weight: 600; font-family: "SUIT Variable", sans-serif; cursor: pointer; margin-top: 4px; }
+.btn:hover { background: #238b7f; }
+.err { color: #e76f51; font-size: 13px; margin-top: 12px; text-align: center; }
+.back-link { display: block; text-align: center; margin-top: 20px; font-size: 13px; color: #9B9490; text-decoration: none; }
+.back-link:hover { color: #0F1F3D; }
+</style>
 </head>
 <body>
+<div class="box">
+  <div class="logo">
+    <div class="ls">SLIDE</div>
+    <div class="la">ATLAS</div>
+    <div class="lad">학생 로그인</div>
+  </div>
+  <div>
+    <label>이메일</label>
+    <input type="email" id="login-email" placeholder="your@email.com" autofocus>
+    <label>비밀번호</label>
+    <input type="password" id="login-pw" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()">
+    <button class="btn" onclick="doLogin()">로그인</button>
+    <div class="err" id="err-msg" style="display:none;"></div>
+  </div>
+  <a class="back-link" href="/">← 홈으로</a>
+</div>
+<script>
+var NEXT_URL = {{ next | tojson }};
+async function doLogin() {
+  var email = document.getElementById('login-email').value.trim();
+  var pw    = document.getElementById('login-pw').value;
+  var errEl = document.getElementById('err-msg');
+  errEl.style.display = 'none';
+  if (!email || !pw) { showErr('이메일과 비밀번호를 입력하세요.'); return; }
+  var csrf = getCookie('csrf_token') || '';
+  var res = await fetch('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({ email: email, password: pw })
+  });
+  var data = await res.json();
+  if (data.success) {
+    location.href = NEXT_URL || '/slides';
+  } else {
+    showErr(data.message || '로그인에 실패했습니다.');
+  }
+}
+function showErr(msg) {
+  var el = document.getElementById('err-msg');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+function getCookie(name) {
+  var v = document.cookie.match('(^|;) ?' + name + '=([^;]*)(;|$)');
+  return v ? v[2] : '';
+}
+</script>
 </body>
 </html>

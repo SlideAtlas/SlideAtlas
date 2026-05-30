@@ -1,12 +1,172 @@
 <!DOCTYPE html>
-<html lang="ko">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>관리자 대시보드 — SlideAtlas</title>
-  <link rel="icon" href="/static/slideatlas_logo.png">
-  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@800&family=Noto+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
-</head>
+<html lang="ko"><head><meta charset="UTF-8"><title>SlideAtlas Admin</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:sans-serif;background:#F7F4EF;color:#0F1F3D;}
+nav{background:#0F1F3D;padding:0 32px;height:54px;display:flex;align-items:center;justify-content:space-between;}
+.logo-atlas{font-size:18px;font-weight:800;color:#fff;}
+.nav-logout{color:rgba(255,255,255,0.45);font-size:12px;text-decoration:none;}
+.container{max-width:1100px;margin:0 auto;padding:32px 24px;}
+.page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:28px;}
+.page-title{font-size:22px;font-weight:800;}
+.btn-add{background:#2A9D8F;color:#fff;border:none;padding:10px 20px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;}
+.card{background:#fff;border:1px solid #E5E0D8;border-radius:12px;overflow:hidden;}
+.card-header{padding:18px 24px;border-bottom:1px solid #E5E0D8;display:flex;align-items:center;justify-content:space-between;}
+.card-title{font-size:14px;font-weight:700;}
+table{width:100%;border-collapse:collapse;}
+th{text-align:left;padding:11px 16px;font-size:11px;color:#9B9490;font-weight:600;border-bottom:1px solid #E5E0D8;}
+td{padding:13px 16px;font-size:13px;border-bottom:1px solid #F0EDE8;vertical-align:middle;}
+tr:last-child td{border-bottom:none;}
+code{background:#F0EDE8;padding:2px 7px;border-radius:4px;font-size:12px;}
+.stain-badge{background:#EBF6F5;color:#0F6E56;font-size:11px;padding:2px 8px;border-radius:12px;font-weight:600;}
+.badge-active{background:#EBF6F5;color:#0F6E56;font-size:11px;padding:2px 8px;border-radius:12px;font-weight:600;}
+.badge-inactive{background:#F5F0E8;color:#9B9490;font-size:11px;padding:2px 8px;border-radius:12px;font-weight:600;}
+.btn-edit{background:#F0EDE8;color:#0F1F3D;border:none;padding:5px 12px;border-radius:5px;font-size:12px;cursor:pointer;font-weight:600;margin-right:4px;}
+.btn-del{background:#fde8e4;color:#c0392b;border:none;padding:5px 12px;border-radius:5px;font-size:12px;cursor:pointer;font-weight:600;}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(15,31,61,0.6);z-index:1000;align-items:center;justify-content:center;}
+.modal-overlay.open{display:flex;}
+.modal{background:#fff;border-radius:12px;width:540px;max-height:85vh;overflow-y:auto;padding:32px;}
+.modal-title{font-size:18px;font-weight:800;margin-bottom:24px;}
+.form-row{margin-bottom:16px;}
+.form-row label{font-size:12px;font-weight:600;display:block;margin-bottom:6px;}
+.form-row input,.form-row select,.form-row textarea{width:100%;padding:9px 12px;border:1.5px solid #E5E0D8;border-radius:7px;font-size:13px;font-family:sans-serif;outline:none;}
+.form-row input:focus,.form-row select:focus{border-color:#2A9D8F;}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.modal-footer{display:flex;gap:10px;justify-content:flex-end;margin-top:24px;}
+.btn-cancel{background:#F0EDE8;color:#0F1F3D;border:none;padding:10px 20px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;}
+.btn-save{background:#2A9D8F;color:#fff;border:none;padding:10px 20px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;}
+</style></head>
 <body>
-</body>
-</html>
+<input type="hidden" id="admin-csrf-token" value="{{ csrf_token }}">
+<nav><span class="logo-atlas">ATLAS ADMIN</span><a class="nav-logout" href="/admin/logout">로그아웃</a></nav>
+<div class="container">
+  <div class="page-header">
+    <div><div class="page-title">슬라이드 관리</div></div>
+    <button class="btn-add" onclick="openAdd()">+ 슬라이드 추가</button>
+  </div>
+  <div class="card">
+    <div class="card-header"><span class="card-title">전체 슬라이드</span><span>{{ slides | length }} TOTAL</span></div>
+    <table>
+      <thead><tr><th>ID</th><th>슬라이드명</th><th>계통</th><th>염색</th><th>기관</th><th>상태</th><th>작업</th></tr></thead>
+      <tbody>
+        {% for s in slides %}
+        <tr>
+          <td><code>{{ s.id }}</code></td>
+          <td>{{ s.title_ko }}</td>
+          <td>{{ s.get('system', '') }}</td>
+          <td><span class="stain-badge">{{ s.get('stain', '') }}</span></td>
+          <td>{{ s.get('institution', '') }}</td>
+          <td>{% if s.active %}<span class="badge-active">활성</span>{% else %}<span class="badge-inactive">비활성</span>{% endif %}</td>
+          <td>
+            <button class="btn-edit" onclick="openEdit({{ s | tojson }})">수정</button>
+            <button class="btn-del" onclick="deleteSlide('{{ s.id }}')">삭제</button>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" style="text-align:center;color:#9B9490;padding:32px;">등록된 슬라이드가 없습니다.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <div class="modal-title" id="modal-title">슬라이드 추가</div>
+    <input type="hidden" id="edit-id">
+    <div class="form-grid">
+      <div class="form-row"><label>기관 코드</label>
+        <select id="f-institution">
+          {% for i in institutions %}<option value="{{ i.code }}">{{ i.code }} · {{ i.name_ko }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="form-row"><label>과목 코드</label>
+        <select id="f-subject">
+          {% for s in subjects %}<option value="{{ s.code }}">{{ s.code }} · {{ s.name_ko }}</option>{% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="form-row"><label>슬라이드 ID</label><input type="text" id="f-id" placeholder="예: SA-HST-0002"></div>
+    <div class="form-grid">
+      <div class="form-row"><label>슬라이드명 (한글)</label><input type="text" id="f-title-ko"></div>
+      <div class="form-row"><label>슬라이드명 (영문)</label><input type="text" id="f-title-en"></div>
+    </div>
+    <div class="form-grid">
+      <div class="form-row"><label>계통</label><input type="text" id="f-system"></div>
+      <div class="form-row"><label>염색법</label><input type="text" id="f-stain"></div>
+    </div>
+    <div class="form-row"><label>포맷</label><select id="f-format"><option value="dcm">DCM</option><option value="svs">SVS</option></select></div>
+    <div class="form-row"><label>S3 키 (s3_key)</label><input type="text" id="f-s3key" placeholder="예: SA-PATH-0002/SA-PATH-0002.svs"></div>
+    <div class="form-row"><label>타일서버</label><select id="f-tileserver"><option value="">Render (기본)</option><option value="ec2">EC2</option></select></div>
+    <div class="form-row"><label>DCM 진입 파일</label><input type="text" id="f-entry" placeholder="예: 000001.dcm"></div>
+    <div class="form-row"><label>DCM 파일 목록 (쉼표 구분)</label><textarea id="f-files"></textarea></div>
+    <div class="form-row"><label>설명</label><textarea id="f-desc"></textarea></div>
+    <div class="form-row"><label>상태</label><select id="f-active"><option value="true">활성</option><option value="false">비활성</option></select></div>
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="closeModal()">취소</button>
+      <button class="btn-save" onclick="saveSlide()">저장</button>
+    </div>
+  </div>
+</div>
+<script>
+function openAdd() {
+  document.getElementById('modal-title').textContent = '슬라이드 추가';
+  document.getElementById('edit-id').value = '';
+  ['f-id','f-title-ko','f-title-en','f-system','f-stain','f-s3key','f-entry','f-files','f-desc'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('f-active').value = 'true';
+  document.getElementById('f-format').value = 'dcm';
+  document.getElementById('f-tileserver').value = '';
+  document.getElementById('modal').classList.add('open');
+}
+function openEdit(slide) {
+  document.getElementById('modal-title').textContent = '슬라이드 수정';
+  document.getElementById('edit-id').value = slide.id;
+  document.getElementById('f-id').value = slide.id;
+  document.getElementById('f-title-ko').value = slide.title_ko || '';
+  document.getElementById('f-title-en').value = slide.title_en || '';
+  document.getElementById('f-system').value = slide.system || '';
+  document.getElementById('f-stain').value = slide.stain || '';
+  document.getElementById('f-format').value = slide.format || 'dcm';
+  document.getElementById('f-s3key').value = slide.s3_key || '';
+  document.getElementById('f-tileserver').value = slide.tileserver || '';
+  document.getElementById('f-entry').value = slide.dcm_entry || '';
+  document.getElementById('f-files').value = (slide.dcm_files || []).join(', ');
+  document.getElementById('f-desc').value = slide.description || '';
+  document.getElementById('f-active').value = slide.active ? 'true' : 'false';
+  if(slide.institution) document.getElementById('f-institution').value = slide.institution;
+  document.getElementById('modal').classList.add('open');
+}
+function closeModal() { document.getElementById('modal').classList.remove('open'); }
+async function saveSlide() {
+  const payload = {
+    id: document.getElementById('f-id').value.trim(),
+    title_ko: document.getElementById('f-title-ko').value.trim(),
+    title_en: document.getElementById('f-title-en').value.trim(),
+    system: document.getElementById('f-system').value.trim(),
+    stain: document.getElementById('f-stain').value.trim(),
+    institution: document.getElementById('f-institution').value,
+    category: document.getElementById('f-subject').value.toLowerCase(),
+    format: document.getElementById('f-format').value,
+    s3_key: document.getElementById('f-s3key').value.trim(),
+    tileserver: document.getElementById('f-tileserver').value,
+    dcm_entry: document.getElementById('f-entry').value.trim(),
+    dcm_files: document.getElementById('f-files').value.split(',').map(s=>s.trim()).filter(Boolean),
+    description: document.getElementById('f-desc').value.trim(),
+    active: document.getElementById('f-active').value === 'true',
+    edit_id: document.getElementById('edit-id').value
+  };
+  if(!payload.tileserver) delete payload.tileserver;
+  const adminCsrf = document.getElementById('admin-csrf-token') ? document.getElementById('admin-csrf-token').value : '';
+  const res = await fetch('/admin/api/slide', {method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':adminCsrf},body:JSON.stringify(payload)});
+  const result = await res.json();
+  if(result.ok) { location.reload(); } else { alert('오류: ' + result.error); }
+}
+async function deleteSlide(id) {
+  if(!confirm(id+' 슬라이드를 삭제하시겠습니까?')) return;
+  const adminCsrfD = document.getElementById('admin-csrf-token') ? document.getElementById('admin-csrf-token').value : '';
+  const res = await fetch('/admin/api/slide/'+id, {method:'DELETE',headers:{'X-CSRF-Token':adminCsrfD}});
+  const result = await res.json();
+  if(result.ok) { location.reload(); } else { alert('오류: '+result.error); }
+}
+document.getElementById('modal').addEventListener('click', function(e) { if(e.target===this) closeModal(); });
+</script>
+</body></html>

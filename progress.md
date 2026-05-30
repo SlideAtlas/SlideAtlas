@@ -297,3 +297,5 @@ python3 run_tests.py
 [2026-05-30][오케스트레이터][완료] CLAUDE.md §8 업데이트 (SESSION_EXPIRED → 4개 에러코드)
 [2026-05-30][test-runner][결과] 45/45 PASSED (기존 40 + 신규 5)
   신규: token_invalid_no_cookie, session_revoked_on_db_mismatch, subscription_expired_returns_401, is_special_subscription_expired_passes, tile_token_invalid_returns_correct_code
+[2026-05-30][오케스트레이터][완료] 이메일 발송 성공 (boram@atlaslab.co.kr)
+[2026-05-30][오케스트레이터][완료] git commit a38fce9 + push origin/main 성공
