@@ -529,11 +529,18 @@ def login():
     user_ctx = None
     try:
         with conn.cursor() as cur:
+            # [M2] 구독 만료 검사도 subscriptions(기관×과목) 모델 사용 (decorators._authenticate와 동일 규칙).
+            # 반환 shape(8컬럼, 마지막=subscription_end)는 유지 — 테스트 mock·언패킹 호환.
             cur.execute(
                 """SELECT u.id, u.institution_id, u.role, u.is_special,
-                          u.password_hash, u.status, u.locked_at, i.subscription_end
+                          u.password_hash, u.status, u.locked_at,
+                          (SELECT MAX(s.subscription_end)
+                             FROM subscriptions s
+                            WHERE s.institution_id = u.institution_id
+                              AND s.status = 'active'
+                              AND (u.subject_code IS NULL
+                                   OR s.subject_code = u.subject_code))
                    FROM users u
-                   LEFT JOIN institutions i ON i.id = u.institution_id
                    WHERE lower(u.email) = %s
                    FOR UPDATE OF u""",
                 (email,),

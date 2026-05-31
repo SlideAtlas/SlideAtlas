@@ -936,43 +936,59 @@ def test_csrf_mismatched_token_returns_403(client, mock_db):
 # Admin CSRF 검증 테스트
 # ─────────────────────────────────────────────
 
-def test_admin_csrf_required_no_header(client):
-    """Admin API POST: X-CSRF-Token 없음 → 403"""
-    with client.session_transaction() as sess:
-        sess['admin_logged_in'] = True
-        sess['admin_csrf_token'] = 'test-admin-csrf-123'
+def test_admin_csrf_required_no_header(client, mock_db):
+    """Admin API POST: X-CSRF-Token 없음 → 403 (현 계약: admin_users DB + session['admin_user_id'])"""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+        # _get_admin_user: SELECT id, role, name, status FROM admin_users
+        mock_db["cursor"].fetchone.return_value = (1, "super_admin", "Admin", "active")
 
-    resp = client.post('/admin/api/slide',
-                       json={"id": "TEST-001", "title_ko": "테스트"},
-                       headers={'Content-Type': 'application/json'})
-    assert resp.status_code == 403
-    data = resp.get_json()
-    assert data.get('ok') is False or 'CSRF' in str(data)
+        with client.session_transaction() as sess:
+            sess['admin_user_id'] = 1
+            sess['admin_csrf_token'] = 'test-admin-csrf-123'
 
-
-def test_admin_csrf_required_wrong_token(client):
-    """Admin API POST: X-CSRF-Token 불일치 → 403"""
-    with client.session_transaction() as sess:
-        sess['admin_logged_in'] = True
-        sess['admin_csrf_token'] = 'correct-token'
-
-    resp = client.post('/admin/api/slide',
-                       json={"id": "TEST-001"},
-                       headers={
-                           'Content-Type': 'application/json',
-                           'X-CSRF-Token': 'wrong-token',
-                       })
-    assert resp.status_code == 403
+        resp = client.post('/admin/api/slide',
+                           json={"id": "TEST-001", "title_ko": "테스트"},
+                           headers={'Content-Type': 'application/json'})
+        assert resp.status_code == 403
+        data = resp.get_json()
+        assert data.get('ok') is False or 'CSRF' in str(data)
 
 
-def test_admin_csrf_delete_no_header(client):
-    """Admin API DELETE: X-CSRF-Token 없음 → 403"""
-    with client.session_transaction() as sess:
-        sess['admin_logged_in'] = True
-        sess['admin_csrf_token'] = 'test-csrf'
+def test_admin_csrf_required_wrong_token(client, mock_db):
+    """Admin API POST: X-CSRF-Token 불일치 → 403 (현 계약: admin_users DB)"""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+        mock_db["cursor"].fetchone.return_value = (1, "super_admin", "Admin", "active")
 
-    resp = client.delete('/admin/api/slide/TEST-001')
-    assert resp.status_code == 403
+        with client.session_transaction() as sess:
+            sess['admin_user_id'] = 1
+            sess['admin_csrf_token'] = 'correct-token'
+
+        resp = client.post('/admin/api/slide',
+                           json={"id": "TEST-001"},
+                           headers={
+                               'Content-Type': 'application/json',
+                               'X-CSRF-Token': 'wrong-token',
+                           })
+        assert resp.status_code == 403
+
+
+def test_admin_csrf_delete_no_header(client, mock_db):
+    """Admin API DELETE: X-CSRF-Token 없음 → 403 (현 계약: admin_users DB)"""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+        mock_db["cursor"].fetchone.return_value = (1, "super_admin", "Admin", "active")
+
+        with client.session_transaction() as sess:
+            sess['admin_user_id'] = 1
+            sess['admin_csrf_token'] = 'test-csrf'
+
+        resp = client.delete('/admin/api/slide/TEST-001')
+        assert resp.status_code == 403
 
 
 # ─────────────────────────────────────────────
@@ -1085,7 +1101,7 @@ def test_tile_token_invalid_returns_correct_code(client, mock_db):
          patch("server_render.release_db_conn"), \
          patch("server_render.get_slide_institution") as mock_inst:
         mock_get_db.return_value = mock_db["conn"]
-        mock_inst.return_value = ("YU", True)  # inst_id, is_public=True
+        mock_inst.return_value = ("YU", "deployed")  # inst_id, deploy_status (현 계약)
 
         payload = {
             "sub": "1",

@@ -5,6 +5,9 @@
 <title>SlideAtlas — {{ title_ko }}</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/openseadragon.min.js"></script>
+<!-- [H1] 전역 fetch 인터셉터(CSRF 자동주입 + 401 4종 분기). OSD 직후·핸들러 정의 전에 로드해
+     sendChat/startQuiz가 호출되기 전 window.fetch를 먼저 래핑한다. viewer는 base.html 미상속이라 명시 로드 필요. -->
+<script src="/static/js/interceptor.js"></script>
 <style>
 @import url('https://cdn.jsdelivr.net/gh/sunn-us/SUIT/fonts/variable/woff2/SUIT-Variable.css');
 *{margin:0;padding:0;box-sizing:border-box;}
@@ -237,9 +240,33 @@ body{background:#0d1219;font-family:"SUIT Variable","SUIT",sans-serif;overflow:h
   background:#E1F5EE;color:#0F6E56;
   border-color:#1D9E75;font-weight:600;
 }
+
+/* [H1] interceptor.js 401 분기용 토스트/모달 (viewer는 base.css 미로드 → 최소 스타일 자체 정의) */
+#sa-toast{
+  position:fixed;left:50%;bottom:64px;transform:translateX(-50%);
+  background:rgba(13,24,40,0.95);color:#fff;border:1px solid rgba(255,255,255,0.15);
+  padding:10px 16px;border-radius:8px;font-size:13px;z-index:9999;
+  opacity:0;pointer-events:none;transition:opacity 0.2s;
+}
+#sa-toast.show{opacity:1;}
+.sa-modal-overlay{
+  position:fixed;inset:0;background:rgba(10,18,35,0.6);
+  display:none;align-items:center;justify-content:center;z-index:10000;
+}
+.sa-modal-box{
+  background:#fff;color:#0F1F3D;border-radius:14px;padding:26px 28px;
+  max-width:340px;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,0.4);
+}
+.sa-modal-msg{font-size:14px;line-height:1.6;margin-bottom:18px;}
+.sa-modal-btn{
+  background:#1D9E75;color:#fff;border:none;border-radius:8px;
+  padding:9px 18px;font-size:13px;font-weight:600;cursor:pointer;
+}
 </style>
 </head>
 <body>
+<!-- [H1] 401 분기 토스트 컨테이너 (interceptor.js window.showToast 대상) -->
+<div id="sa-toast"></div>
 <!-- ── 상단 툴바 ── -->
 <div id="header">
   <a href="/slides" class="hdr-back">← 목록</a>
@@ -406,6 +433,16 @@ var SLIDE_H         = {{ H }};
 var SLIDE_MPP       = {{ mpp }};
 var TILE_SOURCE_URL = {{ tile_source_url | tojson }};
 var THUMBNAIL_URL   = {{ thumbnail_url | tojson }};
+
+// [H1] interceptor.js가 TILE_TOKEN_INVALID(타일토큰 5분 만료) 시 호출. 로그인 리다이렉트 금지·토스트만.
+window.showToast = function (msg) {
+  var t = document.getElementById('sa-toast');
+  if (!t) return;
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(window._saToastTimer);
+  window._saToastTimer = setTimeout(function () { t.classList.remove('show'); }, 2600);
+};
 </script>
 
 <!-- ── 뷰어 JS ({% raw %} 블록 — Jinja2 처리 없음) ── -->

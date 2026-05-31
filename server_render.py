@@ -252,6 +252,10 @@ def _slide_access_allowed(slide_id):
         return False, _tile_err("SLIDE_NOT_FOUND", "슬라이드를 찾을 수 없습니다", 404)
     inst_id, deploy_status = info
     if getattr(g, 'is_special', False):
+        # [M1] 특별계정: qc_pending(미배포)·deployed 허용. 단 rejected(반려)는 차단 (CEO 결정).
+        # 반려 원본은 품질 문제/재공급 대상이므로 특별계정에도 노출 금지(§15-3 라이선스 격리).
+        if deploy_status == 'rejected':
+            return False, _tile_err("FORBIDDEN", "반려된 슬라이드입니다", 403)
         return True, None
     # deploy_status != 'deployed': 미배포 슬라이드 학생 접근 불가 (§8 라이선스 격리)
     if deploy_status != 'deployed':
@@ -2894,7 +2898,25 @@ def support():
                                error='필수 항목을 모두 입력해 주세요.',
                                form=form_data)
 
-    # inquiries 테이블 INSERT (테이블 미존재 시 안전하게 처리)
+    # [H2] 로그인 사용자면 user_id·institution_id 자동 캡처(§15-10), 비로그인이면 NULL.
+    # access_token 쿠키를 best-effort 디코드(인증 게이트 아님 — 익명 접수도 허용).
+    user_id = None
+    inst_id = None
+    if is_logged:
+        try:
+            from auth.decorators import decode_token, COOKIE_NAME
+            _payload = decode_token(request.cookies.get(COOKIE_NAME, ''))
+            user_id = _payload.get('sub')
+            inst_id = _payload.get('institution_id')
+        except Exception:
+            user_id = None
+            inst_id = None
+
+    # [H2] inquiries 실제 스키마 컬럼에 매핑: subject→title, content→body,
+    #      email→user_email, name→user_name, status='open'.
+    #      phone·privacy_agreed는 스키마에 컬럼이 없어 저장하지 않는다(아래 CEO 승인 항목 참조).
+    #      ★실패 은폐(except: pass) 제거 — INSERT 실패 시 사용자에게 실패를 알리고 서버 로그 기록.
+    inserted = False
     try:
         conn = get_db_conn()
         try:
@@ -2902,14 +2924,22 @@ def support():
                 with conn.cursor() as cur:
                     cur.execute("""
                         INSERT INTO inquiries
-                            (name, email, phone, subject, content, privacy_agreed)
-                        VALUES (%s, %s, %s, %s, %s, TRUE)
-                    """, (name or None, email, phone or None, subject, content))
+                            (user_id, institution_id, title, body,
+                             user_email, user_name, status)
+                        VALUES (%s, %s, %s, %s, %s, %s, 'open')
+                    """, (user_id, inst_id, subject, content, email, name or None))
+            inserted = True
         finally:
             release_db_conn(conn)
     except Exception:
-        # 테이블 미존재 등 DB 오류 — 사용자에겐 정상 접수로 표시
-        pass
+        app.logger.exception("1:1 문의 INSERT 실패 (email=%s)", email)
+        inserted = False
+
+    if not inserted:
+        return render_template('support.html', is_logged=is_logged,
+                               success=False,
+                               error='문의 접수에 실패했습니다. 잠시 후 다시 시도해 주세요.',
+                               form=form_data)
 
     return render_template('support.html', is_logged=is_logged,
                            success=True, error=None, form={})
