@@ -90,7 +90,8 @@ def load_slides():
     try:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT id, institution_id AS institution, subject_code AS category,
+                SELECT id, institution_id AS institution,
+                       subject_code AS category, subject_code,
                        title_ko, title_en, description,
                        s3_key, s3_minimap_key, s3_thumbnail_key,
                        mpp, width, height,
@@ -223,15 +224,49 @@ def admin_csrf_required(f):
 
 
 def get_slide_institution(slide_id):
-    """DB에서 slide의 institution_id와 deploy_status 반환. 없으면 None."""
+    """DB에서 slide의 (institution_id, subject_code, deploy_status) 반환. 없으면 None.
+
+    institution_id는 콘텐츠 소유자 표시('SA')일 뿐 접근 격리 기준이 아니다(§6-1·CEO 결정).
+    접근 격리는 subject_code(과목 구독)로 한다. 함수명은 호출부 호환을 위해 유지.
+    """
     conn = get_db_conn()
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT institution_id, deploy_status FROM slides WHERE id = %s",
+                "SELECT institution_id, subject_code, deploy_status FROM slides WHERE id = %s",
                 (slide_id,),
             )
             return cur.fetchone()
+    finally:
+        release_db_conn(conn)
+
+
+def _institution_subject_access(institution_id, subject_code):
+    """기관이 해당 과목 콘텐츠 접근권을 보유하는가? (단일 게이트 (3))
+
+    institution_subject_access.granted=TRUE 이거나, (institution_id, subject_code)에
+    매칭되는 active 구독의 접근창(access_open_date <= today <= subscription_end)이 열려 있으면 True.
+    좌석 플랜(subscriptions)과 콘텐츠 접근권(institution_subject_access)은 직교(§16).
+    """
+    from auth.decorators import _today_kst
+    if not institution_id or not subject_code:
+        return False
+    today = _today_kst()
+    conn = get_db_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT
+                       EXISTS(SELECT 1 FROM institution_subject_access
+                               WHERE institution_id = %s AND subject_code = %s AND granted = TRUE)
+                       OR
+                       EXISTS(SELECT 1 FROM subscriptions
+                               WHERE institution_id = %s AND subject_code = %s
+                                 AND status = 'active'
+                                 AND access_open_date <= %s AND subscription_end >= %s)""",
+                (institution_id, subject_code, institution_id, subject_code, today, today),
+            )
+            return bool(cur.fetchone()[0])
     finally:
         release_db_conn(conn)
 
@@ -245,24 +280,58 @@ def _tile_err(error, message, status=403):
 
 
 def _slide_access_allowed(slide_id):
-    """institution_id + deploy_status='deployed' 검사. (허용여부, 에러응답) 튜플."""
+    """슬라이드 접근 단일 게이트. (허용여부, 에러응답) 튜플.
+
+    ★ 격리 기준은 '슬라이드 기관 == 사용자 기관'(구 유튜브형 화석)이 아니라 '과목 구독'이다.
+       콘텐츠는 institution_id='SA'로 채번되며, 'SA'는 소유자 표시일 뿐 공용/기본제공이 아니다(§6-1).
+
+    일반 사용자는 다음 전부(AND) 충족 시에만 접근:
+      (1) deploy_status == 'deployed'
+      (2) g.subject_code == slide.subject_code   (등록 과목 == 슬라이드 과목)
+      (3) 사용자 기관이 그 과목 접근권 보유 (_institution_subject_access)
+    is_special: deploy_status=='rejected'만 차단, institution·subject 축은 우회(§15-8).
+    """
     from flask import g
     info = get_slide_institution(slide_id)
     if info is None:
         return False, _tile_err("SLIDE_NOT_FOUND", "슬라이드를 찾을 수 없습니다", 404)
-    inst_id, deploy_status = info
+    _inst_id, slide_subject, deploy_status = info
     if getattr(g, 'is_special', False):
-        # [M1] 특별계정: qc_pending(미배포)·deployed 허용. 단 rejected(반려)는 차단 (CEO 결정).
+        # [M1] 특별계정: rejected(반려)만 차단, 나머지(qc_pending/deployed) 허용 (CEO 결정, §15-8).
         # 반려 원본은 품질 문제/재공급 대상이므로 특별계정에도 노출 금지(§15-3 라이선스 격리).
         if deploy_status == 'rejected':
             return False, _tile_err("FORBIDDEN", "반려된 슬라이드입니다", 403)
         return True, None
-    # deploy_status != 'deployed': 미배포 슬라이드 학생 접근 불가 (§8 라이선스 격리)
+    # (1) 미배포 슬라이드 학생 접근 불가 (§8 라이선스 격리)
     if deploy_status != 'deployed':
         return False, _tile_err("FORBIDDEN", "접근 권한이 없습니다", 403)
-    if inst_id != getattr(g, 'institution_id', None):
+    # (2) 과목 격리: 사용자 등록 과목과 슬라이드 과목 일치 (§0-4·§8 과목 축)
+    if slide_subject != getattr(g, 'subject_code', None):
+        return False, _tile_err("FORBIDDEN", "접근 권한이 없습니다", 403)
+    # (3) 사용자 기관이 그 과목을 구독/접근권 보유
+    if not _institution_subject_access(getattr(g, 'institution_id', None), slide_subject):
         return False, _tile_err("FORBIDDEN", "접근 권한이 없습니다", 403)
     return True, None
+
+
+def _visible_slides(slides):
+    """목록/뷰어용 가시 슬라이드 필터 — _slide_access_allowed와 동일 기준의 단일 진실.
+
+    일반 사용자: deploy_status='deployed' AND slide.subject==g.subject_code AND 기관이 그 과목 접근권 보유.
+       (2)가 과목 일치를 강제하므로 (3)은 g.subject_code 접근권 1회 확인으로 충분(과목당 N쿼리 회피).
+    is_special: rejected만 제외(§15-8 검수 목적).
+    """
+    from flask import g
+    if getattr(g, 'is_special', False):
+        return [s for s in slides if s.get('deploy_status') != 'rejected']
+    subject = getattr(g, 'subject_code', None)
+    inst = getattr(g, 'institution_id', None)
+    if not subject or not _institution_subject_access(inst, subject):
+        return []
+    return [
+        s for s in slides
+        if s.get('deploy_status') == 'deployed' and s.get('subject_code') == subject
+    ]
 
 
 def _verify_tile_request(slide_id):
@@ -442,13 +511,8 @@ def login_page():
 @app.route('/viewer')
 @page_login_required
 def viewer_default():
-    from flask import g
     data = load_slides()
-    slides = [
-        s for s in data.get('slides', [])
-        if s.get('deploy_status') == 'deployed'
-        and (getattr(g, 'is_special', False) or s.get('institution') == getattr(g, 'institution_id', None))
-    ]
+    slides = _visible_slides(data.get('slides', []))
     if slides:
         return redirect(f'/viewer/{slides[0]["id"]}')
     return redirect('/')
@@ -456,17 +520,14 @@ def viewer_default():
 @app.route('/viewer/<slide_id>')
 @page_login_required
 def viewer(slide_id):
-    from flask import g
     data = load_slides()
     slide_info = next((s for s in data.get('slides', []) if s['id'] == slide_id), None)
     if not slide_info:
         return redirect('/slides')
-    # 기관 격리 + deploy_status 차단: 타일 토큰 발급 전 검증 (§8 라이선스 격리)
-    if not getattr(g, 'is_special', False):
-        if slide_info.get('institution') != getattr(g, 'institution_id', None):
-            return redirect('/')
-        if slide_info.get('deploy_status') != 'deployed':
-            return redirect('/')
+    # 단일 게이트: 과목 구독 기준 접근 판정 — 타일 토큰 발급(아래) 전 반드시 통과 (§8 라이선스 격리).
+    allowed, _aerr = _slide_access_allowed(slide_id)
+    if not allowed:
+        return redirect('/slides')
 
     use_ec2 = slide_info.get('tileserver') == 'ec2'
 
@@ -557,14 +618,9 @@ small {{ color:rgba(255,255,255,0.25); font-size:12px; margin-top:8px; display:b
 @app.route('/slides')
 @page_login_required
 def slides():
-    from flask import g
     data = load_slides()
-    # 기관 격리 + 배포 상태 검사: deploy_status='deployed' 슬라이드만 학생에게 표시
-    all_slides = [
-        s for s in data.get('slides', [])
-        if s.get('deploy_status') == 'deployed'
-        and (getattr(g, 'is_special', False) or s.get('institution') == getattr(g, 'institution_id', None))
-    ]
+    # 단일 게이트: 과목 구독 기준으로 가시 슬라이드 필터 (기관 일치 화석 제거, §6-1·§8)
+    all_slides = _visible_slides(data.get('slides', []))
     systems = {}
     stains = {}
     for s in all_slides:

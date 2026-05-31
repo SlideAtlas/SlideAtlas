@@ -30,7 +30,7 @@ os.environ["GMAIL_APP_PW"] = "test-app-pw"
 
 # Flask 앱 로딩
 from server_render import app
-from auth.decorators import encode_token, decode_token, COOKIE_NAME
+from auth.decorators import encode_token, decode_token, COOKIE_NAME, generate_tile_token
 
 
 @pytest.fixture
@@ -562,7 +562,7 @@ def test_login_required_session_token_mismatch(client, mock_db):
         client.set_cookie(COOKIE_NAME, token)
 
         mock_db["cursor"].fetchone.return_value = (
-            "new-session-token", "active", None  # session_token, status, subscription_end
+            "new-session-token", "active", "HST", None  # session_token, status, subject_code, subscription_end
         )
 
         resp = client.get("http://localhost/api/auth/me")
@@ -589,7 +589,7 @@ def test_login_required_pending_verification(client, mock_db):
         client.set_cookie(COOKIE_NAME, token)
         
         mock_db["cursor"].fetchone.return_value = (
-            "valid-session-123", "pending_verification", None
+            "valid-session-123", "pending_verification", "HST", None
         )
 
         resp = client.get("/api/auth/me")
@@ -615,8 +615,8 @@ def test_login_required_success(client, mock_db):
 
         mock_db["cursor"].fetchone.side_effect = [
             # fail-closed(§8): 매칭 구독 없으면(None) SUBSCRIPTION_EXPIRED → 유효 구독일 제공
-            ("valid-session-123", "active",
-             datetime.now(timezone.utc).date() + timedelta(days=365)),   # _authenticate: session_token, status, subscription_end
+            ("valid-session-123", "active", "HST",
+             datetime.now(timezone.utc).date() + timedelta(days=365)),   # _authenticate: session_token, status, subject_code, subscription_end
             (1, "test@example.com", "student", "YU", False, "active", None)  # me()
         ]
 
@@ -676,8 +676,8 @@ def test_logout_success(client, mock_db):
 
         mock_db["cursor"].fetchone.return_value = (
             # fail-closed(§8): 유효 구독일 제공해 _authenticate 통과 → logout 도달
-            "valid-session-123", "active",
-            datetime.now(timezone.utc).date() + timedelta(days=365)   # session_token, status, subscription_end
+            "valid-session-123", "active", "HST",
+            datetime.now(timezone.utc).date() + timedelta(days=365)   # session_token, status, subject_code, subscription_end
         )
 
         # Werkzeug 3.x: full URL for domain matching; X-CSRF-Token required by login_required
@@ -904,7 +904,7 @@ def test_csrf_missing_header_returns_403(client, mock_db):
 
         # fail-closed(§8): 유효 구독일 제공해 _authenticate 통과 → CSRF 검사 도달
         mock_db["cursor"].fetchone.return_value = (
-            "sess123", "active", datetime.now(timezone.utc).date() + timedelta(days=365))
+            "sess123", "active", "HST", datetime.now(timezone.utc).date() + timedelta(days=365))
 
         # No X-CSRF-Token header → 403
         resp = client.post("http://localhost/api/auth/logout")
@@ -928,7 +928,7 @@ def test_csrf_mismatched_token_returns_403(client, mock_db):
 
         # fail-closed(§8): 유효 구독일 제공해 _authenticate 통과 → CSRF 검사 도달
         mock_db["cursor"].fetchone.return_value = (
-            "sess123", "active", datetime.now(timezone.utc).date() + timedelta(days=365))
+            "sess123", "active", "HST", datetime.now(timezone.utc).date() + timedelta(days=365))
 
         resp = client.post(
             "http://localhost/api/auth/logout",
@@ -1033,7 +1033,7 @@ def test_session_revoked_on_db_mismatch(client, mock_db):
 
         # DB에는 다른 session_token (다른 기기에서 로그인)
         mock_db["cursor"].fetchone.return_value = (
-            "different-token-in-db", "active", None
+            "different-token-in-db", "active", "HST", None
         )
 
         resp = client.get("http://localhost/api/auth/me")
@@ -1063,7 +1063,7 @@ def test_subscription_expired_returns_401(client, mock_db):
 
         expired_date = date.today() - timedelta(days=1)
         mock_db["cursor"].fetchone.return_value = (
-            "valid-sess", "active", expired_date
+            "valid-sess", "active", "HST", expired_date
         )
 
         resp = client.get("http://localhost/api/auth/me")
@@ -1092,7 +1092,7 @@ def test_is_special_subscription_expired_passes(client, mock_db):
 
         expired_date = date.today() - timedelta(days=30)
         mock_db["cursor"].fetchone.side_effect = [
-            ("valid-sess", "active", expired_date),   # _authenticate
+            ("valid-sess", "active", None, expired_date),   # _authenticate: is_special이라 subject_code 무관
             (1, "admin@test.com", "admin", "YU", True, "active", None),  # me()
         ]
 
@@ -1107,9 +1107,11 @@ def test_tile_token_invalid_returns_correct_code(client, mock_db):
     """타일 토큰 검증 실패 → TILE_TOKEN_INVALID (SESSION_REVOKED·SUBSCRIPTION_EXPIRED 아님)"""
     with patch("server_render.get_db_conn") as mock_get_db, \
          patch("server_render.release_db_conn"), \
-         patch("server_render.get_slide_institution") as mock_inst:
+         patch("server_render.get_slide_institution") as mock_inst, \
+         patch("server_render._institution_subject_access", return_value=True):
         mock_get_db.return_value = mock_db["conn"]
-        mock_inst.return_value = ("YU", "deployed")  # inst_id, deploy_status (현 계약)
+        # 단일 게이트 계약: (institution_id, subject_code, deploy_status)
+        mock_inst.return_value = ("SA", "HST", "deployed")
 
         payload = {
             "sub": "1",
@@ -1122,9 +1124,9 @@ def test_tile_token_invalid_returns_correct_code(client, mock_db):
         # Werkzeug 3.x: set_cookie + full URL for cookie delivery
         client.set_cookie(COOKIE_NAME, token)
 
-        # fail-closed(§8): 유효 구독일 제공해 _authenticate 통과 → 타일토큰 검사 도달
+        # fail-closed(§8): 유효 구독일 + 과목(HST)이 슬라이드 과목과 일치 → 게이트 통과 → 타일토큰 검사 도달
         mock_db["cursor"].fetchone.return_value = (
-            "valid-sess", "active", datetime.now(timezone.utc).date() + timedelta(days=365)
+            "valid-sess", "active", "HST", datetime.now(timezone.utc).date() + timedelta(days=365)
         )
 
         # 타일 토큰 없이 DZI 접근 (?t= 미포함)
@@ -1135,3 +1137,75 @@ def test_tile_token_invalid_returns_correct_code(client, mock_db):
         assert data["error"] == "TILE_TOKEN_INVALID"
         # 프론트 인터셉터가 로그인 세션 에러로 오판하지 않도록 구분
         assert data["error"] not in ("SESSION_REVOKED", "SUBSCRIPTION_EXPIRED", "TOKEN_INVALID")
+
+
+# ─────────────────────────────────────────────
+# 슬라이드 접근 단일 게이트 (과목 구독 기준 — 기관일치 화석 제거)
+# ─────────────────────────────────────────────
+
+def _gate_setup(client, mock_db, *, subject_code, is_special=False,
+                institution_id="YU", user_id="1"):
+    """일반/특별 사용자 로그인 컨텍스트 구성. _authenticate가 g.subject_code를 세팅하도록 mock."""
+    payload = {
+        "sub": user_id, "institution_id": institution_id, "role": "student",
+        "session_token": "valid-sess", "is_special": is_special,
+    }
+    client.set_cookie(COOKIE_NAME, encode_token(payload))
+    # _authenticate row: (session_token, status, subject_code, subscription_end)
+    mock_db["cursor"].fetchone.return_value = (
+        "valid-sess", "active", subject_code,
+        datetime.now(timezone.utc).date() + timedelta(days=365),
+    )
+
+
+def test_gate_cross_institution_same_subject_allowed(client, mock_db):
+    """★#1: 기관이 SA가 아니어도(YU 학생) SA-HST-* 슬라이드 접근 허용 (과목 구독 기준)."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"), \
+         patch("server_render.get_slide_institution", return_value=("SA", "HST", "deployed")), \
+         patch("server_render._institution_subject_access", return_value=True):
+        mock_get_db.return_value = mock_db["conn"]
+        _gate_setup(client, mock_db, subject_code="HST", institution_id="YU")
+        # 유효 타일 토큰 제공 → 게이트 통과 시 SLIDE_CACHE 미적재로 503(Loading) = 접근 허용 증명
+        t = generate_tile_token("1", "YU", "SA-HST-001")
+        resp = client.get(f"http://localhost/dzi/SA-HST-001.dzi?t={t}")
+        assert resp.status_code == 503  # 게이트·타일토큰 통과(미적재 로딩) — 403/401 아님
+
+
+def test_gate_institution_not_subscribed_subject_403(client, mock_db):
+    """★#2: 기관이 PRT 미구독 → 그 기관 PRT 학생의 SA-PRT-* 접근 403 (게이트 (3) 기관 미구독)."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"), \
+         patch("server_render.get_slide_institution", return_value=("SA", "PRT", "deployed")), \
+         patch("server_render._institution_subject_access", return_value=False):  # 기관이 PRT 미구독
+        mock_get_db.return_value = mock_db["conn"]
+        _gate_setup(client, mock_db, subject_code="PRT", institution_id="YU")
+        resp = client.get("http://localhost/dzi/SA-PRT-001.dzi")
+        assert resp.status_code == 403
+        assert resp.get_json()["error"] == "FORBIDDEN"
+
+
+def test_gate_subject_mismatch_403(client, mock_db):
+    """g.subject_code != slide.subject_code (같은 기관·다른 과목 등록) → 403 (게이트 (2))."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"), \
+         patch("server_render.get_slide_institution", return_value=("SA", "PRT", "deployed")), \
+         patch("server_render._institution_subject_access", return_value=True):
+        mock_get_db.return_value = mock_db["conn"]
+        _gate_setup(client, mock_db, subject_code="HST")  # HST 등록 학생이 PRT 슬라이드 접근
+        resp = client.get("http://localhost/dzi/SA-PRT-001.dzi")
+        assert resp.status_code == 403
+        assert resp.get_json()["error"] == "FORBIDDEN"
+
+
+def test_gate_not_deployed_403(client, mock_db):
+    """deploy_status != 'deployed' 슬라이드 → 일반 사용자 403 (게이트 (1))."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"), \
+         patch("server_render.get_slide_institution", return_value=("SA", "HST", "qc_pending")), \
+         patch("server_render._institution_subject_access", return_value=True):
+        mock_get_db.return_value = mock_db["conn"]
+        _gate_setup(client, mock_db, subject_code="HST")
+        resp = client.get("http://localhost/dzi/SA-HST-001.dzi")
+        assert resp.status_code == 403
+        assert resp.get_json()["error"] == "FORBIDDEN"

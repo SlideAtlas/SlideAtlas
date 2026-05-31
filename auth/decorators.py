@@ -28,6 +28,13 @@ COOKIE_NAME = "access_token"
 TILE_TOKEN_TTL = 300  # 타일 접근 토큰 유효시간 5분 (CLAUDE.md §8 Presigned URL TTL 5분)
 
 
+def _today_kst():
+    """KST(UTC+9) 기준 오늘 날짜. 날짜 경계(접근창·만료) 타임존 일관 처리(§16·§18 D10).
+    Render 서버는 UTC이므로 date.today()/now(utc).date()는 자정 부근에 KST와 하루 어긋날 수 있다.
+    """
+    return (datetime.now(timezone.utc) + timedelta(hours=9)).date()
+
+
 def _jwt_secret():
     # 시크릿은 .env/환경변수에서만 읽는다. 미설정 시 기동 단계에서 실패시켜
     # 약한 기본키로 토큰이 발급되는 사고를 막는다.
@@ -145,7 +152,7 @@ def _authenticate():
             #   NULL은 없다(§0-3·§0-4). 과목 축을 일급으로 양축(institution_id, subject_code) 매칭.
             # 반환 shape(session_token, status, subscription_end)는 변경하지 않는다(다운스트림·테스트 호환).
             cur.execute(
-                """SELECT u.session_token, u.status,
+                """SELECT u.session_token, u.status, u.subject_code,
                           (SELECT MAX(s.subscription_end)
                              FROM subscriptions s
                             WHERE s.institution_id = u.institution_id
@@ -163,7 +170,7 @@ def _authenticate():
     if row is None:
         return ("TOKEN_INVALID", "다시 로그인하세요")
 
-    db_session, status, subscription_end = row
+    db_session, status, subject_code, subscription_end = row
 
     # ② 세션 토큰 검증 — 반드시 아래 순서를 지킬 것 (순서 변경 금지)
     # token_session 존재 여부를 먼저 확인해야 None vs None 비교로
@@ -189,6 +196,7 @@ def _authenticate():
 
     g.user_id = user_id
     g.institution_id = payload.get("institution_id")
+    g.subject_code = subject_code   # [A] 과목 격리 게이트의 기준 (사용자가 등록된 과목)
     g.role = payload.get("role")
     g.is_special = payload.get("is_special", False)
     return None
