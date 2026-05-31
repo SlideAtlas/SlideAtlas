@@ -414,9 +414,12 @@ def verify_email():
                 "UPDATE email_verifications SET consumed = TRUE WHERE id = %s",
                 (ev_id,),
             )
+            # roster는 (기관×과목×이메일) 독립 행(§6-2) — 인증된 해당 과목 명단만 표시.
+            # (institution_id, email)만으로 갱신하면 다과목 명단을 일괄 over-mark(Codex WARN2).
             cur.execute(
-                "UPDATE institution_rosters SET is_verified = TRUE WHERE institution_id = %s AND lower(email) = %s",
-                (institution_id, email),
+                "UPDATE institution_rosters SET is_verified = TRUE "
+                "WHERE institution_id = %s AND subject_code = %s AND lower(email) = %s",
+                (institution_id, subject_code, email),
             )
         conn.commit()
         token = encode_token(payload)
