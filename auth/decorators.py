@@ -178,10 +178,13 @@ def _authenticate():
     if status != "active":
         return ("TOKEN_INVALID", "다시 로그인하세요")  # 비활성·잠금 계정
 
-    # ③ 기관 구독 만료 — is_special 계정 제외, 매 요청마다 확인
-    if not payload.get("is_special") and subscription_end is not None:
+    # ③ 구독 만료 — (institution_id, subject_code) 매칭 구독 기준, 매 요청 확인 (§8).
+    #    §8 명문: "매칭 구독이 없거나 만료면 SUBSCRIPTION_EXPIRED. is_special 예외."
+    #    → 매칭 구독이 없으면(subscription_end IS NULL) 라이선스 격리상 차단한다(fail-closed).
+    #    이전 `is not None` 가드는 매칭 없음을 통과시키는 fail-open 결함이었다(Codex FAIL1).
+    if not payload.get("is_special"):
         from datetime import date
-        if subscription_end < date.today():
+        if subscription_end is None or subscription_end < date.today():
             return ("SUBSCRIPTION_EXPIRED", "구독이 만료되었습니다. 과 사무실에 문의하세요")
 
     g.user_id = user_id

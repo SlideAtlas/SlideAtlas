@@ -614,7 +614,9 @@ def test_login_required_success(client, mock_db):
         client.set_cookie(COOKIE_NAME, token)
 
         mock_db["cursor"].fetchone.side_effect = [
-            ("valid-session-123", "active", None),   # _authenticate: session_token, status, subscription_end
+            # fail-closed(§8): 매칭 구독 없으면(None) SUBSCRIPTION_EXPIRED → 유효 구독일 제공
+            ("valid-session-123", "active",
+             datetime.now(timezone.utc).date() + timedelta(days=365)),   # _authenticate: session_token, status, subscription_end
             (1, "test@example.com", "student", "YU", False, "active", None)  # me()
         ]
 
@@ -673,7 +675,9 @@ def test_logout_success(client, mock_db):
         client.set_cookie("csrf_token", csrf_value)
 
         mock_db["cursor"].fetchone.return_value = (
-            "valid-session-123", "active", None   # session_token, status, subscription_end
+            # fail-closed(§8): 유효 구독일 제공해 _authenticate 통과 → logout 도달
+            "valid-session-123", "active",
+            datetime.now(timezone.utc).date() + timedelta(days=365)   # session_token, status, subscription_end
         )
 
         # Werkzeug 3.x: full URL for domain matching; X-CSRF-Token required by login_required
@@ -898,7 +902,9 @@ def test_csrf_missing_header_returns_403(client, mock_db):
         client.set_cookie(COOKIE_NAME, token)
         client.set_cookie("csrf_token", "some-csrf-token")
 
-        mock_db["cursor"].fetchone.return_value = ("sess123", "active", None)
+        # fail-closed(§8): 유효 구독일 제공해 _authenticate 통과 → CSRF 검사 도달
+        mock_db["cursor"].fetchone.return_value = (
+            "sess123", "active", datetime.now(timezone.utc).date() + timedelta(days=365))
 
         # No X-CSRF-Token header → 403
         resp = client.post("http://localhost/api/auth/logout")
@@ -920,7 +926,9 @@ def test_csrf_mismatched_token_returns_403(client, mock_db):
         client.set_cookie(COOKIE_NAME, token)
         client.set_cookie("csrf_token", "correct-csrf-token")
 
-        mock_db["cursor"].fetchone.return_value = ("sess123", "active", None)
+        # fail-closed(§8): 유효 구독일 제공해 _authenticate 통과 → CSRF 검사 도달
+        mock_db["cursor"].fetchone.return_value = (
+            "sess123", "active", datetime.now(timezone.utc).date() + timedelta(days=365))
 
         resp = client.post(
             "http://localhost/api/auth/logout",
@@ -1114,8 +1122,9 @@ def test_tile_token_invalid_returns_correct_code(client, mock_db):
         # Werkzeug 3.x: set_cookie + full URL for cookie delivery
         client.set_cookie(COOKIE_NAME, token)
 
+        # fail-closed(§8): 유효 구독일 제공해 _authenticate 통과 → 타일토큰 검사 도달
         mock_db["cursor"].fetchone.return_value = (
-            "valid-sess", "active", None
+            "valid-sess", "active", datetime.now(timezone.utc).date() + timedelta(days=365)
         )
 
         # 타일 토큰 없이 DZI 접근 (?t= 미포함)

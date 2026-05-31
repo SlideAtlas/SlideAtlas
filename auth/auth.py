@@ -608,10 +608,12 @@ def login():
                     return _err("ACCOUNT_LOCKED", "보안상 계정이 잠겼습니다. 과 사무실에 문의하세요", 403)
                 return _err("INVALID_CREDENTIALS", "이메일 또는 비밀번호가 올바르지 않습니다", 401)
 
-            # 구독 만료 검사 (is_special 계정은 만료 무관 허용)
-            if not is_special and subscription_end is not None:
+            # 구독 만료 검사 (§8: 매칭 구독이 없거나 만료면 차단, is_special 예외).
+            #    (institution_id, subject_code) 매칭 구독이 없으면 subscription_end=NULL →
+            #    라이선스 격리상 차단(fail-closed). is_special은 만료 무관 허용.
+            if not is_special:
                 today = datetime.now(timezone.utc).date()
-                if subscription_end < today:
+                if subscription_end is None or subscription_end < today:
                     conn.rollback()
                     return _err("SUBSCRIPTION_EXPIRED", "구독이 만료되었습니다", 403)
 
