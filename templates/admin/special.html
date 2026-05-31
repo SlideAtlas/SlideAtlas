@@ -1,0 +1,341 @@
+{% extends "admin/base.html" %}
+{% block title %}특별 계정 — SlideAtlas Admin{% endblock %}
+{% block page_title %}특별 계정{% endblock %}
+
+{% block extra_style %}
+.lead{font-size:12.5px;color:var(--muted);margin-bottom:18px;max-width:680px;line-height:1.7}
+.lead b{color:var(--ink)}
+
+.toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+
+/* 오버레이 / 모달 */
+.overlay{position:fixed;inset:0;background:rgba(10,18,35,.55);backdrop-filter:blur(2px);
+  display:none;align-items:flex-start;justify-content:center;padding:48px 16px;overflow:auto;z-index:1000}
+.overlay.show{display:flex}
+.modal-md{background:#fff;width:100%;max-width:520px;border-radius:16px;
+  box-shadow:0 10px 40px rgba(15,31,61,.22);overflow:hidden;animation:pop .2s ease}
+@keyframes pop{from{transform:translateY(10px) scale(.98);opacity:0}to{transform:none;opacity:1}}
+.m-head{background:var(--navy);color:#fff;padding:17px 22px;display:flex;
+  justify-content:space-between;align-items:center}
+.m-head h2{font-size:15.5px;font-weight:700}
+.m-head p{font-size:12px;color:#9fb0cb;margin-top:2px}
+.x-btn{background:rgba(255,255,255,.1);border:none;color:#fff;width:30px;height:30px;
+  border-radius:8px;font-size:17px;cursor:pointer;line-height:1}
+.x-btn:hover{background:rgba(255,255,255,.2)}
+.m-body{padding:20px 22px}
+.m-foot{padding:14px 22px;border-top:1px solid var(--line);display:flex;
+  justify-content:flex-end;gap:9px;background:#FBFCFE}
+
+.fld{margin-bottom:14px}
+.fld label{font-size:12px;font-weight:700;color:#3c4759;display:block;margin-bottom:5px}
+.fld .req{color:var(--danger)}
+.fld input,.fld select{width:100%;border:1px solid var(--line);border-radius:8px;
+  padding:9px 11px;font-size:13px;font-family:inherit;color:var(--ink);outline:none}
+.fld input:focus,.fld select:focus{border-color:var(--sky);box-shadow:0 0 0 3px rgba(91,184,212,.18)}
+.fld input[disabled]{background:#F6F8FB;color:var(--muted)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.note{font-size:11.5px;color:var(--muted);margin-top:4px}
+.note-warn{font-size:11.5px;color:var(--warn);margin-top:6px}
+
+/* 경고 배너 */
+.warn-banner{background:#FFF8EC;border:1px solid #FADFA1;border-radius:10px;
+  padding:12px 14px;font-size:12px;color:#7a4f00;margin-top:12px;line-height:1.6}
+.warn-banner b{font-weight:700}
+
+/* 빈 상태 */
+.empty-state{text-align:center;padding:48px 0;color:var(--muted);font-size:14px}
+{% endblock %}
+
+{% block content %}
+<p class="lead">자문위원·검수자·데모·공급사 평가 등 <b>구독 만료와 무관하게 접근</b>하는 계정입니다.
+  콘텐츠 전체를 열람하며, 워터마킹은 일반 계정과 동일하게 적용되어 유출 추적이 유지됩니다.</p>
+
+<div class="toolbar">
+  <span id="account-count" class="sub"></span>
+  <button class="btn btn-pri" onclick="openCreate()">＋ 특별 계정 발급</button>
+</div>
+
+<div class="card" style="padding:0">
+  <table id="special-table">
+    <thead>
+      <tr>
+        <th style="width:220px">이메일 / 이름</th>
+        <th>소속 기관</th>
+        <th>용도</th>
+        <th>만료 · 재검토</th>
+        <th>발급자</th>
+        <th style="width:110px">상태</th>
+        <th style="width:110px"></th>
+      </tr>
+    </thead>
+    <tbody id="special-tbody">
+      <tr><td colspan="7" class="empty-state">로딩 중…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="warn-banner" id="indef-warn" style="display:none">
+  ⚠ <b>무기한 계정이 있습니다.</b>
+  시간이 지나면 잊힌 채 살아남아 보안·라이선스 구멍이 됩니다.
+  가능하면 만료일을 두고, 만료 14일 전 사전 알림을 받으세요.
+</div>
+
+
+<!-- 발급 모달 -->
+<div class="overlay" id="ov-create">
+  <div class="modal-md">
+    <div class="m-head">
+      <div>
+        <h2>특별 계정 발급</h2>
+        <p>구독 만료와 무관하게 전체 콘텐츠에 접근합니다</p>
+      </div>
+      <button class="x-btn" onclick="closeModal('ov-create')">×</button>
+    </div>
+    <div class="m-body">
+      <div id="create-err" class="note-warn" style="display:none"></div>
+
+      <div class="fld">
+        <label>이메일 <span class="req">*</span></label>
+        <input id="c-email" type="email" placeholder="name@university.ac.kr">
+      </div>
+
+      <div class="grid2">
+        <div class="fld">
+          <label>용도 <span class="req">*</span></label>
+          <select id="c-purpose">
+            <option value="자문위원">자문위원</option>
+            <option value="검수자">검수자 (대학원생)</option>
+            <option value="데모">데모</option>
+            <option value="공급사 평가">공급사 평가</option>
+            <option value="기타">기타</option>
+          </select>
+        </div>
+        <div class="fld">
+          <label>소속 기관 <span class="note">(선택)</span></label>
+          <select id="c-inst">
+            <option value="">— 없음 —</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="grid2">
+        <div class="fld">
+          <label>만료일 <span class="note" style="font-weight:500">(선택)</span></label>
+          <input id="c-expires" type="date">
+        </div>
+        <div class="fld">
+          <label>재검토일 <span class="note" style="font-weight:500">(선택)</span></label>
+          <input id="c-review" type="date">
+        </div>
+      </div>
+
+      <div class="fld">
+        <label>접근 범위</label>
+        <input disabled value="전체 콘텐츠 (고정)">
+      </div>
+
+      <div class="note-warn">
+        만료일을 비우면 무기한 계정이 됩니다 (권장하지 않음).
+        워터마킹은 일반 계정과 동일하게 적용됩니다.
+      </div>
+    </div>
+    <div class="m-foot">
+      <button class="btn btn-ghost" onclick="closeModal('ov-create')">취소</button>
+      <button class="btn btn-pri" onclick="submitCreate()">발급</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- 비활성화 확인 모달 -->
+<div class="overlay" id="ov-deactivate">
+  <div class="modal-md">
+    <div class="m-head">
+      <div><h2>계정 비활성화</h2></div>
+      <button class="x-btn" onclick="closeModal('ov-deactivate')">×</button>
+    </div>
+    <div class="m-body">
+      <p style="font-size:13.5px;line-height:1.7">
+        <b id="deact-email"></b> 계정을 비활성화합니다.<br>
+        즉시 접근이 차단되며, 나중에 다시 활성화할 수 있습니다.
+      </p>
+    </div>
+    <div class="m-foot">
+      <button class="btn btn-ghost" onclick="closeModal('ov-deactivate')">취소</button>
+      <button class="btn btn-danger" onclick="confirmDeactivate()">비활성화</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const CSRF = document.getElementById('admin-csrf-token').value;
+let _deactId = null;
+
+// 기관 목록
+fetch('/admin/api/reports/institutions')
+  .then(r => r.json())
+  .then(d => {
+    if (!d.ok) return;
+    const sel = document.getElementById('c-inst');
+    d.institutions.forEach(i => {
+      const opt = document.createElement('option');
+      opt.value = i.id; opt.textContent = i.name_ko;
+      sel.appendChild(opt);
+    });
+  });
+
+function loadAccounts() {
+  fetch('/admin/api/special/accounts')
+    .then(r => r.json())
+    .then(d => {
+      if (!d.ok) return;
+      renderTable(d.accounts);
+    });
+}
+
+function renderTable(accounts) {
+  const tbody = document.getElementById('special-tbody');
+  const countEl = document.getElementById('account-count');
+  countEl.textContent = `전체 ${accounts.length}개 계정`;
+
+  let hasIndef = false;
+  if (!accounts.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="empty-state">발급된 특별 계정이 없습니다.</td></tr>';
+    document.getElementById('indef-warn').style.display = 'none';
+    return;
+  }
+
+  tbody.innerHTML = accounts.map(a => {
+    if (a.no_expiry && a.status === 'active') hasIndef = true;
+
+    // 만료 배지
+    let expiryHtml = '';
+    if (a.no_expiry) {
+      expiryHtml = '<span style="color:var(--danger)">무기한</span> '
+        + '<span class="pill p-red" style="margin-left:4px"><span class="led l-red"></span>검토 권장</span>';
+    } else if (a.expires_at) {
+      const d = a.dday;
+      let pillCls = 'p-ok', ledCls = 'l-ok', label = 'D-' + Math.abs(d);
+      if (d < 0)       { pillCls = 'p-red';  ledCls = 'l-red';  label = '만료됨'; }
+      else if (d <= 14){ pillCls = 'p-red';  ledCls = 'l-red';  label = 'D-' + d; }
+      else if (d <= 30){ pillCls = 'p-warn'; ledCls = 'l-warn'; label = 'D-' + d; }
+      expiryHtml = a.expires_at
+        + ` <span class="pill ${pillCls}" style="margin-left:4px"><span class="led ${ledCls}"></span>${label}</span>`;
+    } else {
+      expiryHtml = '<span class="sub">—</span>';
+    }
+
+    // 상태 배지
+    const isActive = a.status === 'active';
+    const statusHtml = isActive
+      ? '<span class="pill p-ok"><span class="led l-ok"></span>활성</span>'
+      : '<span class="pill p-gray"><span class="led l-gray"></span>비활성</span>';
+
+    // 액션 버튼
+    const actionHtml = isActive
+      ? `<button class="btn btn-ghost btn-sm" onclick="openDeactivate(${a.id},'${escHtml(a.email)}')">비활성화</button>`
+      : `<button class="btn btn-ghost btn-sm" onclick="activate(${a.id})">활성화</button>`;
+
+    return `<tr>
+      <td>
+        <b>${escHtml(a.email)}</b>
+      </td>
+      <td>${escHtml(a.inst_name || '—')}</td>
+      <td>${escHtml(a.purpose || '—')}</td>
+      <td>${expiryHtml}</td>
+      <td>${escHtml(a.created_by_name || '—')}</td>
+      <td>${statusHtml}</td>
+      <td><div class="row-act">${actionHtml}</div></td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('indef-warn').style.display = hasIndef ? '' : 'none';
+}
+
+function escHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// 모달 열기/닫기
+function openCreate() {
+  document.getElementById('c-email').value = '';
+  document.getElementById('c-purpose').value = '자문위원';
+  document.getElementById('c-inst').value = '';
+  document.getElementById('c-expires').value = '';
+  document.getElementById('c-review').value = '';
+  document.getElementById('create-err').style.display = 'none';
+  document.getElementById('ov-create').classList.add('show');
+}
+
+function closeModal(id) {
+  document.getElementById(id).classList.remove('show');
+}
+
+function openDeactivate(id, email) {
+  _deactId = id;
+  document.getElementById('deact-email').textContent = email;
+  document.getElementById('ov-deactivate').classList.add('show');
+}
+
+// 발급 제출
+function submitCreate() {
+  const email   = document.getElementById('c-email').value.trim();
+  const purpose = document.getElementById('c-purpose').value;
+  const inst    = document.getElementById('c-inst').value;
+  const expires = document.getElementById('c-expires').value || null;
+  const review  = document.getElementById('c-review').value  || null;
+  const errEl   = document.getElementById('create-err');
+
+  if (!email) { errEl.textContent = '이메일을 입력하세요.'; errEl.style.display=''; return; }
+  errEl.style.display = 'none';
+
+  fetch('/admin/api/special/accounts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF },
+    body: JSON.stringify({ email, purpose, institution_id: inst || null,
+                           expires_at: expires, review_at: review }),
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (!d.ok) { errEl.textContent = d.error || '오류가 발생했습니다.'; errEl.style.display=''; return; }
+    closeModal('ov-create');
+    loadAccounts();
+  });
+}
+
+// 비활성화 확인
+function confirmDeactivate() {
+  if (!_deactId) return;
+  fetch(`/admin/api/special/accounts/${_deactId}/deactivate`, {
+    method: 'POST',
+    headers: { 'X-CSRF-Token': CSRF },
+  })
+  .then(r => r.json())
+  .then(d => {
+    closeModal('ov-deactivate');
+    if (d.ok) loadAccounts();
+  });
+}
+
+// 활성화 (확인 없이 즉시)
+function activate(id) {
+  fetch(`/admin/api/special/accounts/${id}/activate`, {
+    method: 'POST',
+    headers: { 'X-CSRF-Token': CSRF },
+  })
+  .then(r => r.json())
+  .then(d => { if (d.ok) loadAccounts(); });
+}
+
+// 오버레이 클릭으로 닫기
+document.querySelectorAll('.overlay').forEach(o =>
+  o.addEventListener('click', e => { if (e.target === o) o.classList.remove('show'); })
+);
+
+// 초기 로드
+loadAccounts();
+</script>
+{% endblock %}

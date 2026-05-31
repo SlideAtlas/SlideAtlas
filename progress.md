@@ -1,3 +1,65 @@
+# SlideAtlas 슈퍼관리자 구현 진행 상황
+
+## S5-9 대시보드 — 2026-05-31 완료
+
+### 구현 완료
+- `server_render.py` S5-9: `/admin/api/dashboard` KPI API, `admin_dashboard` 라우트 단순화
+- `templates/admin/dashboard.html` — 전면 재작성 (KPI·만료 리스트·매출 추이·파이프라인·처리 대기)
+- `_send_inquiry_reply_email()` — TODO 주석 추가 (SES 교체 안내, 하드코딩 금지 명시)
+
+### 마이그레이션 (EC2에서 순서대로)
+```bash
+psql -h slideatlas-db.c94iwikwox6l.ap-northeast-2.rds.amazonaws.com \
+     -U slideatlas_admin -d slideatlas -p 5432 -f db/reports_special_schema.sql
+psql -h slideatlas-db.c94iwikwox6l.ap-northeast-2.rds.amazonaws.com \
+     -U slideatlas_admin -d slideatlas -p 5432 -f db/notices_inquiries_schema.sql
+```
+
+---
+
+## S5-7 공지 관리 + S5-8 1:1 문의 — 2026-05-31 완료
+
+### 구현 완료
+- `db/notices_inquiries_schema.sql` — 마이그레이션 (EC2 실행 필요)
+- `server_render.py` S5-7: `/admin/notices`, `/admin/api/notices/*` 8개 엔드포인트
+- `server_render.py` S5-8: `/admin/inquiries`, `/admin/api/inquiries/*` 4개 엔드포인트
+- `templates/admin/notices.html` — 공지 관리 (현재공지/보관함 탭, CRUD, 소프트 삭제)
+- `templates/admin/inquiries.html` — 1:1 문의 (목록+필터, 답변 모달, SES 발송)
+- `_load_notices()` 함수 — `notices` 테이블 → `announcements` 테이블로 수정
+
+### 마이그레이션 (EC2에서 두 파일 순서대로 실행)
+```bash
+# 1. S5-5/S5-6 마이그레이션 (아직 미실행이면)
+psql -h slideatlas-db.c94iwikwox6l.ap-northeast-2.rds.amazonaws.com \
+     -U slideatlas_admin -d slideatlas -p 5432 -f db/reports_special_schema.sql
+
+# 2. S5-7/S5-8 마이그레이션
+psql -h slideatlas-db.c94iwikwox6l.ap-northeast-2.rds.amazonaws.com \
+     -U slideatlas_admin -d slideatlas -p 5432 -f db/notices_inquiries_schema.sql
+```
+**포함 내용**: announcements, inquiries, inquiry_replies 테이블 CREATE — 모두 IF NOT EXISTS (멱등)
+
+---
+
+## S5-5 이용 리포트 + S5-6 특별 계정 — 2026-05-31 완료
+
+### 구현 완료
+- `db/reports_special_schema.sql` — 마이그레이션 (EC2 실행 필요, §마이그레이션 참고)
+- `server_render.py` S5-5: `/admin/reports`, `/admin/api/reports/*` 8개 엔드포인트
+- `server_render.py` S5-6: `/admin/special`, `/admin/api/special/accounts/*` 4개 엔드포인트
+- `templates/admin/reports.html` — 이용 리포트 페이지
+- `templates/admin/special.html` — 특별 계정 관리 페이지
+- `requirements.txt` — `openpyxl>=3.1.0` 추가 (엑셀 내보내기)
+
+### 마이그레이션 (EC2에서 실행)
+```bash
+psql -h slideatlas-db.c94iwikwox6l.ap-northeast-2.rds.amazonaws.com \
+     -U slideatlas_admin -d slideatlas -p 5432 -f db/reports_special_schema.sql
+```
+**포함 내용**: users 테이블 ADD COLUMN (special_expires_at, special_review_at, special_purpose, special_created_by, subject_code), chat_logs 테이블 CREATE, access_logs.institution_id ADD COLUMN — 모두 IF NOT EXISTS (멱등)
+
+---
+
 # SlideAtlas JWT 인증 테스트 실행 진행 상황
 
 **날짜**: 2026-05-30

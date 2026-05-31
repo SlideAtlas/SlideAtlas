@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}SlideAtlas Admin{% endblock %}</title>
+<link rel="icon" href="/static/slideatlas_logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --navy:#0F1F3D;--navy-2:#1B2F52;--sky:#5BB8D4;--sky-d:#3A93AE;
+    --ink:#1a2434;--muted:#6B7689;--line:#E2E7EF;--line-2:#EDF1F6;
+    --bg:#F4F6FA;--ok:#1E9E6A;--warn:#E08A1E;--danger:#D14C4C;--blue:#2F6FE0;
+    --shadow:0 10px 40px rgba(15,31,61,.18);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.5}
+  .app{display:flex;min-height:100vh}
+
+  /* ── 사이드바 ── */
+  .side{width:214px;background:var(--navy);color:#cdd6e6;flex-shrink:0;padding:20px 0;display:flex;flex-direction:column}
+  .logo{font-family:'Montserrat';font-weight:800;color:#fff;font-size:18px;padding:4px 22px 16px;letter-spacing:-.3px;text-decoration:none;display:block}
+  .logo span{color:var(--sky)}
+  .role-tag{margin:0 22px 14px;font-size:10.5px;font-weight:700;padding:4px 10px;border-radius:6px;text-align:center;letter-spacing:.5px}
+  .role-super{background:rgba(91,184,212,.18);color:var(--sky)}
+  .role-staff{background:rgba(224,138,30,.2);color:#f0b566}
+  .nav-sep{font-size:10.5px;letter-spacing:1px;color:#5e6c85;padding:16px 22px 7px;text-transform:uppercase}
+  .nav-i{display:flex;align-items:center;gap:10px;padding:10.5px 22px;font-size:13.5px;color:#aeb9cd;text-decoration:none;border-left:3px solid transparent;transition:.1s}
+  .nav-i:hover{background:rgba(255,255,255,.04);color:#d5dde8}
+  .nav-i.on{background:rgba(91,184,212,.12);border-left-color:var(--sky);color:#fff;font-weight:700}
+  .nav-i .dot{width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.5;flex-shrink:0}
+  .nav-i .bdg{margin-left:auto;font-size:10px;background:var(--danger);color:#fff;font-weight:700;padding:1px 7px;border-radius:10px;font-family:'Montserrat'}
+  .side-foot{margin-top:auto;padding:16px 22px;border-top:1px solid rgba(255,255,255,.07);display:flex;align-items:center;justify-content:space-between}
+  .side-who{font-size:12px;color:#7a8ba8}
+  .side-who b{color:#c8d2e0;display:block;font-size:13px;margin-bottom:1px}
+  .side-logout{font-size:11.5px;color:#5e6c85;text-decoration:none;font-weight:700;letter-spacing:.3px}
+  .side-logout:hover{color:#aeb9cd}
+
+  /* ── 메인 영역 ── */
+  .main{flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden}
+  .top{height:58px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 26px;flex-shrink:0}
+  .top h1{font-size:17px;font-weight:700}
+  .top-who{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--muted)}
+  .top-who b{color:var(--ink)}
+  .av{width:30px;height:30px;border-radius:50%;background:var(--navy);color:#fff;display:grid;place-items:center;font-size:12px;font-weight:700;font-family:'Montserrat';flex-shrink:0}
+  .content{padding:24px 26px;overflow:auto;flex:1}
+
+  /* ── 공통 버튼 ── */
+  .btn{border:none;border-radius:8px;padding:9px 15px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;transition:.15s}
+  .btn-pri{background:var(--navy);color:#fff}.btn-pri:hover{background:var(--navy-2)}
+  .btn-sky{background:var(--sky);color:#06263a}.btn-sky:hover{background:var(--sky-d);color:#fff}
+  .btn-ghost{background:#fff;border:1px solid var(--line);color:var(--ink)}.btn-ghost:hover{border-color:var(--sky);color:var(--sky-d)}
+  .btn-danger{background:#FBEAEA;color:var(--danger);border:none}.btn-danger:hover{background:var(--danger);color:#fff}
+  .btn-sm{padding:6px 11px;font-size:12px}
+
+  /* ── 카드 ── */
+  .card{background:#fff;border-radius:12px;box-shadow:0 1px 3px rgba(15,31,61,.06);padding:18px 20px;margin-bottom:16px}
+  .card-hd{padding:14px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;font-size:13.5px;font-weight:700}
+  .card-t{font-size:13.5px;font-weight:700;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between}
+
+  /* ── 테이블 ── */
+  table{width:100%;border-collapse:collapse}
+  th{text-align:left;font-size:11px;letter-spacing:.3px;color:var(--muted);font-weight:700;padding:11px 13px;border-bottom:1px solid var(--line);background:#FAFBFD}
+  td{padding:12px 13px;border-bottom:1px solid var(--line-2);font-size:13px;vertical-align:middle}
+  tr:last-child td{border-bottom:none}
+  tr:hover td{background:#FBFCFE}
+
+  /* ── 배지 / 상태 ── */
+  .code{font-family:'Montserrat';font-weight:700;color:var(--navy);background:#EEF3F8;padding:2px 8px;border-radius:5px;font-size:11px}
+  .badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:#EEF1F5;color:var(--muted)}
+  .pill{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:20px;white-space:nowrap}
+  .led{width:7px;height:7px;border-radius:50%}
+  .p-ok{background:#E6F5EE;color:var(--ok)}.l-ok{background:var(--ok)}
+  .p-warn{background:#FCF2E2;color:var(--warn)}.l-warn{background:var(--warn)}
+  .p-gray{background:#EEF1F5;color:var(--muted)}.l-gray{background:var(--muted)}
+  .p-red{background:#FBEAEA;color:var(--danger)}.l-red{background:var(--danger)}
+  .p-blue{background:#E8F0FE;color:var(--blue)}.l-blue{background:var(--blue)}
+  .row-act{display:flex;gap:6px;justify-content:flex-end}
+  .sub{font-size:11px;color:var(--muted)}
+
+  /* ── 모달 ── */
+  .modal-overlay{display:none;position:fixed;inset:0;background:rgba(15,31,61,.6);z-index:1000;align-items:center;justify-content:center}
+  .modal-overlay.open{display:flex}
+  .modal{background:#fff;border-radius:12px;width:560px;max-height:88vh;overflow-y:auto;padding:32px}
+  .modal-title{font-size:17px;font-weight:800;margin-bottom:22px}
+  .form-row{margin-bottom:15px}
+  .form-row label{font-size:12px;font-weight:700;display:block;margin-bottom:5px;color:var(--muted);letter-spacing:.2px}
+  .form-row input,.form-row select,.form-row textarea{width:100%;padding:9px 12px;border:1.5px solid var(--line);border-radius:8px;font-size:13px;font-family:inherit;outline:none;color:var(--ink)}
+  .form-row input:focus,.form-row select:focus,.form-row textarea:focus{border-color:var(--sky)}
+  .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .modal-footer{display:flex;gap:10px;justify-content:flex-end;margin-top:22px}
+  .btn-cancel{background:#F0EDE8;color:var(--ink);border:none;padding:10px 20px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer}
+  .btn-save{background:var(--sky);color:#06263a;border:none;padding:10px 20px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer}
+  .btn-save:hover{background:var(--sky-d);color:#fff}
+
+  {% block extra_style %}{% endblock %}
+</style>
+</head>
+<body>
+<input type="hidden" id="admin-csrf-token" value="{{ admin_csrf }}">
+<div class="app">
+
+  <!-- ── 사이드바 ── -->
+  <aside class="side">
+    <a href="/admin" class="logo">Slide<span>Atlas</span></a>
+
+    {% if admin_role == 'super_admin' %}
+      <div class="role-tag role-super">SUPER ADMIN</div>
+    {% else %}
+      <div class="role-tag role-staff">STAFF</div>
+    {% endif %}
+
+    <div class="nav-sep">운영</div>
+    <a href="/admin" class="nav-i {% if active_page == 'dash' %}on{% endif %}">
+      <span class="dot"></span>대시보드
+    </a>
+    {% if admin_role == 'super_admin' %}
+    <a href="/admin/institutions" class="nav-i {% if active_page == 'inst' %}on{% endif %}">
+      <span class="dot"></span>기관 관리
+    </a>
+    <a href="/admin/slides" class="nav-i {% if active_page == 'slide' %}on{% endif %}">
+      <span class="dot"></span>슬라이드 관리
+    </a>
+    <a href="/admin/access" class="nav-i {% if active_page == 'access' %}on{% endif %}">
+      <span class="dot"></span>접근 제어
+    </a>
+    <a href="/admin/reports" class="nav-i {% if active_page == 'reports' %}on{% endif %}">
+      <span class="dot"></span>이용 리포트
+    </a>
+    <a href="/admin/special" class="nav-i {% if active_page == 'special' %}on{% endif %}">
+      <span class="dot"></span>특별 계정
+    </a>
+    {% endif %}
+
+    <div class="nav-sep">고객 응대</div>
+    <a href="/admin/notices" class="nav-i {% if active_page == 'notice' %}on{% endif %}">
+      <span class="dot"></span>공지 관리
+    </a>
+    <a href="/admin/inquiries" class="nav-i {% if active_page == 'inquiry' %}on{% endif %}">
+      <span class="dot"></span>1:1 문의
+    </a>
+
+    <div class="side-foot">
+      <div class="side-who">
+        <b>{{ admin_name }}</b>
+        {{ '슈퍼관리자' if admin_role == 'super_admin' else '스태프' }}
+      </div>
+      <a href="/admin/logout" class="side-logout">로그아웃</a>
+    </div>
+  </aside>
+
+  <!-- ── 메인 ── -->
+  <div class="main">
+    <header class="top">
+      <h1>{% block page_title %}{% endblock %}</h1>
+      <div class="top-who">
+        <span>접속 중</span>
+        <b>{{ admin_name }}</b>
+        <div class="av">{{ admin_name[0]|upper if admin_name else 'A' }}</div>
+      </div>
+    </header>
+
+    <div class="content">
+      {% block content %}{% endblock %}
+    </div>
+  </div>
+
+</div>
+{% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,716 @@
+{% extends "admin/base.html" %}
+{% block title %}기관 관리 — SlideAtlas Admin{% endblock %}
+{% block page_title %}기관 관리{% endblock %}
+
+{% block extra_style %}
+.toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+.search-row{display:flex;gap:8px}
+.search-row input{border:1px solid var(--line);border-radius:8px;padding:9px 13px;font-size:13px;width:240px;font-family:inherit;outline:none}
+.search-row input:focus{border-color:var(--sky)}
+.search-row select{border:1px solid var(--line);border-radius:8px;padding:9px 11px;font-size:13px;font-family:inherit;width:140px;outline:none}
+.sem{font-family:'Montserrat';font-weight:700;font-size:11.5px;color:var(--navy);background:#EEF3F8;padding:2px 8px;border-radius:5px}
+.dday{font-family:'Montserrat';font-weight:700;font-size:12px}
+.hint{font-size:11px;color:var(--muted)}
+
+/* 모달 확장 스타일 */
+.overlay{position:fixed;inset:0;background:rgba(10,18,35,.55);backdrop-filter:blur(2px);display:none;align-items:flex-start;justify-content:center;padding:34px 16px;overflow:auto;z-index:1000}
+.overlay.show{display:flex}
+.modal-lg{background:#fff;width:100%;max-width:700px;border-radius:16px;box-shadow:var(--shadow);overflow:hidden;animation:pop .22s ease}
+.modal-md{background:#fff;width:100%;max-width:620px;border-radius:16px;box-shadow:var(--shadow);overflow:hidden;animation:pop .22s ease}
+@keyframes pop{from{transform:translateY(14px) scale(.98);opacity:0}to{transform:none;opacity:1}}
+.m-head{background:var(--navy);color:#fff;padding:18px 24px;display:flex;justify-content:space-between;align-items:center}
+.m-head h2{font-size:16px;font-weight:700}
+.m-head p{font-size:12px;color:#9fb0cb;margin-top:2px}
+.x-btn{background:rgba(255,255,255,.1);border:none;color:#fff;width:30px;height:30px;border-radius:8px;font-size:17px;cursor:pointer;line-height:1}
+.x-btn:hover{background:rgba(255,255,255,.2)}
+.m-body{padding:6px 24px 4px;max-height:68vh;overflow:auto}
+.m-foot{padding:14px 24px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;background:#FBFCFE}
+.m-foot .note{font-size:11.5px;color:var(--muted)}
+
+.sec{padding:16px 0;border-bottom:1px dashed var(--line)}
+.sec:last-child{border-bottom:none}
+.sec-t{display:flex;align-items:center;gap:8px;font-weight:700;font-size:13.5px;margin-bottom:13px;color:var(--navy)}
+.sec-n{font-family:'Montserrat';font-weight:800;font-size:11px;background:var(--sky);color:#06263a;width:20px;height:20px;border-radius:6px;display:grid;place-items:center;flex-shrink:0}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.fld{display:flex;flex-direction:column;gap:5px}
+.fld.full{grid-column:1/-1}
+.fld label{font-size:12px;font-weight:700;color:#3c4759}
+.fld label .req{color:var(--danger)}
+.fld input,.fld select{border:1px solid var(--line);border-radius:8px;padding:9px 11px;font-size:13px;font-family:inherit;color:var(--ink);background:#fff;width:100%;outline:none}
+.fld input:focus,.fld select:focus{border-color:var(--sky);box-shadow:0 0 0 3px rgba(91,184,212,.18)}
+.fld input[readonly]{background:#F6F8FB;color:var(--navy);font-family:'Montserrat';font-weight:700}
+.fld-hint{font-size:11px;color:var(--muted)}
+
+/* subscription card */
+.subcard{border:1px solid var(--line);border-radius:12px;padding:14px 15px;margin-bottom:11px;background:#FCFDFE}
+.subcard-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.sc-subj{font-weight:700;color:var(--navy);border-color:var(--sky) !important}
+.sc-del{background:#FBECEC;border:none;color:var(--danger);padding:6px 11px;border-radius:7px;font-size:11.5px;cursor:pointer;font-family:inherit;font-weight:700}
+.sc-del:hover{background:#f5dada}
+
+/* access window box */
+.window{background:#F3F7FC;border:1px solid #DCE7F1;border-radius:10px;padding:12px 14px;display:flex;align-items:center;gap:14px;margin-top:10px}
+.window .wcol{flex:1}
+.window .wk{font-size:10.5px;color:var(--muted);font-weight:700;margin-bottom:3px;display:flex;align-items:center;gap:5px}
+.window .wv{font-family:'Montserrat';font-weight:800;font-size:14px;color:var(--navy)}
+.window .arrow{color:var(--sky-d);font-size:18px;font-weight:800}
+.window .badge-sky{font-size:10px;font-weight:700;color:#06263a;background:var(--sky);padding:2px 7px;border-radius:10px}
+
+/* admin contact rows */
+.adm-row{display:grid;grid-template-columns:1.1fr .9fr 1.4fr 1.1fr 30px;gap:8px;align-items:center;margin-bottom:8px}
+.adm-row input,.adm-row select{padding:8px 9px;font-size:12.5px;border:1px solid var(--line);border-radius:8px;font-family:inherit;outline:none}
+.adm-row input:focus,.adm-row select:focus{border-color:var(--sky)}
+.adm-row .del-btn{background:#FBECEC;border:none;color:var(--danger);width:30px;height:34px;border-radius:7px;cursor:pointer;font-size:15px}
+.adm-row .del-btn:hover{background:#f5dada}
+.adm-head{display:grid;grid-template-columns:1.1fr .9fr 1.4fr 1.1fr 30px;gap:8px;font-size:10.5px;color:var(--muted);font-weight:700;margin-bottom:7px;padding:0 2px}
+.adm-add{font-size:12.5px;color:var(--sky-d);font-weight:700;background:none;border:1px dashed var(--sky);padding:8px;border-radius:8px;width:100%;cursor:pointer;margin-top:4px;font-family:inherit}
+.adm-add:hover{background:rgba(91,184,212,.06)}
+.adm-cap{font-size:11px;color:var(--muted);text-align:right;margin-top:2px}
+
+/* renew modal */
+.summary-box{background:#F3F7FC;border:1px solid #DCE7F1;border-radius:10px;padding:14px 16px;display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:4px}
+.summary-box .sk{font-size:11px;color:var(--muted);font-weight:700;margin-bottom:3px}
+.summary-box .sv{font-size:14px;font-weight:700;color:var(--navy);font-family:'Montserrat'}
+.summary-box .sv small{font-family:'Noto Sans KR';font-size:11px;color:var(--muted);font-weight:500}
+.plans{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-bottom:6px}
+.plan-card{border:1.5px solid var(--line);border-radius:10px;padding:11px 10px;cursor:pointer;text-align:center;transition:.15s;position:relative}
+.plan-card:hover{border-color:var(--sky)}
+.plan-card.on{border-color:var(--navy);background:#F3F7FC}
+.plan-card.on::after{content:"\2713";position:absolute;top:6px;right:8px;color:var(--navy);font-weight:800;font-size:12px}
+.plan-card .pn{font-family:'Montserrat';font-weight:800;font-size:12px;color:var(--navy)}
+.plan-card .ps{font-size:11px;color:var(--muted);margin-top:3px}
+.hist-row{display:flex;align-items:center;gap:10px;font-size:12px;padding:9px 0;border-bottom:1px solid var(--line-2)}
+.hist-row:last-child{border-bottom:none}
+.hist-dot{width:8px;height:8px;border-radius:50%;background:var(--sky);flex-shrink:0}
+.hist-dot.first{background:var(--muted)}
+.hist-when{font-family:'Montserrat';font-weight:700;color:var(--navy);width:84px;flex-shrink:0}
+.hist-tag{margin-left:auto;font-size:10.5px;color:var(--muted)}
+
+/* error toast */
+.toast{position:fixed;bottom:28px;right:28px;background:var(--danger);color:#fff;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:700;z-index:2000;display:none;box-shadow:0 4px 20px rgba(0,0,0,.2)}
+.toast.ok{background:var(--ok)}
+{% endblock %}
+
+{% block content %}
+<div class="toolbar">
+  <div class="search-row">
+    <input id="search-input" placeholder="학교명 · 단과대 검색" oninput="filterTable()">
+    <select id="status-filter" onchange="filterTable()">
+      <option value="">전체 상태</option>
+      <option value="구독중">구독중</option>
+      <option value="오픈예정">오픈예정</option>
+      <option value="대기">대기</option>
+      <option value="만료">만료</option>
+    </select>
+  </div>
+  <button class="btn btn-pri" onclick="openAdd()">＋ 기관 추가</button>
+</div>
+
+<div class="card" style="padding:0">
+  <table id="inst-table">
+    <thead><tr>
+      <th>기관</th>
+      <th style="width:120px">구독 학기</th>
+      <th>플랜</th>
+      <th>좌석</th>
+      <th style="width:170px">오픈 → 만료</th>
+      <th style="width:88px">상태</th>
+      <th style="width:150px"></th>
+    </tr></thead>
+    <tbody id="inst-tbody">
+      <tr><td colspan="7" style="text-align:center;color:var(--muted);padding:32px">불러오는 중...</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ── ADD / EDIT MODAL ── -->
+<div class="overlay" id="ov-form">
+  <div class="modal-lg">
+    <div class="m-head">
+      <div><h2 id="form-title">기관 추가</h2><p id="form-sub">신규 기관을 등록합니다</p></div>
+      <button class="x-btn" onclick="closeModal('ov-form')">×</button>
+    </div>
+    <div class="m-body">
+      <div class="sec">
+        <div class="sec-t"><span class="sec-n">1</span>기관 기본 정보</div>
+        <div class="grid-2">
+          <div class="fld">
+            <label>기관코드 <span class="req">*</span></label>
+            <input id="f-id" placeholder="예: CNU, KHU, SNU-MED" maxlength="20">
+            <span class="fld-hint">영문·숫자·하이픈만 허용. 저장 후 변경 불가.</span>
+          </div>
+          <div class="fld">
+            <label>학교명 <span class="req">*</span></label>
+            <input id="f-uni" placeholder="예: 충남대학교">
+          </div>
+          <div class="fld">
+            <label>단과대 <span class="req">*</span></label>
+            <input id="f-col" placeholder="예: 의과대학">
+          </div>
+          <div class="fld">
+            <label>이메일 도메인 <span class="req">*</span></label>
+            <input id="f-domain" placeholder="예: o.cnu.ac.kr">
+            <span class="fld-hint">학생 가입 시 도메인 자가인증</span>
+          </div>
+          <div class="fld full">
+            <label>영문 표기 <span style="font-weight:500;color:var(--muted)">(선택)</span></label>
+            <input id="f-en" placeholder="예: Chungnam National Univ.">
+          </div>
+        </div>
+      </div>
+
+      <div class="sec">
+        <div class="sec-t"><span class="sec-n">2</span>구독 과목 <span style="font-weight:500;color:var(--muted);font-size:11.5px">(과목별 좌석·학기 독립)</span></div>
+        <div id="sub-list"></div>
+        <button class="adm-add" id="sub-add-btn" onclick="addSubCard()">＋ 과목 구독 추가</button>
+        <div class="fld-hint" style="margin-top:7px" id="sub-hint">과목마다 좌석·학기·구독료를 따로 둡니다. v1.0은 조직학(HST)만 제공됩니다.</div>
+        <div class="fld-hint" style="margin-top:7px;display:none" id="sub-edit-hint">구독 조건 변경은 목록의 <b>갱신</b> 버튼을 이용하세요.</div>
+      </div>
+
+      <div class="sec">
+        <div class="sec-t"><span class="sec-n">3</span>기관 관리자 등록 <span style="font-weight:500;color:var(--muted);font-size:11.5px">(최대 5명)</span></div>
+        <div class="adm-head"><div>이름</div><div>지위</div><div>이메일</div><div>전화번호</div><div></div></div>
+        <div id="adm-list"></div>
+        <button class="adm-add" onclick="addAdmRow()">＋ 관리자 추가</button>
+        <div class="adm-cap" id="adm-cap">0 / 5명</div>
+      </div>
+    </div>
+    <div class="m-foot">
+      <span class="note">저장 후 SES 포털 안내 발송 예정 (추후 활성화)</span>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost" onclick="closeModal('ov-form')">취소</button>
+        <button class="btn btn-pri" id="form-save-btn" onclick="submitForm()">기관 추가</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── RENEW MODAL ── -->
+<div class="overlay" id="ov-renew">
+  <div class="modal-md">
+    <div class="m-head">
+      <div><h2 id="renew-title">구독 갱신</h2><p>해당 과목 구독을 다음 학기로 이어서 갱신합니다</p></div>
+      <button class="x-btn" onclick="closeModal('ov-renew')">×</button>
+    </div>
+    <div class="m-body">
+      <div class="sec">
+        <div class="sec-t"><span class="sec-n" style="background:var(--muted)">현</span>현재 구독 현황</div>
+        <div class="summary-box" id="renew-summary"></div>
+      </div>
+      <div class="sec">
+        <div class="sec-t"><span class="sec-n" style="background:var(--warn)">갱</span>갱신 조건</div>
+        <div class="fld" style="margin-bottom:13px">
+          <label>플랜</label>
+          <div class="plans" id="renew-plans">
+            <div class="plan-card" data-plan="department" onclick="pickPlan(this)"><div class="pn">DEPARTMENT</div><div class="ps">50명</div></div>
+            <div class="plan-card on" data-plan="standard" onclick="pickPlan(this)"><div class="pn">STANDARD</div><div class="ps">150명</div></div>
+            <div class="plan-card" data-plan="campus" onclick="pickPlan(this)"><div class="pn">CAMPUS</div><div class="ps">300명</div></div>
+            <div class="plan-card" data-plan="institution" onclick="pickPlan(this)"><div class="pn">INSTITUTION</div><div class="ps">500명+</div></div>
+          </div>
+        </div>
+        <div class="grid-2">
+          <div class="fld">
+            <label>갱신 시작 학기 <span class="fld-hint">(자동)</span></label>
+            <input id="r-startsem" readonly>
+            <span class="fld-hint">현재 학기 다음 학기로 자동 설정</span>
+          </div>
+          <div class="fld">
+            <label>갱신 학기 수 <span class="req">*</span></label>
+            <select id="r-count" onchange="recalcRenew()">
+              <option value="1">1학기</option>
+              <option value="2" selected>2학기 (1년)</option>
+              <option value="4">4학기 (2년)</option>
+            </select>
+          </div>
+        </div>
+        <div class="window" style="margin-top:8px">
+          <div class="wcol"><div class="wk">🔓 접근 오픈일 <span class="badge-sky">학기 −30일</span></div><div class="wv" id="r-open">—</div></div>
+          <div class="arrow">→</div>
+          <div class="wcol"><div class="wk">🔒 라이선스 만료일</div><div class="wv" id="r-end">—</div></div>
+        </div>
+        <div class="grid-2" style="margin-top:13px">
+          <div class="fld">
+            <label>추가 좌석 블록</label>
+            <input type="number" id="r-extra" value="0" min="0" placeholder="0">
+            <span class="fld-hint">기본 플랜 좌석에 추가 (예: 50)</span>
+          </div>
+          <div class="fld">
+            <label>갱신 구독료 (원) <span class="req">*</span></label>
+            <input id="r-fee" placeholder="예: 5000000" style="font-family:'Montserrat';font-weight:700">
+          </div>
+        </div>
+        <div class="fld" style="margin-top:12px">
+          <label>비고</label>
+          <input id="r-note" placeholder="메모 (선택)">
+        </div>
+      </div>
+      <div class="sec">
+        <div class="sec-t"><span class="sec-n" style="background:#6B7689;font-size:14px">📜</span>계약 이력 <span style="font-weight:500;color:var(--muted);font-size:11.5px">(누적 보존)</span></div>
+        <div id="renew-hist"></div>
+      </div>
+    </div>
+    <div class="m-foot">
+      <span class="note">갱신은 기존 학기 위에 새 학기로 추가됩니다</span>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost" onclick="closeModal('ov-renew')">취소</button>
+        <button class="btn btn-sky" onclick="submitRenew()">갱신 확정</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const CSRF = document.getElementById('admin-csrf-token').value;
+
+// ── 학기 모델 (Python _sem_dates 미러) ──────────────────────
+function lastFebDay(y) {
+  return new Date(y, 2, 0).getDate(); // March 0 = last day of Feb
+}
+function semDates(term) {
+  const [ys, season] = term.split('-');
+  const y = parseInt(ys);
+  if (season === 'spring') {
+    return {open: `${y}-02-01`, end: `${y}-08-31`};
+  } else {
+    const d = lastFebDay(y + 1);
+    return {open: `${y}-08-01`, end: `${y+1}-02-${String(d).padStart(2,'0')}`};
+  }
+}
+function termLabel(term) {
+  const [y, s] = term.split('-');
+  return `${y} ${s === 'spring' ? '봄학기' : '가을학기'}`;
+}
+function nextTerm(term) {
+  const [ys, s] = term.split('-');
+  return s === 'spring' ? `${ys}-fall` : `${parseInt(ys)+1}-spring`;
+}
+function termEndAfter(start, count) {
+  let [ys, s] = start.split('-');
+  let idx = parseInt(ys) * 2 + (s === 'spring' ? 0 : 1) + count - 1;
+  return `${Math.floor(idx/2)}-${idx%2===0?'spring':'fall'}`;
+}
+function buildSemOptions(sel, from) {
+  sel.innerHTML = '';
+  const base = from || '2026-fall';
+  const [by, bs] = base.split('-');
+  let idx = parseInt(by) * 2 + (bs === 'spring' ? 0 : 1);
+  for (let k = 0; k < 8; k++) {
+    const i = idx + k;
+    const y = Math.floor(i / 2);
+    const s = i % 2 === 0 ? 'spring' : 'fall';
+    const o = document.createElement('option');
+    o.value = `${y}-${s}`;
+    o.textContent = termLabel(`${y}-${s}`);
+    sel.appendChild(o);
+  }
+}
+const PLAN_SEATS = {department:50, standard:150, campus:300, institution:500};
+
+// ── 테이블 로드 ──────────────────────────────────────────────
+let _allRows = [];
+
+async function loadTable() {
+  const res = await fetch('/admin/api/institutions');
+  const data = await res.json();
+  if (!data.ok) { showToast('목록 로드 실패: ' + data.error); return; }
+  _allRows = data.institutions;
+  renderTable(_allRows);
+}
+
+function statusPill(statusKey, statusLabel) {
+  const cls = {active:'p-ok', upcoming:'p-warn', pending:'p-gray', expired:'p-red'};
+  const led = {active:'l-ok', upcoming:'l-warn', pending:'l-gray', expired:'l-red'};
+  return `<span class="pill ${cls[statusKey]||'p-gray'}"><span class="led ${led[statusKey]||'l-gray'}"></span>${statusLabel}</span>`;
+}
+
+function renderTable(rows) {
+  const tbody = document.getElementById('inst-tbody');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:32px">등록된 기관이 없습니다.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(inst => {
+    const sub = inst.subscriptions[0] || null;
+    const semLabel = sub ? termLabel(sub.start_term) : '—';
+    const planTxt = sub ? (sub.plan.charAt(0).toUpperCase() + sub.plan.slice(1)) : '—';
+    const seatsTxt = sub ? `${sub.used_seats} / ${sub.max_seats}` : '—';
+    const rangeTxt = sub ? `${sub.access_open_date} → ${sub.subscription_end}` : '—';
+    const ddayTxt = sub ? `<div class="hint" style="color:${sub.status_key==='active'?'var(--ok)':sub.status_key==='upcoming'?'var(--warn)':'var(--muted)'}">${sub.dday}</div>` : '';
+    const pillHtml = sub ? statusPill(sub.status_key, sub.status_label) : '<span class="pill p-gray">구독 없음</span>';
+    return `<tr data-name="${inst.name_ko}" data-status="${sub ? sub.status_label : ''}">
+      <td>${inst.university || ''} <b>${inst.college || ''}</b><div class="hint">${inst.name_en || inst.id}</div></td>
+      <td><span class="sem">${semLabel}</span></td>
+      <td>${planTxt}</td>
+      <td>${seatsTxt}</td>
+      <td><span class="dday" style="font-size:12px">${rangeTxt}</span>${ddayTxt}</td>
+      <td>${pillHtml}</td>
+      <td>
+        <div class="row-act">
+          <button class="btn btn-ghost btn-sm" onclick='openEdit(${JSON.stringify(inst)})'>수정</button>
+          <button class="btn btn-sky btn-sm" onclick='openRenew(${JSON.stringify(inst)})'>갱신</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function filterTable() {
+  const q = document.getElementById('search-input').value.toLowerCase();
+  const s = document.getElementById('status-filter').value;
+  const filtered = _allRows.filter(inst => {
+    const nameMatch = !q || inst.name_ko.toLowerCase().includes(q);
+    const mainSub = inst.subscriptions[0] || null;
+    const statusMatch = !s || (mainSub && mainSub.status_label === s);
+    return nameMatch && statusMatch;
+  });
+  renderTable(filtered);
+}
+
+// ── Sub-card (구독 카드) ──────────────────────────────────────
+function subCardHTML() {
+  return `<div class="subcard">
+    <div class="subcard-head">
+      <select class="sc-subj fld" style="max-width:60%;border:1.5px solid var(--sky);border-radius:8px;padding:8px 10px;font-weight:700;color:var(--navy);font-family:inherit;font-size:13px">
+        <option value="HST">조직학 (HST)</option>
+        <option value="PATH" disabled>병리학 (PATH) · 출시 예정</option>
+        <option value="PARA" disabled>기생충학 (PARA) · 출시 예정</option>
+      </select>
+      <button class="sc-del" onclick="delSubCard(this)">× 삭제</button>
+    </div>
+    <div class="grid-2">
+      <div class="fld">
+        <label>좌석 플랜</label>
+        <select class="sc-plan" onchange="planToSeats(this)">
+          <option value="department">Department · 50석</option>
+          <option value="standard" selected>Standard · 150석</option>
+          <option value="campus">Campus · 300석</option>
+          <option value="institution">Institution · 500석+</option>
+          <option value="custom">직접 입력</option>
+        </select>
+      </div>
+      <div class="fld">
+        <label>좌석 수</label>
+        <input type="number" class="sc-seats" value="150" style="font-family:'Montserrat';font-weight:700">
+        <span class="fld-hint">플랜 선택 시 자동 · 직접 수정 가능</span>
+      </div>
+      <div class="fld">
+        <label>시작 학기</label>
+        <select class="sc-startsem" onchange="recalcCard(this)"></select>
+      </div>
+      <div class="fld">
+        <label>학기 수</label>
+        <select class="sc-count" onchange="recalcCard(this)">
+          <option value="1">1학기</option>
+          <option value="2" selected>2학기 (1년)</option>
+          <option value="3">3학기</option>
+          <option value="4">4학기 (2년)</option>
+        </select>
+      </div>
+    </div>
+    <div class="window">
+      <div class="wcol"><div class="wk">🔓 접근 오픈일 <span class="badge-sky">학기 −30일</span></div><div class="wv sc-open">—</div></div>
+      <div class="arrow">→</div>
+      <div class="wcol"><div class="wk">🔒 만료일</div><div class="wv sc-end">—</div></div>
+    </div>
+    <div class="grid-2" style="margin-top:12px">
+      <div class="fld">
+        <label>구독료 (원)</label>
+        <input class="sc-fee" placeholder="예: 4000000" style="font-family:'Montserrat';font-weight:700">
+      </div>
+      <div class="fld">
+        <label>결제 방식</label>
+        <select class="sc-pay">
+          <option>연간 선불</option>
+          <option>학기 선불</option>
+          <option>기타</option>
+        </select>
+      </div>
+    </div>
+  </div>`;
+}
+
+function recalcCard(el) {
+  const card = el.closest('.subcard');
+  const start = card.querySelector('.sc-startsem').value;
+  const cnt = parseInt(card.querySelector('.sc-count').value);
+  if (!start) return;
+  const endTerm = termEndAfter(start, cnt);
+  card.querySelector('.sc-open').textContent = semDates(start).open;
+  card.querySelector('.sc-end').textContent = semDates(endTerm).end;
+}
+function planToSeats(sel) {
+  const seats = PLAN_SEATS[sel.value];
+  if (seats) sel.closest('.subcard').querySelector('.sc-seats').value = seats;
+}
+function addSubCard() {
+  const wrap = document.createElement('div');
+  wrap.innerHTML = subCardHTML();
+  const card = wrap.firstElementChild;
+  document.getElementById('sub-list').appendChild(card);
+  buildSemOptions(card.querySelector('.sc-startsem'));
+  card.querySelector('.sc-startsem').value = '2026-fall';
+  recalcCard(card.querySelector('.sc-startsem'));
+  updateSubDel();
+}
+function delSubCard(btn) {
+  const list = document.getElementById('sub-list');
+  if (list.querySelectorAll('.subcard').length <= 1) return;
+  btn.closest('.subcard').remove();
+  updateSubDel();
+}
+function updateSubDel() {
+  const cards = document.querySelectorAll('#sub-list .subcard');
+  cards.forEach(c => { c.querySelector('.sc-del').style.display = cards.length > 1 ? 'inline-block' : 'none'; });
+}
+
+// ── Admin contact rows ────────────────────────────────────────
+function admCount() { return document.querySelectorAll('#adm-list .adm-row').length; }
+function refreshCap() { document.getElementById('adm-cap').textContent = admCount() + ' / 5명'; }
+function addAdmRow(v) {
+  if (admCount() >= 5) return;
+  const d = document.createElement('div');
+  d.className = 'adm-row';
+  d.innerHTML = `<input placeholder="홍길동" value="${v ? v.name || '' : ''}">
+    <select>
+      <option ${v&&v.position==='교수'?'selected':''}>교수</option>
+      <option ${v&&v.position==='조교'?'selected':''}>조교</option>
+      <option ${v&&v.position==='행정직원'?'selected':''}>행정직원</option>
+      <option ${v&&v.position==='기타'?'selected':''}>기타</option>
+    </select>
+    <input placeholder="name@example.ac.kr" value="${v ? v.email || '' : ''}">
+    <input placeholder="010-0000-0000" value="${v ? v.phone || '' : ''}">
+    <button class="del-btn" onclick="delAdmRow(this)">×</button>`;
+  document.getElementById('adm-list').appendChild(d);
+  refreshCap();
+}
+function delAdmRow(btn) {
+  if (admCount() <= 1) return;
+  btn.closest('.adm-row').remove();
+  refreshCap();
+}
+
+// ── 모달 열기/닫기 ────────────────────────────────────────────
+let _editInst = null;
+
+function openAdd() {
+  _editInst = null;
+  document.getElementById('form-title').textContent = '기관 추가';
+  document.getElementById('form-sub').textContent = '신규 기관을 등록합니다';
+  document.getElementById('form-save-btn').textContent = '기관 추가';
+  document.getElementById('f-id').value = '';
+  document.getElementById('f-id').disabled = false;
+  document.getElementById('f-uni').value = '';
+  document.getElementById('f-col').value = '';
+  document.getElementById('f-en').value = '';
+  document.getElementById('f-domain').value = '';
+  document.getElementById('sub-add-btn').style.display = '';
+  document.getElementById('sub-hint').style.display = '';
+  document.getElementById('sub-edit-hint').style.display = 'none';
+  document.getElementById('sub-list').innerHTML = '';
+  addSubCard();
+  document.getElementById('adm-list').innerHTML = '';
+  addAdmRow();
+  document.getElementById('ov-form').classList.add('show');
+}
+
+function openEdit(inst) {
+  _editInst = inst;
+  document.getElementById('form-title').textContent = '기관 수정 — ' + inst.name_ko;
+  document.getElementById('form-sub').textContent = '기관 정보와 관리자를 수정합니다';
+  document.getElementById('form-save-btn').textContent = '변경사항 저장';
+  document.getElementById('f-id').value = inst.id;
+  document.getElementById('f-id').disabled = true;
+  document.getElementById('f-uni').value = inst.university || '';
+  document.getElementById('f-col').value = inst.college || '';
+  document.getElementById('f-en').value = inst.name_en || '';
+  document.getElementById('f-domain').value = inst.domain || '';
+  // 구독 카드: 수정 모달에서는 읽기전용 표시만 (변경은 갱신으로 처리)
+  document.getElementById('sub-add-btn').style.display = 'none';
+  document.getElementById('sub-hint').style.display = 'none';
+  document.getElementById('sub-edit-hint').style.display = 'block';
+  document.getElementById('sub-list').innerHTML = '';
+  (inst.subscriptions || []).forEach(sub => {
+    const wrap = document.createElement('div');
+    wrap.innerHTML = subCardHTML();
+    const card = wrap.firstElementChild;
+    document.getElementById('sub-list').appendChild(card);
+    buildSemOptions(card.querySelector('.sc-startsem'));
+    card.querySelector('.sc-subj').value = sub.subject_code;
+    card.querySelector('.sc-plan').value = sub.plan;
+    card.querySelector('.sc-seats').value = sub.max_seats;
+    card.querySelector('.sc-startsem').value = sub.start_term;
+    card.querySelector('.sc-count').value = sub.term_count;
+    card.querySelector('.sc-fee').value = sub.fee || '';
+    recalcCard(card.querySelector('.sc-startsem'));
+    // 수정 모달에서는 구독카드 필드 비활성(읽기전용 표시)
+    card.querySelectorAll('input,select').forEach(el => el.setAttribute('readonly', 'readonly'));
+    card.querySelectorAll('select').forEach(el => el.disabled = true);
+    card.querySelector('.sc-del').style.display = 'none';
+  });
+  if (!inst.subscriptions || !inst.subscriptions.length) addSubCard();
+  updateSubDel();
+  // 관리자
+  document.getElementById('adm-list').innerHTML = '';
+  const contacts = inst.admin_contacts || [];
+  if (contacts.length) contacts.forEach(c => addAdmRow(c));
+  else addAdmRow();
+  document.getElementById('ov-form').classList.add('show');
+}
+
+// ── 갱신 모달 ─────────────────────────────────────────────────
+let _renewInst = null;
+let _renewSub = null;
+
+function openRenew(inst) {
+  _renewInst = inst;
+  const sub = (inst.subscriptions || []).find(s => s.status_key !== 'expired') || inst.subscriptions[0];
+  if (!sub) { showToast('갱신할 구독이 없습니다', false); return; }
+  _renewSub = sub;
+
+  document.getElementById('renew-title').textContent = `구독 갱신 — ${inst.name_ko} · ${sub.subject_code}`;
+
+  // 현황 요약
+  document.getElementById('renew-summary').innerHTML = `
+    <div><div class="sk">현재 학기 / 만료</div><div class="sv" style="font-size:13px">${termLabel(sub.start_term)} <small>~${sub.subscription_end}</small></div></div>
+    <div><div class="sk">현재 플랜</div><div class="sv" style="font-size:13px">${sub.plan.toUpperCase()} <small>${sub.max_seats}석</small></div></div>
+    <div><div class="sk">구독료</div><div class="sv">${sub.fee ? '₩' + Number(sub.fee).toLocaleString() : '—'}<small> /학기</small></div></div>`;
+
+  // 플랜 선택 초기화
+  document.querySelectorAll('#renew-plans .plan-card').forEach(c => {
+    c.classList.toggle('on', c.dataset.plan === sub.plan);
+  });
+
+  const newStart = nextTerm(termEndAfter(sub.start_term, sub.term_count));
+  document.getElementById('r-startsem').value = termLabel(newStart);
+  document.getElementById('r-startsem').dataset.term = newStart;
+  document.getElementById('r-fee').value = sub.fee || '';
+  document.getElementById('r-extra').value = '0';
+  document.getElementById('r-note').value = '';
+  document.getElementById('r-count').value = '2';
+  recalcRenew();
+
+  // 이력
+  const hist = document.getElementById('renew-hist');
+  if (!sub.history || !sub.history.length) {
+    hist.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:8px 0">이력 없음</div>';
+  } else {
+    hist.innerHTML = sub.history.map((h, i) => `
+      <div class="hist-row">
+        <span class="hist-dot ${i===0?'first':''}"></span>
+        <span class="hist-when">${termLabel(h.start_term)}</span>
+        <span>${h.event === 'initial' ? '최초 계약' : '갱신'} · ${h.plan ? h.plan.toUpperCase() : ''} · ${h.max_seats}석${h.fee ? ' · ₩' + Number(h.fee).toLocaleString() : ''}</span>
+        <span class="hist-tag">${h.event}</span>
+      </div>`).join('');
+  }
+
+  document.getElementById('ov-renew').classList.add('show');
+}
+
+function recalcRenew() {
+  const startTerm = document.getElementById('r-startsem').dataset.term;
+  if (!startTerm) return;
+  const cnt = parseInt(document.getElementById('r-count').value);
+  const endTerm = termEndAfter(startTerm, cnt);
+  document.getElementById('r-open').textContent = semDates(startTerm).open;
+  document.getElementById('r-end').textContent = semDates(endTerm).end;
+}
+
+function pickPlan(el) {
+  el.parentElement.querySelectorAll('.plan-card').forEach(p => p.classList.remove('on'));
+  el.classList.add('on');
+}
+
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+document.querySelectorAll('.overlay').forEach(o =>
+  o.addEventListener('click', e => { if (e.target === o) o.classList.remove('show'); })
+);
+
+// ── 폼 제출 ────────────────────────────────────────────────────
+async function submitForm() {
+  const isEdit = !!_editInst;
+  const uni = document.getElementById('f-uni').value.trim();
+  const col = document.getElementById('f-col').value.trim();
+  const instId = document.getElementById('f-id').value.trim().toUpperCase();
+  if (!isEdit && !instId) { showToast('기관코드를 입력하세요'); return; }
+  if (!uni || !col) { showToast('학교명·단과대는 필수입니다'); return; }
+
+  const contacts = [...document.querySelectorAll('#adm-list .adm-row')].map(row => {
+    const inputs = row.querySelectorAll('input');
+    const sel = row.querySelector('select');
+    return {name: inputs[0].value.trim(), position: sel ? sel.value : '', email: inputs[1].value.trim(), phone: inputs[2].value.trim()};
+  }).filter(c => c.name || c.email);
+
+  if (isEdit) {
+    const res = await fetch(`/admin/api/institutions/${_editInst.id}`, {
+      method: 'PUT',
+      headers: {'Content-Type':'application/json', 'X-CSRF-Token': CSRF},
+      body: JSON.stringify({university: uni, college: col,
+        name_en: document.getElementById('f-en').value.trim(),
+        domain: document.getElementById('f-domain').value.trim(),
+        admin_contacts: contacts})
+    });
+    const data = await res.json();
+    if (data.ok) { showToast('저장됐습니다', true); closeModal('ov-form'); loadTable(); }
+    else showToast('저장 실패: ' + data.error);
+    return;
+  }
+
+  const subs = [...document.querySelectorAll('#sub-list .subcard')].map(card => ({
+    subject_code: card.querySelector('.sc-subj').value,
+    plan: card.querySelector('.sc-plan').value,
+    max_seats: parseInt(card.querySelector('.sc-seats').value) || 0,
+    start_term: card.querySelector('.sc-startsem').value,
+    term_count: parseInt(card.querySelector('.sc-count').value),
+    fee: card.querySelector('.sc-fee').value.replace(/,/g,'') || null,
+    payment_method: card.querySelector('.sc-pay').value,
+  }));
+
+  const res = await fetch('/admin/api/institutions', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json', 'X-CSRF-Token': CSRF},
+    body: JSON.stringify({id: instId, university: uni, college: col,
+      name_en: document.getElementById('f-en').value.trim(),
+      domain: document.getElementById('f-domain').value.trim(),
+      admin_contacts: contacts, subscriptions: subs})
+  });
+  const data = await res.json();
+  if (data.ok) { showToast('기관이 추가됐습니다', true); closeModal('ov-form'); loadTable(); }
+  else showToast('추가 실패: ' + data.error);
+}
+
+async function submitRenew() {
+  if (!_renewInst || !_renewSub) return;
+  const plan = document.querySelector('#renew-plans .plan-card.on')?.dataset.plan || _renewSub.plan;
+  const count = parseInt(document.getElementById('r-count').value);
+  const extra = parseInt(document.getElementById('r-extra').value) || 0;
+  const fee = document.getElementById('r-fee').value.replace(/,/g,'') || null;
+  const note = document.getElementById('r-note').value.trim() || null;
+
+  const res = await fetch(`/admin/api/institutions/${_renewInst.id}/subscriptions/${_renewSub.id}/renew`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json', 'X-CSRF-Token': CSRF},
+    body: JSON.stringify({plan, term_count: count, extra_seats: extra, fee, note,
+      payment_method: '학기 선불'})
+  });
+  const data = await res.json();
+  if (data.ok) { showToast('갱신됐습니다', true); closeModal('ov-renew'); loadTable(); }
+  else showToast('갱신 실패: ' + data.error);
+}
+
+// ── 토스트 ────────────────────────────────────────────────────
+function showToast(msg, ok) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast' + (ok ? ' ok' : '');
+  t.style.display = 'block';
+  setTimeout(() => { t.style.display = 'none'; }, 3000);
+}
+
+// 초기 로드
+loadTable();
+</script>
+{% endblock %}

@@ -1,172 +1,269 @@
-<!DOCTYPE html>
-<html lang="ko"><head><meta charset="UTF-8"><title>SlideAtlas Admin</title>
-<style>
-*{margin:0;padding:0;box-sizing:border-box;}
-body{font-family:sans-serif;background:#F7F4EF;color:#0F1F3D;}
-nav{background:#0F1F3D;padding:0 32px;height:54px;display:flex;align-items:center;justify-content:space-between;}
-.logo-atlas{font-size:18px;font-weight:800;color:#fff;}
-.nav-logout{color:rgba(255,255,255,0.45);font-size:12px;text-decoration:none;}
-.container{max-width:1100px;margin:0 auto;padding:32px 24px;}
-.page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:28px;}
-.page-title{font-size:22px;font-weight:800;}
-.btn-add{background:#2A9D8F;color:#fff;border:none;padding:10px 20px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;}
-.card{background:#fff;border:1px solid #E5E0D8;border-radius:12px;overflow:hidden;}
-.card-header{padding:18px 24px;border-bottom:1px solid #E5E0D8;display:flex;align-items:center;justify-content:space-between;}
-.card-title{font-size:14px;font-weight:700;}
-table{width:100%;border-collapse:collapse;}
-th{text-align:left;padding:11px 16px;font-size:11px;color:#9B9490;font-weight:600;border-bottom:1px solid #E5E0D8;}
-td{padding:13px 16px;font-size:13px;border-bottom:1px solid #F0EDE8;vertical-align:middle;}
-tr:last-child td{border-bottom:none;}
-code{background:#F0EDE8;padding:2px 7px;border-radius:4px;font-size:12px;}
-.stain-badge{background:#EBF6F5;color:#0F6E56;font-size:11px;padding:2px 8px;border-radius:12px;font-weight:600;}
-.badge-active{background:#EBF6F5;color:#0F6E56;font-size:11px;padding:2px 8px;border-radius:12px;font-weight:600;}
-.badge-inactive{background:#F5F0E8;color:#9B9490;font-size:11px;padding:2px 8px;border-radius:12px;font-weight:600;}
-.btn-edit{background:#F0EDE8;color:#0F1F3D;border:none;padding:5px 12px;border-radius:5px;font-size:12px;cursor:pointer;font-weight:600;margin-right:4px;}
-.btn-del{background:#fde8e4;color:#c0392b;border:none;padding:5px 12px;border-radius:5px;font-size:12px;cursor:pointer;font-weight:600;}
-.modal-overlay{display:none;position:fixed;inset:0;background:rgba(15,31,61,0.6);z-index:1000;align-items:center;justify-content:center;}
-.modal-overlay.open{display:flex;}
-.modal{background:#fff;border-radius:12px;width:540px;max-height:85vh;overflow-y:auto;padding:32px;}
-.modal-title{font-size:18px;font-weight:800;margin-bottom:24px;}
-.form-row{margin-bottom:16px;}
-.form-row label{font-size:12px;font-weight:600;display:block;margin-bottom:6px;}
-.form-row input,.form-row select,.form-row textarea{width:100%;padding:9px 12px;border:1.5px solid #E5E0D8;border-radius:7px;font-size:13px;font-family:sans-serif;outline:none;}
-.form-row input:focus,.form-row select:focus{border-color:#2A9D8F;}
-.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
-.modal-footer{display:flex;gap:10px;justify-content:flex-end;margin-top:24px;}
-.btn-cancel{background:#F0EDE8;color:#0F1F3D;border:none;padding:10px 20px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;}
-.btn-save{background:#2A9D8F;color:#fff;border:none;padding:10px 20px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;}
-</style></head>
-<body>
-<input type="hidden" id="admin-csrf-token" value="{{ csrf_token }}">
-<nav><span class="logo-atlas">ATLAS ADMIN</span><a class="nav-logout" href="/admin/logout">로그아웃</a></nav>
-<div class="container">
-  <div class="page-header">
-    <div><div class="page-title">슬라이드 관리</div></div>
-    <button class="btn-add" onclick="openAdd()">+ 슬라이드 추가</button>
+{% extends "admin/base.html" %}
+{% block title %}대시보드 — SlideAtlas Admin{% endblock %}
+{% block page_title %}대시보드{% endblock %}
+
+{% block extra_style %}
+/* KPI 카드 */
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:13px;margin-bottom:16px}
+.kpi{background:#fff;border-radius:12px;padding:15px 18px;
+  box-shadow:0 1px 3px rgba(15,31,61,.06);position:relative;overflow:hidden}
+.kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--sky)}
+.kpi.c-warn::before{background:var(--warn)}
+.kpi.c-red::before{background:var(--danger)}
+.kpi .k{font-size:11px;color:var(--muted);font-weight:700;letter-spacing:.3px;text-transform:uppercase}
+.kpi .v{font-family:'Montserrat';font-weight:800;font-size:26px;color:var(--navy);margin:6px 0 3px}
+.kpi .v small{font-size:13px;color:var(--muted);font-weight:600;font-family:'Noto Sans KR'}
+.kpi .d{font-size:11px;font-weight:700}
+.d-ok{color:var(--ok)} .d-warn{color:var(--warn)} .d-danger{color:var(--danger)} .d-muted{color:var(--muted)}
+
+/* 2열 그리드 */
+.grid2{display:grid;grid-template-columns:1.3fr 1fr;gap:16px;margin-bottom:16px}
+.grid2b{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+
+/* 카드 공통 */
+.card{background:#fff;border-radius:12px;box-shadow:0 1px 3px rgba(15,31,61,.06);padding:18px 20px}
+.card-t{font-size:13.5px;font-weight:700;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between}
+.card-t a{font-size:11.5px;color:var(--sky-d);font-weight:700;text-decoration:none}
+.card-t a:hover{color:var(--sky)}
+
+/* D-day */
+.dday{font-family:'Montserrat';font-weight:800;font-size:12.5px}
+
+/* 매출 추이 바 차트 */
+.bars{display:flex;align-items:flex-end;gap:10px;height:130px;padding-top:8px}
+.bar{flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;height:100%;justify-content:flex-end;min-width:32px}
+.bar .bv{font-size:9.5px;font-weight:700;color:var(--navy);font-family:'Montserrat';text-align:center;white-space:nowrap}
+.bar .b{width:68%;background:linear-gradient(180deg,var(--sky),var(--sky-d));border-radius:5px 5px 0 0;min-height:3px}
+.bar .b.fut{background:linear-gradient(180deg,#cfe0ee,#a9c5d6);opacity:.8}
+.bar .bl{font-size:9.5px;color:var(--muted);text-align:center;line-height:1.3;white-space:pre-line}
+.chart-empty{height:130px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:13px}
+.hintbox{background:#F6F8FB;border-radius:9px;padding:10px 13px;font-size:11.5px;color:var(--muted);margin-top:12px;line-height:1.6}
+
+/* 파이프라인 */
+.pipe{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px}
+.pc{border:1px solid var(--line);border-radius:9px;padding:11px 12px;text-align:center}
+.pn{font-family:'Montserrat';font-weight:800;font-size:20px}
+.pl{font-size:11px;color:var(--muted);font-weight:700;margin-top:2px}
+
+/* 처리 대기 */
+.todo{display:flex;flex-direction:column;gap:9px}
+.todo-item{display:flex;align-items:center;justify-content:space-between;
+  text-decoration:none;color:var(--ink);padding:11px 13px;
+  border:1px solid var(--line);border-radius:9px;font-size:13px;font-weight:500;transition:.12s}
+.todo-item:hover{border-color:var(--sky);background:#FBFDFE}
+.todo-cnt{font-family:'Montserrat';font-weight:800;font-size:15px}
+
+/* 갱신 버튼 — staff에서 숨김 */
+.super-only{display:{% if admin_role == 'super_admin' %}inline-flex{% else %}none{% endif %}}
+{% endblock %}
+
+{% block content %}
+
+<!-- KPI 4개 -->
+<div class="kpis" id="kpi-area">
+  <div class="kpi">
+    <div class="k">활성 구독 기관</div>
+    <div class="v" id="kpi-inst">—</div>
+    <div class="d d-ok" id="kpi-inst-d"></div>
   </div>
+  <div class="kpi">
+    <div class="k">이번 학기 확정 매출</div>
+    <div class="v" id="kpi-rev">—</div>
+    <div class="d d-muted" id="kpi-rev-d"></div>
+  </div>
+  <div class="kpi">
+    <div class="k">활성 사용자 / 좌석</div>
+    <div class="v" id="kpi-user">—</div>
+    <div class="d" id="kpi-user-d"></div>
+  </div>
+  <div class="kpi" id="kpi-exp-card">
+    <div class="k">만료 임박 (D-90 내)</div>
+    <div class="v" id="kpi-exp">—</div>
+    <div class="d" id="kpi-exp-d"></div>
+  </div>
+</div>
+
+<div class="grid2">
+  <!-- 만료·갱신 임박 리스트 -->
   <div class="card">
-    <div class="card-header"><span class="card-title">전체 슬라이드</span><span>{{ slides | length }} TOTAL</span></div>
+    <div class="card-t">
+      만료 · 갱신 임박
+      <a href="/admin/institutions">기관 관리 →</a>
+    </div>
     <table>
-      <thead><tr><th>ID</th><th>슬라이드명</th><th>계통</th><th>염색</th><th>기관</th><th>상태</th><th>작업</th></tr></thead>
-      <tbody>
-        {% for s in slides %}
+      <thead>
         <tr>
-          <td><code>{{ s.id }}</code></td>
-          <td>{{ s.title_ko }}</td>
-          <td>{{ s.get('system', '') }}</td>
-          <td><span class="stain-badge">{{ s.get('stain', '') }}</span></td>
-          <td>{{ s.get('institution', '') }}</td>
-          <td>{% if s.active %}<span class="badge-active">활성</span>{% else %}<span class="badge-inactive">비활성</span>{% endif %}</td>
-          <td>
-            <button class="btn-edit" onclick="openEdit({{ s | tojson }})">수정</button>
-            <button class="btn-del" onclick="deleteSlide('{{ s.id }}')">삭제</button>
-          </td>
+          <th>기관 · 과목</th>
+          <th>만료일</th>
+          <th>D-day</th>
+          <th class="super-only"></th>
         </tr>
-        {% else %}
-        <tr><td colspan="7" style="text-align:center;color:#9B9490;padding:32px;">등록된 슬라이드가 없습니다.</td></tr>
-        {% endfor %}
+      </thead>
+      <tbody id="expiry-tbody">
+        <tr><td colspan="4" style="text-align:center;color:var(--muted);padding:24px">로딩 중…</td></tr>
       </tbody>
     </table>
   </div>
+
+  <!-- 학기별 매출 추이 -->
+  <div class="card">
+    <div class="card-t">
+      학기별 매출 추이
+      <span class="badge">확정 · 예상</span>
+    </div>
+    <div id="rev-chart">
+      <div class="chart-empty">로딩 중…</div>
+    </div>
+    <div class="hintbox">초창패 신청은 9월 매출 데이터 확보 후. 학기 단위 갱신 매출이 누적되는 구조.</div>
+  </div>
 </div>
-<div class="modal-overlay" id="modal">
-  <div class="modal">
-    <div class="modal-title" id="modal-title">슬라이드 추가</div>
-    <input type="hidden" id="edit-id">
-    <div class="form-grid">
-      <div class="form-row"><label>기관 코드</label>
-        <select id="f-institution">
-          {% for i in institutions %}<option value="{{ i.code }}">{{ i.code }} · {{ i.name_ko }}</option>{% endfor %}
-        </select>
-      </div>
-      <div class="form-row"><label>과목 코드</label>
-        <select id="f-subject">
-          {% for s in subjects %}<option value="{{ s.code }}">{{ s.code }} · {{ s.name_ko }}</option>{% endfor %}
-        </select>
-      </div>
+
+<div class="grid2b">
+  <!-- 파이프라인 현황 -->
+  <div class="card">
+    <div class="card-t">
+      슬라이드 파이프라인 현황
+      <a href="/admin/slides">슬라이드 관리 →</a>
     </div>
-    <div class="form-row"><label>슬라이드 ID</label><input type="text" id="f-id" placeholder="예: SA-HST-0002"></div>
-    <div class="form-grid">
-      <div class="form-row"><label>슬라이드명 (한글)</label><input type="text" id="f-title-ko"></div>
-      <div class="form-row"><label>슬라이드명 (영문)</label><input type="text" id="f-title-en"></div>
+    <div class="pipe" id="pipe-area">
+      <div class="pc"><div class="pn" id="pipe-deployed" style="color:var(--ok)">—</div><div class="pl">배포 중</div></div>
+      <div class="pc"><div class="pn" id="pipe-qc"       style="color:var(--muted)">—</div><div class="pl">배포 대기</div></div>
+      <div class="pc"><div class="pn" id="pipe-proc"     style="color:var(--blue)">—</div><div class="pl">처리 중</div></div>
+      <div class="pc"><div class="pn" id="pipe-fail"     style="color:var(--danger)">—</div><div class="pl">실패·반려</div></div>
     </div>
-    <div class="form-grid">
-      <div class="form-row"><label>계통</label><input type="text" id="f-system"></div>
-      <div class="form-row"><label>염색법</label><input type="text" id="f-stain"></div>
-    </div>
-    <div class="form-row"><label>포맷</label><select id="f-format"><option value="dcm">DCM</option><option value="svs">SVS</option></select></div>
-    <div class="form-row"><label>S3 키 (s3_key)</label><input type="text" id="f-s3key" placeholder="예: SA-PATH-0002/SA-PATH-0002.svs"></div>
-    <div class="form-row"><label>타일서버</label><select id="f-tileserver"><option value="">Render (기본)</option><option value="ec2">EC2</option></select></div>
-    <div class="form-row"><label>DCM 진입 파일</label><input type="text" id="f-entry" placeholder="예: 000001.dcm"></div>
-    <div class="form-row"><label>DCM 파일 목록 (쉼표 구분)</label><textarea id="f-files"></textarea></div>
-    <div class="form-row"><label>설명</label><textarea id="f-desc"></textarea></div>
-    <div class="form-row"><label>상태</label><select id="f-active"><option value="true">활성</option><option value="false">비활성</option></select></div>
-    <div class="modal-footer">
-      <button class="btn-cancel" onclick="closeModal()">취소</button>
-      <button class="btn-save" onclick="saveSlide()">저장</button>
+    <div class="hintbox" id="pipe-hint">파이프라인 데이터 로딩 중…</div>
+  </div>
+
+  <!-- 처리 대기 -->
+  <div class="card">
+    <div class="card-t">처리 대기 (할 일)</div>
+    <div class="todo" id="todo-area">
+      <div style="text-align:center;color:var(--muted);padding:16px;font-size:13px">로딩 중…</div>
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
 <script>
-function openAdd() {
-  document.getElementById('modal-title').textContent = '슬라이드 추가';
-  document.getElementById('edit-id').value = '';
-  ['f-id','f-title-ko','f-title-en','f-system','f-stain','f-s3key','f-entry','f-files','f-desc'].forEach(id => document.getElementById(id).value = '');
-  document.getElementById('f-active').value = 'true';
-  document.getElementById('f-format').value = 'dcm';
-  document.getElementById('f-tileserver').value = '';
-  document.getElementById('modal').classList.add('open');
+const IS_SUPER = {{ 'true' if admin_role == 'super_admin' else 'false' }};
+
+function fmtMoney(v) {
+  if (v >= 1_000_000) return '₩' + (v / 1_000_000).toFixed(1) + 'M';
+  if (v >= 1_000)     return '₩' + Math.round(v / 1000) + 'K';
+  return '₩' + v;
 }
-function openEdit(slide) {
-  document.getElementById('modal-title').textContent = '슬라이드 수정';
-  document.getElementById('edit-id').value = slide.id;
-  document.getElementById('f-id').value = slide.id;
-  document.getElementById('f-title-ko').value = slide.title_ko || '';
-  document.getElementById('f-title-en').value = slide.title_en || '';
-  document.getElementById('f-system').value = slide.system || '';
-  document.getElementById('f-stain').value = slide.stain || '';
-  document.getElementById('f-format').value = slide.format || 'dcm';
-  document.getElementById('f-s3key').value = slide.s3_key || '';
-  document.getElementById('f-tileserver').value = slide.tileserver || '';
-  document.getElementById('f-entry').value = slide.dcm_entry || '';
-  document.getElementById('f-files').value = (slide.dcm_files || []).join(', ');
-  document.getElementById('f-desc').value = slide.description || '';
-  document.getElementById('f-active').value = slide.active ? 'true' : 'false';
-  if(slide.institution) document.getElementById('f-institution').value = slide.institution;
-  document.getElementById('modal').classList.add('open');
+
+fetch('/admin/api/dashboard')
+  .then(r => r.json())
+  .then(d => {
+    if (!d.ok) return;
+    renderKPI(d.kpi);
+    renderExpiry(d.expiry_list);
+    renderRevChart(d.revenue_trend);
+    renderPipeline(d.pipeline);
+    renderTodo(d.todo);
+  });
+
+function renderKPI(k) {
+  // 활성 기관
+  document.getElementById('kpi-inst').innerHTML = k.active_inst + ' <small>개교</small>';
+  document.getElementById('kpi-inst-d').textContent = '현재 활성 구독 기준';
+
+  // 매출
+  document.getElementById('kpi-rev').textContent = fmtMoney(k.current_revenue);
+  document.getElementById('kpi-rev-d').textContent = '현재 접근 개방 구독 합산';
+
+  // 사용자
+  document.getElementById('kpi-user').innerHTML =
+    k.active_users + ' <small>/ ' + k.total_seats + '석</small>';
+  const ud = document.getElementById('kpi-user-d');
+  ud.textContent = '소진율 ' + k.util_pct + '%';
+  ud.className = 'd ' + (k.util_pct >= 90 ? 'd-warn' : 'd-ok');
+
+  // 만료 임박
+  document.getElementById('kpi-exp').innerHTML = k.expiring_d90 + ' <small>개교</small>';
+  const ed  = document.getElementById('kpi-exp-d');
+  const ecd = document.getElementById('kpi-exp-card');
+  if (k.expiring_d90 > 0) {
+    ed.textContent  = '갱신 협의 필요';
+    ed.className    = 'd d-danger';
+    ecd.classList.add('c-red');
+  } else {
+    ed.textContent  = 'D-90 이내 만료 없음';
+    ed.className    = 'd d-ok';
+  }
 }
-function closeModal() { document.getElementById('modal').classList.remove('open'); }
-async function saveSlide() {
-  const payload = {
-    id: document.getElementById('f-id').value.trim(),
-    title_ko: document.getElementById('f-title-ko').value.trim(),
-    title_en: document.getElementById('f-title-en').value.trim(),
-    system: document.getElementById('f-system').value.trim(),
-    stain: document.getElementById('f-stain').value.trim(),
-    institution: document.getElementById('f-institution').value,
-    category: document.getElementById('f-subject').value.toLowerCase(),
-    format: document.getElementById('f-format').value,
-    s3_key: document.getElementById('f-s3key').value.trim(),
-    tileserver: document.getElementById('f-tileserver').value,
-    dcm_entry: document.getElementById('f-entry').value.trim(),
-    dcm_files: document.getElementById('f-files').value.split(',').map(s=>s.trim()).filter(Boolean),
-    description: document.getElementById('f-desc').value.trim(),
-    active: document.getElementById('f-active').value === 'true',
-    edit_id: document.getElementById('edit-id').value
-  };
-  if(!payload.tileserver) delete payload.tileserver;
-  const adminCsrf = document.getElementById('admin-csrf-token') ? document.getElementById('admin-csrf-token').value : '';
-  const res = await fetch('/admin/api/slide', {method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':adminCsrf},body:JSON.stringify(payload)});
-  const result = await res.json();
-  if(result.ok) { location.reload(); } else { alert('오류: ' + result.error); }
+
+function renderExpiry(list) {
+  const tb = document.getElementById('expiry-tbody');
+  if (!list.length) {
+    tb.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:24px">만료 임박 구독 없음</td></tr>';
+    return;
+  }
+  tb.innerHTML = list.map(r => {
+    const ddayCls = r.color === 'danger' ? 'var(--danger)' : r.color === 'warn' ? 'var(--warn)' : 'var(--ok)';
+    const renewBtn = IS_SUPER
+      ? `<td style="text-align:right"><a class="btn btn-sky btn-sm" href="/admin/institutions">갱신</a></td>`
+      : '<td></td>';
+    return `<tr>
+      <td>${escH(r.inst_name)} · <span class="sub">${escH(r.subject)}</span></td>
+      <td>${r.end_date}</td>
+      <td><span class="dday" style="color:${ddayCls}">D-${r.days_left}</span></td>
+      ${IS_SUPER ? `<td style="text-align:right"><a class="btn btn-sky btn-sm" href="/admin/institutions">갱신</a></td>` : '<td></td>'}
+    </tr>`;
+  }).join('');
 }
-async function deleteSlide(id) {
-  if(!confirm(id+' 슬라이드를 삭제하시겠습니까?')) return;
-  const adminCsrfD = document.getElementById('admin-csrf-token') ? document.getElementById('admin-csrf-token').value : '';
-  const res = await fetch('/admin/api/slide/'+id, {method:'DELETE',headers:{'X-CSRF-Token':adminCsrfD}});
-  const result = await res.json();
-  if(result.ok) { location.reload(); } else { alert('오류: '+result.error); }
+
+function renderRevChart(trend) {
+  const area = document.getElementById('rev-chart');
+  if (!trend.length) {
+    area.innerHTML = '<div class="chart-empty">매출 데이터 없음</div>';
+    return;
+  }
+  const bars = trend.map(t => {
+    const futCls = t.future ? ' fut' : '';
+    const fee = t.fee >= 1_000_000 ? (t.fee / 1_000_000).toFixed(1) + 'M' : Math.round(t.fee / 1000) + 'K';
+    const label = t.label.replace(' ', '\n');
+    return `<div class="bar">
+      <div class="bv">${fee}</div>
+      <div class="b${futCls}" style="height:${Math.max(t.pct, 4)}%"></div>
+      <div class="bl">${escH(label)}</div>
+    </div>`;
+  }).join('');
+  area.innerHTML = '<div class="bars">' + bars + '</div>';
 }
-document.getElementById('modal').addEventListener('click', function(e) { if(e.target===this) closeModal(); });
+
+function renderPipeline(p) {
+  document.getElementById('pipe-deployed').textContent = p.deployed;
+  document.getElementById('pipe-qc').textContent       = p.qc_pending;
+  document.getElementById('pipe-proc').textContent     = p.processing;
+  document.getElementById('pipe-fail').textContent     = p.failed_rejected;
+  const total = p.deployed + p.qc_pending + p.processing + p.failed_rejected;
+  document.getElementById('pipe-hint').textContent =
+    `전체 ${total}장 · 배포 중 ${p.deployed}장 · 배포 대기 ${p.qc_pending}장`;
+}
+
+function renderTodo(t) {
+  const area = document.getElementById('todo-area');
+  const items = [
+    { label: '미답변 1:1 문의',         cnt: t.open_inquiries,    href: '/admin/inquiries', cls: t.open_inquiries > 0   ? 'danger' : 'ok' },
+    { label: '검수·배포 대기 슬라이드', cnt: t.qc_pending_slides, href: '/admin/slides',    cls: t.qc_pending_slides > 0 ? 'warn'   : 'ok' },
+    { label: 'MPP 없음 (수동 입력 필요)', cnt: t.mpp_missing,     href: '/admin/slides',    cls: t.mpp_missing > 0       ? 'warn'   : 'ok' },
+    { label: '만료 임박 갱신 협의 (D-90)', cnt: t.expiring_renewals, href: '/admin/institutions', cls: t.expiring_renewals > 0 ? 'danger' : 'ok' },
+  ];
+  const colorMap = { danger: 'var(--danger)', warn: 'var(--warn)', ok: 'var(--muted)' };
+  area.innerHTML = items.map(i =>
+    `<a class="todo-item" href="${i.href}">
+      <span>${escH(i.label)}</span>
+      <span class="todo-cnt" style="color:${colorMap[i.cls]}">${i.cnt}</span>
+    </a>`
+  ).join('');
+}
+
+function escH(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
 </script>
-</body></html>
+{% endblock %}

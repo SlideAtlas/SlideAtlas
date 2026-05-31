@@ -1,0 +1,652 @@
+{% extends "admin/base.html" %}
+{% block title %}슬라이드 관리 — SlideAtlas Admin{% endblock %}
+{% block page_title %}슬라이드 관리 · QC / 파이프라인{% endblock %}
+
+{% block extra_style %}
+.toolbar{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px}
+.toolbar .lead{font-size:12.5px;color:var(--muted);margin-top:5px;max-width:560px}
+.btn-row{display:flex;gap:8px;flex-wrap:wrap}
+.btn-ok{background:var(--ok);color:#fff}.btn-ok:hover{filter:brightness(.93)}
+.btn-warn{background:#fff;border:1px solid #ECC58E;color:var(--warn)}.btn-warn:hover{background:#FCF6EC}
+
+/* 상태 칩 */
+.chips{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.chip{background:#fff;border:1px solid var(--line);border-radius:10px;padding:9px 14px;cursor:pointer;display:flex;align-items:center;gap:9px;transition:.15s;user-select:none}
+.chip:hover{border-color:var(--sky)}
+.chip.on{border-color:var(--navy);background:#F3F7FC}
+.chip .cn{font-family:'Montserrat';font-weight:800;font-size:16px;color:var(--navy)}
+.chip .cl{font-size:11.5px;color:var(--muted);font-weight:700}
+
+/* 배치 바 */
+.batch{display:none;align-items:center;justify-content:space-between;background:var(--navy);color:#fff;border-radius:10px;padding:11px 16px;margin-bottom:12px}
+.batch.show{display:flex}
+.batch .bt{font-size:13px;font-weight:700}
+.batch .bt b{color:var(--sky);font-family:'Montserrat'}
+.batch .ba{display:flex;gap:8px;align-items:center}
+.batch .clr{background:none;border:none;color:#9fb0cb;font-size:12.5px;cursor:pointer;text-decoration:underline}
+
+/* 테이블 */
+.cbx{width:16px;height:16px;cursor:pointer;accent-color:var(--navy)}
+.sid{font-family:'Montserrat';font-weight:700;color:var(--navy);font-size:12px}
+.stitle{font-weight:500}.smeta{font-size:11px;color:var(--muted)}
+.fmt{font-family:'Montserrat';font-size:11px;font-weight:600;color:var(--muted);background:#EEF1F5;padding:2px 7px;border-radius:5px}
+.spin{width:10px;height:10px;border:2px solid #cfe0fa;border-top-color:var(--blue);border-radius:50%;display:inline-block;animation:sp .8s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.mpp-txt{font-family:'Montserrat';font-weight:600;font-size:12px}
+.mpp-row{display:flex;gap:5px;align-items:center}
+.mpp-row input{width:62px;border:1px solid var(--warn);border-radius:6px;padding:5px 7px;font-size:12px;font-family:'Montserrat';outline:none}
+.reject-reason{font-size:11px;color:var(--danger);margin-top:3px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* 모달 오버레이 */
+.overlay{position:fixed;inset:0;background:rgba(10,18,35,.55);backdrop-filter:blur(2px);display:none;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto;z-index:1000}
+.overlay.show{display:flex}
+.modal-sm{background:#fff;width:100%;max-width:520px;border-radius:16px;box-shadow:var(--shadow);overflow:hidden;animation:pop .2s ease}
+.modal-md{background:#fff;width:100%;max-width:640px;border-radius:16px;box-shadow:var(--shadow);overflow:hidden;animation:pop .2s ease}
+@keyframes pop{from{transform:translateY(12px) scale(.98);opacity:0}to{transform:none;opacity:1}}
+.m-head{background:var(--navy);color:#fff;padding:17px 22px;display:flex;justify-content:space-between;align-items:center}
+.m-head h2{font-size:15.5px;font-weight:700}
+.m-head p{font-size:12px;color:#9fb0cb;margin-top:2px}
+.x-btn{background:rgba(255,255,255,.1);border:none;color:#fff;width:30px;height:30px;border-radius:8px;font-size:17px;cursor:pointer}
+.x-btn:hover{background:rgba(255,255,255,.2)}
+.m-body{padding:20px 22px}
+.m-foot{padding:14px 22px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:9px;background:#FBFCFE}
+.m-body label{font-size:12px;font-weight:700;color:#3c4759;display:block;margin-bottom:6px}
+.m-body input,.m-body select,.m-body textarea{border:1px solid var(--line);border-radius:8px;padding:9px 11px;font-size:13px;font-family:inherit;width:100%;color:var(--ink);outline:none}
+.m-body input:focus,.m-body select:focus,.m-body textarea:focus{border-color:var(--sky);box-shadow:0 0 0 3px rgba(91,184,212,.18)}
+.m-body textarea{resize:vertical;min-height:72px;line-height:1.5}
+.infobox{background:#F6F8FB;border-radius:9px;padding:11px 13px;font-size:12.5px;margin-bottom:15px;display:flex;gap:10px;align-items:center}
+.m-note{font-size:11.5px;color:var(--muted);margin-top:9px}
+.m-note.warn{color:var(--warn)}
+.frow{margin-bottom:13px}
+.fgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+
+/* KB 칩 */
+.kchips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:7px}
+.kchip{background:#EEF3F8;color:var(--navy);font-size:12px;padding:5px 9px;border-radius:7px;display:inline-flex;gap:7px;align-items:center}
+.kchip .krm{cursor:pointer;color:var(--muted);font-weight:700}
+.kadd{border:1px dashed var(--line);border-radius:7px;padding:6px 9px;font-size:12px;outline:none;font-family:inherit}
+
+/* 로그 타임라인 */
+.tl{display:flex;align-items:center;margin-bottom:16px}
+.tl-step{display:flex;flex-direction:column;align-items:center;flex:1}
+.tl-dot{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:800;color:#fff;font-family:'Montserrat'}
+.tl-l{font-size:10.5px;margin-top:5px;color:var(--muted);font-weight:700;text-align:center}
+.tl-bar{height:3px;flex:1;background:var(--line);margin-top:-18px}
+.tl-done .tl-dot{background:var(--ok)}.tl-fail .tl-dot{background:var(--danger)}.tl-todo .tl-dot{background:var(--line);color:var(--muted)}
+.logbox{background:#0F1B2E;color:#cfe0fa;font-family:'JetBrains Mono','Courier New',monospace;font-size:11.5px;border-radius:9px;padding:13px 15px;line-height:1.7;white-space:pre-wrap;max-height:200px;overflow:auto}
+.logbox .le{color:#ff8b8b}.logbox .lo{color:#7fe0a8}.logbox .lw{color:#ffcf8b}
+
+/* 개별 추가 파일존 */
+.dropzone{border:2px dashed var(--line);border-radius:11px;padding:22px;text-align:center;cursor:pointer;transition:.15s}
+.dropzone:hover{border-color:var(--sky);background:#F8FBFD}
+
+/* 토스트 */
+.toast{position:fixed;bottom:28px;right:28px;background:var(--danger);color:#fff;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:700;z-index:2000;display:none;box-shadow:0 4px 20px rgba(0,0,0,.2)}
+.toast.ok{background:var(--ok)}
+{% endblock %}
+
+{% block content %}
+<div class="toolbar">
+  <div>
+    <div class="btn-row" style="margin-bottom:6px">
+      <button class="btn btn-pri" onclick="openAdd()">개별 추가</button>
+    </div>
+    <div class="lead">변환은 파이프라인이 자동 처리합니다. <b>배포(학생 노출)</b>는 검수 완료 후 슈퍼관리자가 결정합니다. 자동 변환이 끝나도 "검수 → 배포"를 눌러야 학생에게 공개됩니다.</div>
+  </div>
+</div>
+
+<div class="chips" id="chips">
+  <div class="chip on" data-filter="all"><span class="cn" id="cnt-all">—</span><span class="cl">전체</span></div>
+  <div class="chip" data-filter="processing"><span class="led l-blue"></span><span class="cn" id="cnt-proc">—</span><span class="cl">처리 중</span></div>
+  <div class="chip" data-filter="qc_pending"><span class="led l-gray"></span><span class="cn" id="cnt-qc">—</span><span class="cl">배포 대기</span></div>
+  <div class="chip" data-filter="no_mpp"><span class="led l-warn"></span><span class="cn" id="cnt-mpp">—</span><span class="cl">MPP 없음</span></div>
+  <div class="chip" data-filter="failed"><span class="led l-red"></span><span class="cn" id="cnt-fail">—</span><span class="cl">실패·반려</span></div>
+  <div class="chip" data-filter="deployed"><span class="led l-ok"></span><span class="cn" id="cnt-dep">—</span><span class="cl">배포 중</span></div>
+</div>
+
+<div class="batch" id="batch">
+  <div class="bt">선택 <b id="bcount">0</b>건</div>
+  <div class="ba">
+    <button class="btn btn-ok btn-sm" onclick="batchDeploy()">선택 일괄 배포</button>
+    <button class="btn btn-warn btn-sm" onclick="openBatchReject()">일괄 반려</button>
+    <button class="clr" onclick="clearSel()">선택 해제</button>
+  </div>
+</div>
+
+<div class="card" style="padding:0">
+  <table id="slide-table">
+    <thead><tr>
+      <th style="width:36px"><input type="checkbox" class="cbx" id="allcb" onclick="toggleAll(this)"></th>
+      <th>슬라이드</th>
+      <th style="width:64px">원본</th>
+      <th style="width:130px">변환 상태</th>
+      <th style="width:140px">배포 상태</th>
+      <th style="width:96px">MPP</th>
+      <th style="width:220px"></th>
+    </tr></thead>
+    <tbody id="slide-tbody">
+      <tr><td colspan="7" style="text-align:center;color:var(--muted);padding:32px">불러오는 중...</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ── 반려 모달 ── -->
+<div class="overlay" id="ov-reject">
+  <div class="modal-sm">
+    <div class="m-head"><div><h2>슬라이드 반려</h2><p>검수자 보고 기반으로 배포를 보류합니다</p></div><button class="x-btn" onclick="closeModal('ov-reject')">×</button></div>
+    <div class="m-body">
+      <div class="infobox"><span class="sid" id="rej-sid"></span><span id="rej-title" style="margin-left:8px"></span></div>
+      <div class="frow">
+        <label>반려 사유 <span style="color:var(--danger)">*</span></label>
+        <select id="rej-reason">
+          <option value="">사유 선택</option>
+          <option>조직 찢어짐 / 절편 손상</option>
+          <option>초점 흐림 (out of focus)</option>
+          <option>염색 불균질 / 과염색</option>
+          <option>공기방울 · 이물질</option>
+          <option>조직 영역 누락 / 절편 부족</option>
+          <option>스캔 영역 어긋남</option>
+          <option>기타</option>
+        </select>
+      </div>
+      <div class="frow">
+        <label>상세 사유</label>
+        <textarea id="rej-detail" placeholder="예: 점막하층 일부 찢어짐, 재절편 필요"></textarea>
+      </div>
+      <div class="m-note warn">반려된 슬라이드는 학생에게 노출되지 않습니다. 사유는 DB에 보존됩니다.</div>
+    </div>
+    <div class="m-foot"><button class="btn btn-ghost" onclick="closeModal('ov-reject')">취소</button><button class="btn btn-warn" onclick="confirmReject()">반려 확정</button></div>
+  </div>
+</div>
+
+<!-- ── 로그 모달 ── -->
+<div class="overlay" id="ov-log">
+  <div class="modal-md">
+    <div class="m-head"><div><h2 id="log-title">변환 로그</h2><p id="log-sub"></p></div><button class="x-btn" onclick="closeModal('ov-log')">×</button></div>
+    <div class="m-body">
+      <div class="tl" id="log-tl"></div>
+      <label>상세 로그</label>
+      <div class="logbox" id="log-box">로그 없음</div>
+    </div>
+    <div class="m-foot"><button class="btn btn-ghost" onclick="closeModal('ov-log')">닫기</button></div>
+  </div>
+</div>
+
+<!-- ── 검수(KB) 모달 ── -->
+<div class="overlay" id="ov-kb">
+  <div class="modal-md">
+    <div class="m-head"><div><h2>검수 · 슬라이드 학습 내용</h2><p>AI 자동 초안을 검증·보완한 뒤 배포합니다</p></div><button class="x-btn" onclick="closeModal('ov-kb')">×</button></div>
+    <div class="m-body">
+      <div class="infobox">
+        <span class="sid" id="kb-sid"></span>
+        <span id="kb-title" style="margin-left:8px"></span>
+        <span class="pill p-blue" style="margin-left:auto;font-size:11px"><span class="led l-blue"></span>AI 자동 초안</span>
+      </div>
+      <div class="frow">
+        <label>핵심 구조 — 꼭 봐야 할 조직</label>
+        <div class="kchips" id="kb-ks"></div>
+        <input class="kadd" id="kb-ksadd" placeholder="+ 구조 추가 후 Enter" onkeydown="if(event.key==='Enter'){addKs();event.preventDefault();}">
+      </div>
+      <div class="frow"><label>시험 포인트 (exam points)</label><textarea id="kb-ex"></textarea></div>
+      <div class="frow"><label>혼동 주의 (common confusions)</label><textarea id="kb-cf"></textarea></div>
+      <div class="frow">
+        <label>한국어 관찰 포인트 — 관찰 순서 · 키워드</label>
+        <textarea id="kb-ko"></textarea>
+        <div class="m-note">Histology Guide류 무료 사이트 대비 핵심 차별점 — 한국어 관찰 가이드</div>
+      </div>
+    </div>
+    <div class="m-foot">
+      <button class="btn btn-warn" onclick="rejectFromKb()">반려</button>
+      <button class="btn btn-ghost" onclick="saveKbOnly()">저장만</button>
+      <button class="btn btn-ok" onclick="deployFromKb()">검증 완료 · 배포</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── 개별 추가 모달 ── -->
+<div class="overlay" id="ov-add">
+  <div class="modal-md">
+    <div class="m-head"><div><h2>슬라이드 개별 추가</h2><p>메타데이터를 입력하고 파이프라인 대기열에 등록합니다</p></div><button class="x-btn" onclick="closeModal('ov-add')">×</button></div>
+    <div class="m-body">
+      <div class="infobox" style="align-items:flex-start;gap:9px">
+        <span style="font-size:15px">🔍</span>
+        <div><b style="font-size:12.5px">MPP(배율 정보)는 변환 시 파일에서 자동 추출됩니다.</b><div class="smeta" style="margin-top:2px">직접 입력하지 않습니다. 파일에 MPP 태그가 없으면 이후 QC 화면에서 수동 입력 후 재처리합니다.</div></div>
+      </div>
+      <div style="border-top:1px dashed var(--line);margin:0 0 16px"></div>
+      <div class="fgrid">
+        <div class="frow">
+          <label>과목 <span style="color:var(--danger)">*</span></label>
+          <select id="a-subj" onchange="updAddSid()">
+            <option value="HST">HST · 조직학</option>
+            <option value="PATH">PATH · 병리학</option>
+            <option value="PARA">PARA · 기생충학</option>
+            <option value="ANAT">ANAT · 해부학</option>
+            <option value="EMBRY">EMBRY · 발생학</option>
+          </select>
+        </div>
+        <div class="frow">
+          <label>슬라이드 ID <span class="smeta" style="font-weight:500">(자동 채번)</span></label>
+          <input id="a-sid" readonly style="font-family:'Montserrat';font-weight:700;background:#F6F8FB;color:var(--navy)">
+          <div class="smeta" style="margin-top:4px">v1.0: SA 기관코드 자동 부여</div>
+        </div>
+        <div class="frow">
+          <label>공급원 (Acknowledgement)</label>
+          <select id="a-src" onchange="updAck()">
+            <option value="">자체 제작</option>
+            <option value="Provided by Yulin">Yulin 율린</option>
+            <option value="Provided by Vic Science">Vic Science</option>
+            <option value="Source: TCGA (open access)">오픈소스 (TCGA 등)</option>
+            <option value="custom">기타 직접 입력</option>
+          </select>
+        </div>
+        <div class="frow">
+          <label>뷰어 푸터 표기 <span class="smeta" style="font-weight:500">(선택)</span></label>
+          <input id="a-ack" placeholder="표기 불필요 시 비워두기">
+        </div>
+        <div class="frow">
+          <label>제목 (한국어) <span style="color:var(--danger)">*</span></label>
+          <input id="a-tko" placeholder="예: 식도">
+        </div>
+        <div class="frow">
+          <label>제목 (영어)</label>
+          <input id="a-ten" placeholder="예: Esophagus">
+        </div>
+        <div class="frow">
+          <label>장기 (organ)</label>
+          <input id="a-org" placeholder="예: 소화기">
+        </div>
+        <div class="frow">
+          <label>염색 (stain)</label>
+          <input id="a-stain" placeholder="예: H&E" value="H&E">
+        </div>
+        <div class="frow">
+          <label>종 (species)</label>
+          <select id="a-species">
+            <option value="human">human</option>
+            <option value="rat">rat</option>
+            <option value="mouse">mouse</option>
+          </select>
+        </div>
+        <div class="frow">
+          <label>원본 포맷</label>
+          <select id="a-fmt">
+            <option value="SVS">SVS</option>
+            <option value="TIFF">TIFF</option>
+            <option value="NDPI">NDPI</option>
+            <option value="DCM">DCM</option>
+            <option value="VSI">VSI</option>
+          </select>
+        </div>
+        <div class="frow" style="grid-column:1/-1">
+          <label>설명 (description)</label>
+          <textarea id="a-desc" placeholder="검수·AI 튜터용 참고 설명 (선택)" style="min-height:58px"></textarea>
+        </div>
+      </div>
+      <div class="m-note">저장 시 <b>대기(pending)</b> 상태로 등록됩니다. 실제 파일은 파이프라인을 통해 별도 업로드합니다.</div>
+    </div>
+    <div class="m-foot"><button class="btn btn-ghost" onclick="closeModal('ov-add')">취소</button><button class="btn btn-pri" onclick="submitAdd()">메타데이터 등록</button></div>
+  </div>
+</div>
+
+<!-- ── 일괄 반려 모달 ── -->
+<div class="overlay" id="ov-batch-reject">
+  <div class="modal-sm">
+    <div class="m-head"><div><h2>일괄 반려</h2><p id="br-sub"></p></div><button class="x-btn" onclick="closeModal('ov-batch-reject')">×</button></div>
+    <div class="m-body">
+      <div class="frow">
+        <label>공통 반려 사유 <span style="color:var(--danger)">*</span></label>
+        <select id="br-reason">
+          <option value="">사유 선택</option>
+          <option>조직 찢어짐 / 절편 손상</option>
+          <option>초점 흐림 (out of focus)</option>
+          <option>염색 불균질 / 과염색</option>
+          <option>기타</option>
+        </select>
+      </div>
+    </div>
+    <div class="m-foot"><button class="btn btn-ghost" onclick="closeModal('ov-batch-reject')">취소</button><button class="btn btn-warn" onclick="confirmBatchReject()">일괄 반려 확정</button></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const CSRF = document.getElementById('admin-csrf-token').value;
+let _allSlides = [];
+let _filter = 'all';
+let _rejectSlideId = null;
+
+// ── 데이터 로드 ──────────────────────────────────────────────
+async function loadSlides() {
+  const res = await fetch('/admin/api/slides/list');
+  const data = await res.json();
+  if (!data.ok) { showToast('로드 실패: ' + data.error); return; }
+  _allSlides = data.slides;
+  const c = data.counts;
+  document.getElementById('cnt-all').textContent = c.total;
+  document.getElementById('cnt-proc').textContent = c.processing;
+  document.getElementById('cnt-qc').textContent = c.qc_pending;
+  document.getElementById('cnt-mpp').textContent = c.no_mpp;
+  document.getElementById('cnt-fail').textContent = c.failed;
+  document.getElementById('cnt-dep').textContent = c.deployed;
+  renderTable();
+}
+
+function filterSlides(slides, f) {
+  if (f === 'all') return slides;
+  if (f === 'processing') return slides.filter(s => ['pending','converting','qc_check'].includes(s.conversion_status));
+  if (f === 'qc_pending') return slides.filter(s => s.conversion_status === 'ready' && s.deploy_status === 'qc_pending');
+  if (f === 'no_mpp') return slides.filter(s => s.conversion_status === 'ready_no_mpp');
+  if (f === 'failed') return slides.filter(s => s.conversion_status === 'failed' || s.deploy_status === 'rejected');
+  if (f === 'deployed') return slides.filter(s => s.deploy_status === 'deployed');
+  return slides;
+}
+
+// ── 상태 필 생성 ──────────────────────────────────────────────
+function convPill(cs) {
+  const m = {
+    pending:    ['p-gray','l-gray','대기'],
+    converting: ['p-blue','l-blue','변환 중'],
+    qc_check:   ['p-blue','l-blue','자동 QC'],
+    ready:      ['p-ok','l-ok','변환완료'],
+    ready_no_mpp:['p-warn','l-warn','MPP 없음'],
+    failed:     ['p-red','l-red','변환 실패'],
+  };
+  const [pc,lc,label] = m[cs] || ['p-gray','l-gray',cs];
+  const spin = (cs==='converting'||cs==='qc_check') ? '<span class="spin"></span>' : `<span class="led ${lc}"></span>`;
+  return `<span class="pill ${pc}">${spin}${label}</span>`;
+}
+function depPill(ds, reason) {
+  const m = {
+    qc_pending: ['p-gray','l-gray','배포 대기'],
+    deployed:   ['p-ok','l-ok','배포 중'],
+    rejected:   ['p-red','l-red','반려'],
+  };
+  const [pc,lc,label] = m[ds] || ['p-gray','l-gray',ds];
+  let html = `<span class="pill ${pc}"><span class="led ${lc}"></span>${label}</span>`;
+  if (ds === 'rejected' && reason) html += `<div class="reject-reason" title="${reason}">⚠ ${reason}</div>`;
+  return html;
+}
+
+// ── 테이블 렌더링 ─────────────────────────────────────────────
+function renderTable() {
+  const rows = filterSlides(_allSlides, _filter);
+  const tbody = document.getElementById('slide-tbody');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:32px">해당 조건의 슬라이드가 없습니다.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(s => {
+    const canCheck = s.conversion_status === 'ready' && s.deploy_status === 'qc_pending';
+    const cbx = canCheck
+      ? `<input type="checkbox" class="cbx rcb" data-id="${s.id}" onclick="syncSel()">`
+      : `<input type="checkbox" class="cbx rcb" disabled>`;
+    const mppTxt = s.mpp ? `<span class="mpp-txt">${parseFloat(s.mpp).toFixed(3)} μm</span>` : '—';
+    const mppCell = s.conversion_status === 'ready_no_mpp'
+      ? `<div class="mpp-row"><input id="mpp-${s.id}" type="number" step="0.01" placeholder="0.25"><span style="font-size:11px;color:var(--muted)">μm</span></div>`
+      : mppTxt;
+    const actions = buildActions(s);
+    return `<tr data-id="${s.id}">
+      <td>${cbx}</td>
+      <td><div class="sid">${s.id}</div><div class="stitle">${s.title_ko||''}</div><div class="smeta">${s.organ||''} ${s.stain?'· '+s.stain:''}</div></td>
+      <td><span class="fmt">${s.original_format||'—'}</span></td>
+      <td>${convPill(s.conversion_status)}</td>
+      <td>${depPill(s.deploy_status, s.reject_reason)}</td>
+      <td>${mppCell}</td>
+      <td><div class="row-act">${actions}</div></td>
+    </tr>`;
+  }).join('');
+  syncSel();
+}
+
+function buildActions(s) {
+  const {id, conversion_status: cs, deploy_status: ds, title_ko} = s;
+  const safeTitle = (title_ko||'').replace(/'/g,"\\'");
+  if (cs === 'failed')
+    return `<button class="btn btn-ghost btn-sm" onclick='openLog(${JSON.stringify(s)})'>로그</button>`;
+  if (cs === 'ready_no_mpp')
+    return `<button class="btn btn-sky btn-sm" onclick="submitMpp('${id}')">MPP 입력·재처리</button>`;
+  if (cs === 'ready' && ds === 'qc_pending')
+    return `<button class="btn btn-ghost btn-sm" onclick='openKb(${JSON.stringify(s)})'>검수</button><button class="btn btn-warn btn-sm" onclick="openReject('${id}','${safeTitle}')">반려</button>`;
+  if (cs === 'ready' && ds === 'deployed')
+    return `<button class="btn btn-warn btn-sm" onclick="revokeSlide('${id}')">배포 철회</button>`;
+  if (ds === 'rejected')
+    return `<span class="smeta" style="color:var(--muted)">재공급 대기</span>`;
+  return `<span class="smeta">처리 대기 중</span>`;
+}
+
+// ── 체크박스 배치 ──────────────────────────────────────────────
+function activeCbs() { return [...document.querySelectorAll('.rcb')].filter(c => !c.disabled); }
+function selected() { return activeCbs().filter(c => c.checked); }
+function syncSel() {
+  const n = selected().length;
+  document.getElementById('bcount').textContent = n;
+  document.getElementById('batch').classList.toggle('show', n > 0);
+  const allcb = document.getElementById('allcb');
+  const tot = activeCbs().length;
+  allcb.checked = n === tot && tot > 0;
+  allcb.indeterminate = n > 0 && n < tot;
+}
+function toggleAll(cb) { activeCbs().forEach(c => c.checked = cb.checked); syncSel(); }
+function clearSel() { activeCbs().forEach(c => c.checked = false); syncSel(); }
+
+// ── 상태 칩 필터 ──────────────────────────────────────────────
+document.getElementById('chips').addEventListener('click', e => {
+  const chip = e.target.closest('.chip');
+  if (!chip) return;
+  document.querySelectorAll('.chip').forEach(c => c.classList.remove('on'));
+  chip.classList.add('on');
+  _filter = chip.dataset.filter;
+  renderTable();
+});
+
+// ── 단일 배포 / 철회 ─────────────────────────────────────────
+async function revokeSlide(id) {
+  if (!confirm('배포를 철회하면 학생 접근이 차단됩니다. 계속할까요?')) return;
+  const res = await fetch(`/admin/api/slides/${id}/revoke`, {method:'POST', headers:{'X-CSRF-Token':CSRF}});
+  const d = await res.json();
+  if (d.ok) { showToast('철회됐습니다', true); loadSlides(); } else showToast('오류: ' + d.error);
+}
+
+// ── 반려 모달 ─────────────────────────────────────────────────
+function openReject(id, title) {
+  _rejectSlideId = id;
+  document.getElementById('rej-sid').textContent = id;
+  document.getElementById('rej-title').textContent = title;
+  document.getElementById('rej-reason').value = '';
+  document.getElementById('rej-detail').value = '';
+  document.getElementById('ov-reject').classList.add('show');
+}
+async function confirmReject() {
+  const reason = document.getElementById('rej-reason').value;
+  if (!reason) { showToast('반려 사유를 선택하세요'); return; }
+  const detail = document.getElementById('rej-detail').value.trim();
+  const res = await fetch(`/admin/api/slides/${_rejectSlideId}/reject`, {
+    method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':CSRF},
+    body: JSON.stringify({reason, detail})
+  });
+  const d = await res.json();
+  if (d.ok) { showToast('반려됐습니다', true); closeModal('ov-reject'); loadSlides(); }
+  else showToast('오류: ' + d.error);
+}
+
+// ── MPP 재처리 ───────────────────────────────────────────────
+async function submitMpp(id) {
+  const inp = document.getElementById(`mpp-${id}`);
+  const val = parseFloat(inp ? inp.value : 0);
+  if (!val || val <= 0) { showToast('유효한 MPP 값을 입력하세요 (예: 0.25)'); return; }
+  const res = await fetch(`/admin/api/slides/${id}/mpp`, {
+    method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':CSRF},
+    body: JSON.stringify({mpp: val})
+  });
+  const d = await res.json();
+  if (d.ok) { showToast('재처리 요청됐습니다', true); loadSlides(); } else showToast('오류: ' + d.error);
+}
+
+// ── 로그 모달 ────────────────────────────────────────────────
+function openLog(s) {
+  document.getElementById('log-title').textContent = `변환 로그 — ${s.id}`;
+  document.getElementById('log-sub').textContent = `${s.title_ko || ''} · ${s.original_format || ''}`;
+  // 타임라인 (conversion_status 기반)
+  const steps = ['pending','converting','qc_check','ready'];
+  const curIdx = steps.indexOf(s.conversion_status);
+  document.getElementById('log-tl').innerHTML = steps.map((step, i) => {
+    const labels = ['대기','변환','QC','완료'];
+    const cls = i < curIdx ? 'tl-done' : (step === s.conversion_status ? 'tl-fail' : 'tl-todo');
+    const dot = cls === 'tl-done' ? '✓' : (cls === 'tl-fail' ? '✕' : '·');
+    return `${i>0?'<div class="tl-bar" style="'+(i<=curIdx?'background:var(--ok)':'')+'">' + '</div>':''}
+      <div class="tl-step ${cls}"><div class="tl-dot">${dot}</div><div class="tl-l">${labels[i]}</div></div>`;
+  }).join('');
+  document.getElementById('log-box').textContent = s.conversion_log || '변환 로그 없음';
+  document.getElementById('ov-log').classList.add('show');
+}
+
+// ── KB 검수 모달 ─────────────────────────────────────────────
+let _kbSlide = null, _kbKs = [];
+function renderKs() {
+  document.getElementById('kb-ks').innerHTML = _kbKs.map((k,i) =>
+    `<span class="kchip">${k}<span class="krm" onclick="rmKs(${i})">×</span></span>`
+  ).join('');
+}
+function rmKs(i) { _kbKs.splice(i,1); renderKs(); }
+function addKs() {
+  const el = document.getElementById('kb-ksadd');
+  const v = el.value.trim();
+  if (v) { _kbKs.push(v); renderKs(); el.value=''; }
+}
+function openKb(s) {
+  _kbSlide = s;
+  const kb = s.knowledge_base || {};
+  _kbKs = [...(kb.key_structures || [])];
+  document.getElementById('kb-sid').textContent = s.id;
+  document.getElementById('kb-title').textContent = s.title_ko || '';
+  document.getElementById('kb-ex').value = Array.isArray(kb.exam_points) ? kb.exam_points.join('\n') : (kb.exam_points || '');
+  document.getElementById('kb-cf').value = Array.isArray(kb.common_confusions) ? kb.common_confusions.join('\n') : (kb.common_confusions || '');
+  document.getElementById('kb-ko').value = kb.ko_observation_points || '';
+  renderKs();
+  document.getElementById('ov-kb').classList.add('show');
+}
+function buildKbPayload() {
+  return {
+    key_structures: _kbKs,
+    exam_points: document.getElementById('kb-ex').value.trim(),
+    common_confusions: document.getElementById('kb-cf').value.trim(),
+    ko_observation_points: document.getElementById('kb-ko').value.trim(),
+  };
+}
+async function saveKbOnly() {
+  const res = await fetch(`/admin/api/slides/${_kbSlide.id}/kb`, {
+    method:'PUT', headers:{'Content-Type':'application/json','X-CSRF-Token':CSRF},
+    body: JSON.stringify({knowledge_base: buildKbPayload(), deploy: false})
+  });
+  const d = await res.json();
+  if (d.ok) { showToast('저장됐습니다', true); closeModal('ov-kb'); loadSlides(); }
+  else showToast('저장 실패: ' + d.error);
+}
+async function deployFromKb() {
+  const res = await fetch(`/admin/api/slides/${_kbSlide.id}/kb`, {
+    method:'PUT', headers:{'Content-Type':'application/json','X-CSRF-Token':CSRF},
+    body: JSON.stringify({knowledge_base: buildKbPayload(), deploy: true})
+  });
+  const d = await res.json();
+  if (d.ok) { showToast('검증 완료 · 배포됐습니다', true); closeModal('ov-kb'); loadSlides(); }
+  else showToast('배포 실패: ' + d.error);
+}
+function rejectFromKb() { closeModal('ov-kb'); openReject(_kbSlide.id, _kbSlide.title_ko || ''); }
+
+// ── 배치 액션 ────────────────────────────────────────────────
+async function batchDeploy() {
+  const ids = selected().map(c => c.dataset.id);
+  if (!ids.length) return;
+  const res = await fetch('/admin/api/slides/batch', {
+    method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':CSRF},
+    body: JSON.stringify({action:'deploy', ids})
+  });
+  const d = await res.json();
+  if (d.ok) { showToast(`${d.updated}건 배포됐습니다`, true); clearSel(); loadSlides(); }
+  else showToast('배포 실패: ' + d.error);
+}
+function openBatchReject() {
+  const n = selected().length;
+  document.getElementById('br-sub').textContent = `선택 ${n}건을 일괄 반려합니다`;
+  document.getElementById('br-reason').value = '';
+  document.getElementById('ov-batch-reject').classList.add('show');
+}
+async function confirmBatchReject() {
+  const reason = document.getElementById('br-reason').value;
+  if (!reason) { showToast('반려 사유를 선택하세요'); return; }
+  const ids = selected().map(c => c.dataset.id);
+  const res = await fetch('/admin/api/slides/batch', {
+    method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':CSRF},
+    body: JSON.stringify({action:'reject', ids, reason})
+  });
+  const d = await res.json();
+  if (d.ok) { showToast(`${d.updated}건 반려됐습니다`, true); closeModal('ov-batch-reject'); clearSel(); loadSlides(); }
+  else showToast('실패: ' + d.error);
+}
+
+// ── 개별 추가 모달 ───────────────────────────────────────────
+async function updAddSid() {
+  const subj = document.getElementById('a-subj').value;
+  // 다음 채번 프리뷰 (서버에서 실제 채번)
+  document.getElementById('a-sid').value = `SA-${subj}-???`;
+}
+function updAck() {
+  const v = document.getElementById('a-src').value;
+  document.getElementById('a-ack').value = v === 'custom' ? '' : v;
+}
+function openAdd() {
+  document.getElementById('a-subj').value = 'HST';
+  updAddSid();
+  document.getElementById('a-ack').value = '';
+  document.getElementById('a-src').value = '';
+  document.getElementById('a-tko').value = '';
+  document.getElementById('a-ten').value = '';
+  document.getElementById('a-org').value = '';
+  document.getElementById('a-stain').value = 'H&E';
+  document.getElementById('a-desc').value = '';
+  document.getElementById('ov-add').classList.add('show');
+}
+async function submitAdd() {
+  const title_ko = document.getElementById('a-tko').value.trim();
+  const subject_code = document.getElementById('a-subj').value;
+  if (!title_ko) { showToast('제목(한국어)을 입력하세요'); return; }
+  const ack = document.getElementById('a-ack').value.trim();
+  const res = await fetch('/admin/api/slides/add', {
+    method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':CSRF},
+    body: JSON.stringify({
+      subject_code, title_ko,
+      title_en: document.getElementById('a-ten').value.trim(),
+      organ: document.getElementById('a-org').value.trim(),
+      stain: document.getElementById('a-stain').value.trim(),
+      species: document.getElementById('a-species').value,
+      description: document.getElementById('a-desc').value.trim(),
+      license_source: ack || null,
+      original_format: document.getElementById('a-fmt').value,
+    })
+  });
+  const d = await res.json();
+  if (d.ok) { showToast(`${d.id} 등록됐습니다`, true); closeModal('ov-add'); loadSlides(); }
+  else showToast('등록 실패: ' + d.error);
+}
+
+// ── 모달 닫기 ────────────────────────────────────────────────
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+document.querySelectorAll('.overlay').forEach(o =>
+  o.addEventListener('click', e => { if (e.target === o) o.classList.remove('show'); })
+);
+
+// ── 토스트 ──────────────────────────────────────────────────
+function showToast(msg, ok) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast' + (ok ? ' ok' : '');
+  t.style.display = 'block';
+  setTimeout(() => { t.style.display = 'none'; }, 3000);
+}
+
+loadSlides();
+</script>
+{% endblock %}

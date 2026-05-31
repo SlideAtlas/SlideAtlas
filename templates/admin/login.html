@@ -1,24 +1,43 @@
 <!DOCTYPE html>
-<html lang="ko"><head><meta charset="UTF-8"><title>SlideAtlas Admin</title>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SlideAtlas Admin — 로그인</title>
+<link rel="icon" href="/static/slideatlas_logo.png">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800&family=Noto+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
-*{margin:0;padding:0;box-sizing:border-box;}
-body{font-family:sans-serif;background:#0F1F3D;display:flex;align-items:center;justify-content:center;min-height:100vh;}
-.box{background:#fff;border-radius:12px;padding:48px 40px;width:360px;}
-.logo{text-align:center;margin-bottom:32px;}
-.ls{font-size:9px;letter-spacing:0.22em;color:#2A9D8F;}
-.la{font-size:24px;font-weight:800;color:#0F1F3D;}
-.lad{font-size:11px;color:#9B9490;letter-spacing:0.08em;margin-top:4px;}
-label{font-size:13px;font-weight:600;color:#0F1F3D;display:block;margin-bottom:8px;}
-input[type=password]{width:100%;padding:11px 14px;border:1.5px solid #E5E0D8;border-radius:7px;font-size:14px;outline:none;}
-input[type=password]:focus{border-color:#2A9D8F;}
-.btn{width:100%;padding:12px;background:#2A9D8F;color:#fff;border:none;border-radius:7px;font-size:14px;font-weight:600;cursor:pointer;margin-top:16px;}
-.err{color:#e76f51;font-size:13px;margin-top:12px;text-align:center;}
-</style></head>
-<body><div class="box">
-<div class="logo"><div class="ls">SLIDE</div><div class="la">ATLAS</div><div class="lad">ADMIN CONSOLE</div></div>
-<form method="POST">
-<label>관리자 비밀번호</label>
-<input type="password" name="password" autofocus>
-<button class="btn" type="submit">로그인</button>
-{% if error %}<div class="err">{{ error }}</div>{% endif %}
-</form></div></body></html>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Noto Sans KR',sans-serif;background:#0F1F3D;display:flex;align-items:center;justify-content:center;min-height:100vh}
+.box{background:#fff;border-radius:14px;padding:44px 40px;width:380px;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+.logo{font-family:'Montserrat';font-weight:800;font-size:22px;color:#0F1F3D;text-align:center;margin-bottom:4px}
+.logo span{color:#5BB8D4}
+.sub{text-align:center;font-size:11px;color:#6B7689;letter-spacing:.8px;text-transform:uppercase;margin-bottom:32px}
+.form-row{margin-bottom:14px}
+.form-row label{font-size:11.5px;font-weight:700;color:#6B7689;display:block;margin-bottom:6px;letter-spacing:.4px;text-transform:uppercase}
+.form-row input{width:100%;padding:11px 14px;border:1.5px solid #E2E7EF;border-radius:9px;font-size:14px;font-family:inherit;outline:none;color:#1a2434;transition:.15s}
+.form-row input:focus{border-color:#5BB8D4;box-shadow:0 0 0 3px rgba(91,184,212,.12)}
+.btn{width:100%;padding:12px;background:#0F1F3D;color:#fff;border:none;border-radius:9px;font-size:14px;font-weight:700;cursor:pointer;margin-top:8px;font-family:inherit;transition:.15s;letter-spacing:.3px}
+.btn:hover{background:#1B2F52}
+.err{color:#D14C4C;font-size:13px;margin-top:14px;text-align:center;font-weight:600;background:#FBEAEA;padding:10px;border-radius:8px}
+</style>
+</head>
+<body>
+<div class="box">
+  <div class="logo">Slide<span>Atlas</span></div>
+  <div class="sub">Admin Console</div>
+  <form method="POST">
+    <div class="form-row">
+      <label>이메일</label>
+      <input type="email" name="email" autofocus autocomplete="email" placeholder="admin@example.com">
+    </div>
+    <div class="form-row">
+      <label>비밀번호</label>
+      <input type="password" name="password" autocomplete="current-password">
+    </div>
+    <button class="btn" type="submit">로그인</button>
+    {% if error %}<div class="err">{{ error }}</div>{% endif %}
+  </form>
+</div>
+</body>
+</html>

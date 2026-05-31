@@ -1,0 +1,128 @@
+{% extends "admin/base.html" %}
+{% block title %}접근 제어 — SlideAtlas Admin{% endblock %}
+{% block page_title %}접근 제어 · 콘텐츠 모듈{% endblock %}
+
+{% block extra_style %}
+.lead{font-size:12.5px;color:var(--muted);margin-bottom:18px;max-width:640px;line-height:1.7}
+.lead b{color:var(--ink)}
+
+/* 모듈 레지스트리 테이블 */
+.card{background:#fff;border-radius:12px;box-shadow:0 1px 3px rgba(15,31,61,.06);padding:0;margin-bottom:16px;overflow:hidden}
+.card-hd{padding:16px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;font-size:14px;font-weight:700}
+.card-hd .bdg{font-size:10px;font-weight:700;padding:2px 9px;border-radius:10px;background:#EEF1F5;color:var(--muted)}
+.mod-inactive td{color:#9aa4b4}
+.mod-inactive .code{opacity:.6}
+
+/* 매트릭스 */
+.mtx td,.mtx th{text-align:center;padding:12px 10px}
+.mtx td:first-child,.mtx th:first-child{text-align:left;padding-left:18px}
+.mtx th:first-child{padding-left:18px}
+.disabled-col{color:#b7c0cf}
+.tog-wrap{display:flex;justify-content:center}
+.tog{width:34px;height:20px;border-radius:20px;background:var(--ok);position:relative;display:inline-block;cursor:default;flex-shrink:0}
+.tog::after{content:"";position:absolute;width:16px;height:16px;border-radius:50%;background:#fff;top:2px;right:2px;transition:.15s}
+.tog.off{background:#D7DCE5}.tog.off::after{right:auto;left:2px}
+.tog.lock{cursor:not-allowed;opacity:.85}
+.mtx-note{font-size:11.5px;color:var(--muted);padding:12px 18px 16px;line-height:1.6}
+
+/* 빈 상태 */
+.empty-row td{text-align:center;color:var(--muted);padding:32px}
+{% endblock %}
+
+{% block content %}
+<div class="lead">
+  <b>좌석(규모)과 콘텐츠(과목)는 분리됩니다.</b> 좌석 플랜은 가격·정원만 정하고, 어떤 과목을 열어줄지는 여기서 관리합니다.<br>
+  v1.0은 조직학 단일 모듈 — 모든 구독에 자동 부여됩니다. 새 과목 출시 시 아래 레지스트리에서 활성화해 add-on으로 판매합니다.
+</div>
+
+<!-- 카드 1: 콘텐츠 모듈 레지스트리 -->
+<div class="card">
+  <div class="card-hd">콘텐츠 모듈 레지스트리</div>
+  <table id="mod-table">
+    <thead>
+      <tr>
+        <th style="width:200px">모듈 (과목)</th>
+        <th>배포 슬라이드</th>
+        <th>접근 부여 방식</th>
+        <th>add-on 판매</th>
+        <th style="width:110px">상태</th>
+      </tr>
+    </thead>
+    <tbody id="mod-tbody">
+      <tr class="empty-row"><td colspan="5">불러오는 중...</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- 카드 2: 기관별 모듈 접근 매트릭스 (미리보기) -->
+<div class="card">
+  <div class="card-hd">
+    기관별 모듈 접근
+    <span class="bdg">두 번째 모듈 출시 후 활성화 · 현재 미리보기</span>
+  </div>
+  <table class="mtx" id="mtx-table">
+    <thead>
+      <tr>
+        <th>기관</th>
+        <th>조직학 (HST)</th>
+        <th class="disabled-col">병리학 (PATH)</th>
+        <th class="disabled-col">기생충학 (PARA)</th>
+      </tr>
+    </thead>
+    <tbody id="mtx-tbody">
+      <tr class="empty-row"><td colspan="4">불러오는 중...</td></tr>
+    </tbody>
+  </table>
+  <div class="mtx-note">
+    조직학은 모든 구독에 자동 부여되어 잠겨 있습니다(끌 수 없음).<br>
+    병리·기생충 열은 해당 과목 출시 후 기관별로 토글되며, 켜는 순간 그 기관의 "과목별 구독 줄"(좌석·학기·구독료)이 생성됩니다.
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadModules() {
+  const res = await fetch('/admin/api/access/modules');
+  const data = await res.json();
+  if (!data.ok) return;
+  const tbody = document.getElementById('mod-tbody');
+  tbody.innerHTML = data.modules.map(m => {
+    const pill = m.is_active
+      ? '<span class="pill p-ok"><span class="led l-ok"></span>활성</span>'
+      : '<span class="pill p-gray"><span class="led l-gray"></span>준비 중</span>';
+    const codeEl = `<span class="code">${m.code}</span> ${m.name_ko}`;
+    const cnt = m.is_active ? (m.slide_count > 0 ? `${m.slide_count}장` : '—') : '—';
+    return `<tr class="${m.is_active ? '' : 'mod-inactive'}">
+      <td>${codeEl}</td>
+      <td>${cnt}</td>
+      <td>${m.grant_mode}</td>
+      <td>${m.addon}</td>
+      <td>${pill}</td>
+    </tr>`;
+  }).join('') || '<tr class="empty-row"><td colspan="5">과목 데이터 없음</td></tr>';
+}
+
+async function loadMatrix() {
+  const res = await fetch('/admin/api/access/matrix');
+  const data = await res.json();
+  if (!data.ok) return;
+  const tbody = document.getElementById('mtx-tbody');
+  if (!data.matrix.length) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="4">등록된 기관이 없습니다.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = data.matrix.map(row => {
+    const cells = data.subjects.map(subj => {
+      const acc = row.access[subj] || {granted: false, locked: true};
+      const cls = ['tog', acc.granted ? '' : 'off', acc.locked ? 'lock' : ''].filter(Boolean).join(' ');
+      return `<td><div class="tog-wrap"><span class="${cls}" title="${acc.locked ? '미리보기 (잠김)' : ''}"></span></div></td>`;
+    }).join('');
+    return `<tr><td>${row.name_ko}</td>${cells}</tr>`;
+  }).join('');
+}
+
+loadModules();
+loadMatrix();
+</script>
+{% endblock %}

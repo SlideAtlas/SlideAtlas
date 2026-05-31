@@ -1,12 +1,376 @@
-<!DOCTYPE html>
-<html lang="ko">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>공지사항 관리 — SlideAtlas</title>
-  <link rel="icon" href="/static/slideatlas_logo.png">
-  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@800&family=Noto+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
-</head>
-<body>
-</body>
-</html>
+{% extends "admin/base.html" %}
+{% block title %}공지 관리 — SlideAtlas Admin{% endblock %}
+{% block page_title %}공지 관리{% endblock %}
+
+{% block extra_style %}
+.lead{font-size:12.5px;color:var(--muted);margin-bottom:18px;max-width:680px;line-height:1.7}
+.lead b{color:var(--ink)}
+
+.toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px}
+.ftabs{display:flex;gap:7px}
+.ftab{padding:7px 14px;border:1px solid var(--line);border-radius:20px;font-size:12.5px;font-weight:700;cursor:pointer;background:#fff;color:var(--muted);transition:.1s}
+.ftab:hover{border-color:var(--sky);color:var(--sky-d)}
+.ftab.on{background:var(--navy);color:#fff;border-color:var(--navy)}
+.pub-count{font-size:12.5px;font-weight:700;color:var(--muted)}
+.pub-count b{font-family:'Montserrat';font-size:14px;color:var(--navy)}
+.pub-count b.over{color:var(--danger)}
+.archive-hint{font-size:11.5px;color:var(--muted);margin-bottom:12px;line-height:1.6}
+
+/* 순서 */
+.ord{font-family:'Montserrat';font-weight:800;color:var(--sky-d);font-size:14px}
+.ord-none{font-family:'Montserrat';color:#cdd0d8;font-size:14px}
+
+/* 오버레이 / 모달 */
+.overlay{position:fixed;inset:0;background:rgba(10,18,35,.55);backdrop-filter:blur(2px);
+  display:none;align-items:flex-start;justify-content:center;padding:48px 16px;overflow:auto;z-index:1000}
+.overlay.show{display:flex}
+.modal-notice{background:#fff;width:100%;max-width:560px;border-radius:16px;
+  box-shadow:0 10px 40px rgba(15,31,61,.22);overflow:hidden;animation:pop .2s ease}
+@keyframes pop{from{transform:translateY(10px) scale(.98);opacity:0}to{transform:none;opacity:1}}
+.m-head{background:var(--navy);color:#fff;padding:17px 22px;display:flex;justify-content:space-between;align-items:center}
+.m-head h2{font-size:15.5px;font-weight:700}
+.m-head p{font-size:12px;color:#9fb0cb;margin-top:2px}
+.x-btn{background:rgba(255,255,255,.1);border:none;color:#fff;width:30px;height:30px;
+  border-radius:8px;font-size:17px;cursor:pointer;line-height:1}
+.x-btn:hover{background:rgba(255,255,255,.2)}
+.m-body{padding:20px 22px}
+.m-foot{padding:14px 22px;border-top:1px solid var(--line);display:flex;
+  justify-content:space-between;align-items:center;background:#FBFCFE}
+.m-foot .r{display:flex;gap:9px}
+
+.fld{margin-bottom:14px}
+.fld label{font-size:12px;font-weight:700;color:#3c4759;display:block;margin-bottom:5px}
+.fld .req{color:var(--danger)}
+.fld input,.fld textarea{width:100%;border:1px solid var(--line);border-radius:8px;
+  padding:9px 11px;font-size:13px;font-family:inherit;color:var(--ink);outline:none;resize:vertical}
+.fld input:focus,.fld textarea:focus{border-color:var(--sky);box-shadow:0 0 0 3px rgba(91,184,212,.18)}
+.fld-row{display:flex;align-items:center;justify-content:space-between;gap:14px}
+.fld-row .fld{flex:1;margin-bottom:0}
+
+/* 토글 스위치 */
+.sw-wrap{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer}
+.sw{width:38px;height:22px;border-radius:20px;background:var(--ok);position:relative;flex-shrink:0;transition:.2s}
+.sw::after{content:"";position:absolute;width:18px;height:18px;border-radius:50%;background:#fff;top:2px;right:2px;transition:.2s}
+.sw.off{background:#D7DCE5}.sw.off::after{right:auto;left:2px}
+
+.note{font-size:11.5px;color:var(--muted);margin-top:6px}
+.note-err{font-size:11.5px;color:var(--danger)}
+
+/* 빈 상태 */
+.empty-row td{text-align:center;color:var(--muted);padding:36px}
+{% endblock %}
+
+{% block content %}
+<p class="lead">랜딩페이지 상단에 노출되는 공지입니다. <b>최대 5개까지 동시 노출</b>되며 순서대로 표시됩니다.
+  super_admin·staff 모두 작성·수정할 수 있고, 모든 변경에는 작성자가 기록됩니다.</p>
+
+<div class="toolbar">
+  <div class="ftabs">
+    <div class="ftab on" id="tab-active" onclick="switchView('active',this)">현재 공지</div>
+    <div class="ftab" id="tab-archive" onclick="switchView('archive',this)">
+      보관함 <span class="pill p-gray" style="padding:1px 7px;margin-left:3px" id="arch-badge">0</span>
+    </div>
+  </div>
+  <button class="btn btn-pri" onclick="openCreate()">＋ 공지 작성</button>
+</div>
+
+<!-- 현재 공지 뷰 -->
+<div id="view-active">
+  <div class="pub-count" style="margin-bottom:10px">
+    랜딩 노출 <b id="pub-n">0</b> / 5
+  </div>
+  <div class="card" style="padding:0">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:56px">순서</th>
+          <th>제목</th>
+          <th style="width:110px">노출</th>
+          <th style="width:140px">작성자</th>
+          <th style="width:80px">수정일</th>
+          <th style="width:200px"></th>
+        </tr>
+      </thead>
+      <tbody id="tb-active">
+        <tr class="empty-row"><td colspan="6">로딩 중…</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="note" style="margin-top:10px">
+    게시 ↔ 숨김은 노출만 끄고 내용은 보존합니다. 삭제하면 보관함으로 이동하며(소프트 삭제),
+    작성 이력은 보존됩니다. 6개째 게시 시 노출 수가 빨갛게 경고됩니다.
+  </div>
+</div>
+
+<!-- 보관함 뷰 -->
+<div id="view-archive" style="display:none">
+  <div class="archive-hint">
+    삭제된 공지가 보관됩니다. <b>복원</b>하면 숨김 상태로 되돌아오고,
+    <b>완전 삭제</b>는 확인 후 영구 제거되어 복구할 수 없습니다.
+  </div>
+  <div class="card" style="padding:0">
+    <table>
+      <thead>
+        <tr>
+          <th>제목</th>
+          <th style="width:140px">작성자</th>
+          <th style="width:80px">삭제일</th>
+          <th style="width:160px"></th>
+        </tr>
+      </thead>
+      <tbody id="tb-archive">
+        <tr class="empty-row"><td colspan="4">로딩 중…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+
+<!-- 작성/수정 모달 -->
+<div class="overlay" id="ov-notice">
+  <div class="modal-notice">
+    <div class="m-head">
+      <div>
+        <h2 id="modal-title">공지 작성</h2>
+        <p>랜딩페이지에 노출되는 공지입니다</p>
+      </div>
+      <button class="x-btn" onclick="closeModal()">×</button>
+    </div>
+    <div class="m-body">
+      <div class="note-err" id="modal-err" style="display:none;margin-bottom:10px"></div>
+
+      <div class="fld">
+        <label>제목 <span class="req">*</span></label>
+        <input id="f-title" placeholder="예: 2026 가을학기 신규 슬라이드 12종 추가">
+      </div>
+      <div class="fld">
+        <label>내용</label>
+        <textarea id="f-body" rows="5" placeholder="공지 본문을 입력하세요"></textarea>
+      </div>
+      <div class="fld-row">
+        <div class="fld">
+          <label>랜딩 노출</label>
+          <div class="sw-wrap" onclick="toggleSw()">
+            <div class="sw off" id="sw-pub"></div>
+            <span id="sw-label">숨김</span>
+          </div>
+        </div>
+        <div class="fld" id="order-wrap" style="display:none">
+          <label>노출 순서</label>
+          <input id="f-order" type="number" min="1" max="9" value="1" style="width:80px">
+        </div>
+      </div>
+      <div class="note">동시에 5개까지만 노출됩니다. 저장 시 작성자·수정 시각이 기록됩니다.</div>
+    </div>
+    <div class="m-foot">
+      <span class="note" id="modal-by">작성자: {{ admin_name }}</span>
+      <div class="r">
+        <button class="btn btn-ghost" onclick="closeModal()">취소</button>
+        <button class="btn btn-pri" onclick="saveNotice()">저장</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const CSRF = document.getElementById('admin-csrf-token').value;
+let _editId = null;
+let _currentView = 'active';
+
+function switchView(view, el) {
+  _currentView = view;
+  document.querySelectorAll('.ftab').forEach(t => t.classList.remove('on'));
+  el.classList.add('on');
+  document.getElementById('view-active').style.display  = view === 'active'  ? '' : 'none';
+  document.getElementById('view-archive').style.display = view === 'archive' ? '' : 'none';
+  loadNotices(view);
+}
+
+function loadNotices(view) {
+  fetch(`/admin/api/notices/list?view=${view}`)
+    .then(r => r.json())
+    .then(d => {
+      if (!d.ok) return;
+      document.getElementById('pub-n').textContent       = d.published_count;
+      document.getElementById('pub-n').className         = d.published_count > 5 ? 'over' : '';
+      document.getElementById('arch-badge').textContent  = d.archive_count;
+      if (view === 'archive') renderArchive(d.items);
+      else                    renderActive(d.items, d.published_count);
+    });
+}
+
+function renderActive(items, pubCount) {
+  const tb = document.getElementById('tb-active');
+  if (!items.length) {
+    tb.innerHTML = '<tr class="empty-row"><td colspan="6">등록된 공지가 없습니다.</td></tr>';
+    return;
+  }
+  let pubIdx = 0;
+  tb.innerHTML = items.map(n => {
+    const isPub = n.is_published;
+    const ordHtml = isPub
+      ? `<span class="ord">${n.display_order || ++pubIdx}</span>`
+      : `<span class="ord-none">—</span>`;
+    const statusHtml = isPub
+      ? '<span class="pill p-ok"><span class="led l-ok"></span>게시 중</span>'
+      : '<span class="pill p-gray"><span class="led l-gray"></span>숨김</span>';
+    const toggleLabel = isPub ? '숨김' : '게시';
+    const rowStyle = isPub ? '' : 'style="color:#9aa4b4"';
+    return `<tr ${rowStyle}>
+      <td>${ordHtml}</td>
+      <td><b>${escH(n.title)}</b></td>
+      <td>${statusHtml}</td>
+      <td>${escH(n.editor)} <span class="sub">(${n.editor_role})</span></td>
+      <td>${n.updated_at || ''}</td>
+      <td><div class="row-act">
+        <button class="btn btn-ghost btn-sm" onclick="openEdit(${n.id})">수정</button>
+        <button class="btn btn-ghost btn-sm" onclick="togglePub(${n.id})">${toggleLabel}</button>
+        <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="archiveNotice(${n.id})">삭제</button>
+      </div></td>
+    </tr>`;
+  }).join('');
+}
+
+function renderArchive(items) {
+  const tb = document.getElementById('tb-archive');
+  if (!items.length) {
+    tb.innerHTML = '<tr class="empty-row"><td colspan="4">보관함이 비어 있습니다.</td></tr>';
+    return;
+  }
+  tb.innerHTML = items.map(n => `
+    <tr>
+      <td>${escH(n.title)}</td>
+      <td>${escH(n.editor)} <span class="sub">(${n.editor_role})</span></td>
+      <td>${n.archived_at || ''}</td>
+      <td><div class="row-act">
+        <button class="btn btn-ghost btn-sm" onclick="restoreNotice(${n.id})">복원</button>
+        <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="hardDel(${n.id})">완전 삭제</button>
+      </div></td>
+    </tr>`).join('');
+}
+
+// 모달
+function openCreate() {
+  _editId = null;
+  document.getElementById('modal-title').textContent = '공지 작성';
+  document.getElementById('f-title').value = '';
+  document.getElementById('f-body').value  = '';
+  document.getElementById('modal-err').style.display = 'none';
+  setSw(false);
+  document.getElementById('ov-notice').classList.add('show');
+}
+
+function openEdit(id) {
+  fetch(`/admin/api/notices/list?view=active`)
+    .then(r => r.json())
+    .then(d => {
+      const n = d.items.find(x => x.id === id);
+      if (!n) return;
+      _editId = id;
+      document.getElementById('modal-title').textContent = '공지 수정';
+      document.getElementById('f-title').value = n.title;
+      document.getElementById('f-body').value  = n.body || '';
+      document.getElementById('f-order').value = n.display_order || 1;
+      document.getElementById('modal-err').style.display = 'none';
+      setSw(n.is_published);
+      document.getElementById('ov-notice').classList.add('show');
+    });
+}
+
+function closeModal() {
+  document.getElementById('ov-notice').classList.remove('show');
+  _editId = null;
+}
+
+function toggleSw() {
+  const sw = document.getElementById('sw-pub');
+  setSw(sw.classList.contains('off'));
+}
+function setSw(on) {
+  const sw  = document.getElementById('sw-pub');
+  const lbl = document.getElementById('sw-label');
+  const ow  = document.getElementById('order-wrap');
+  if (on) { sw.classList.remove('off'); lbl.textContent='게시 중'; ow.style.display=''; }
+  else    { sw.classList.add('off');    lbl.textContent='숨김';    ow.style.display='none'; }
+}
+
+function saveNotice() {
+  const title   = document.getElementById('f-title').value.trim();
+  const body    = document.getElementById('f-body').value.trim();
+  const publish = !document.getElementById('sw-pub').classList.contains('off');
+  const order   = parseInt(document.getElementById('f-order').value, 10) || 1;
+  const errEl   = document.getElementById('modal-err');
+  if (!title) { errEl.textContent = '제목을 입력하세요.'; errEl.style.display = ''; return; }
+  errEl.style.display = 'none';
+
+  const payload = { title, body, is_published: publish, display_order: publish ? order : 0 };
+  const url    = _editId ? `/admin/api/notices/${_editId}` : '/admin/api/notices';
+  const method = _editId ? 'PUT' : 'POST';
+
+  fetch(url, {
+    method,
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF },
+    body: JSON.stringify(payload),
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (!d.ok) { errEl.textContent = d.error || '오류가 발생했습니다.'; errEl.style.display = ''; return; }
+    closeModal();
+    loadNotices(_currentView);
+  });
+}
+
+function togglePub(id) {
+  fetch(`/admin/api/notices/${id}/toggle`, {
+    method: 'POST',
+    headers: { 'X-CSRF-Token': CSRF },
+  })
+  .then(r => r.json())
+  .then(d => { if (d.ok) loadNotices('active'); });
+}
+
+function archiveNotice(id) {
+  if (!confirm('이 공지를 삭제(보관함 이동)할까요?\n보관함에서 복원하거나 완전 삭제할 수 있습니다.')) return;
+  fetch(`/admin/api/notices/${id}/archive`, {
+    method: 'POST',
+    headers: { 'X-CSRF-Token': CSRF },
+  })
+  .then(r => r.json())
+  .then(d => { if (d.ok) loadNotices('active'); });
+}
+
+function restoreNotice(id) {
+  fetch(`/admin/api/notices/${id}/restore`, {
+    method: 'POST',
+    headers: { 'X-CSRF-Token': CSRF },
+  })
+  .then(r => r.json())
+  .then(d => { if (d.ok) { loadNotices('archive'); } });
+}
+
+function hardDel(id) {
+  if (!confirm('완전 삭제하면 복구할 수 없습니다. 정말 삭제할까요?')) return;
+  fetch(`/admin/api/notices/${id}`, {
+    method: 'DELETE',
+    headers: { 'X-CSRF-Token': CSRF },
+  })
+  .then(r => r.json())
+  .then(d => { if (d.ok) loadNotices('archive'); });
+}
+
+function escH(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// 오버레이 외부 클릭 닫기
+document.getElementById('ov-notice').addEventListener('click', e => {
+  if (e.target === document.getElementById('ov-notice')) closeModal();
+});
+
+// 초기 로드
+loadNotices('active');
+</script>
+{% endblock %}
