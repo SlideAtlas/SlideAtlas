@@ -22,7 +22,7 @@ from dotenv import load_dotenv
 from flask import Blueprint, request, jsonify, g
 from werkzeug.security import generate_password_hash, check_password_hash
 
-from .decorators import encode_token, login_required, COOKIE_NAME
+from .decorators import encode_token, login_required, COOKIE_NAME, _today_kst
 
 load_dotenv()  # .env 있으면 읽기, 없으면(Render) 환경변수 그대로 사용
 
@@ -570,6 +570,9 @@ def login():
             # [D4] 과목 격리 정식화: (institution_id, subject_code) 양축으로 매칭한다.
             #   NULL 폴백(기관 단위)은 제거됨 — subject_code는 가입 시 필수 채번되므로(§6-2) 정상 경로에
             #   NULL은 존재하지 않는다(§0-3·§0-4). subject_code 미일치 시 매칭 구독 없음 → 만료 검사 적용.
+            # [C] 접근창 집행: 유효 구독 창(access_open_date <= today <= subscription_end)인
+            #   active 구독만 본다(미래 학기 active도 창 전엔 NULL→만료). today는 KST(§16·§18 D10).
+            today = _today_kst()
             cur.execute(
                 """SELECT u.id, u.institution_id, u.role, u.is_special,
                           u.password_hash, u.status, u.locked_at, u.special_expires_at,
@@ -577,11 +580,13 @@ def login():
                              FROM subscriptions s
                             WHERE s.institution_id = u.institution_id
                               AND s.subject_code = u.subject_code
-                              AND s.status = 'active')
+                              AND s.status = 'active'
+                              AND s.access_open_date <= %s
+                              AND s.subscription_end >= %s)
                    FROM users u
                    WHERE lower(u.email) = %s
                    FOR UPDATE OF u""",
-                (email,),
+                (today, today, email),
             )
             row = cur.fetchone()
             if row is None:
@@ -612,7 +617,7 @@ def login():
                 return _err("INVALID_CREDENTIALS", "이메일 또는 비밀번호가 올바르지 않습니다", 401)
 
             # 만료 검사 (§8). is_special은 구독 만료 면제, 단 special_expires_at은 집행([B]).
-            today = datetime.now(timezone.utc).date()
+            # today는 위에서 KST로 계산됨([C], 접근창과 동일 기준).
             if is_special:
                 # [B] 특별계정 사용 기간 만료 집행. NULL(무기한)은 통과(§15-8 비권장).
                 if special_expires_at is not None and special_expires_at < today:

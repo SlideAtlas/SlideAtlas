@@ -1079,6 +1079,54 @@ def test_subscription_expired_returns_401(client, mock_db):
         assert data["error"] == "SUBSCRIPTION_EXPIRED"
 
 
+def test_before_access_open_date_blocks(client, mock_db):
+    """★#3: 미래 학기 구독이 active여도 access_open_date 전이면 접근 차단.
+
+    접근창 필터(access_open_date<=today<=subscription_end)에 걸려 subquery가 NULL을 반환 →
+    매칭 유효 구독 없음 → SUBSCRIPTION_EXPIRED (일반 사용자).
+    """
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+
+        payload = {
+            "sub": "1", "institution_id": "YU", "role": "student",
+            "session_token": "valid-sess", "is_special": False,
+        }
+        client.set_cookie(COOKIE_NAME, encode_token(payload))
+        # 접근창 밖 → subquery NULL: (session, status, subject, special_expires_at, subscription_end=None)
+        mock_db["cursor"].fetchone.return_value = (
+            "valid-sess", "active", "HST", None, None
+        )
+
+        resp = client.get("http://localhost/api/auth/me")
+
+        assert resp.status_code == 401
+        assert resp.get_json()["error"] == "SUBSCRIPTION_EXPIRED"
+
+
+def test_login_before_access_open_date_blocks(client, mock_db):
+    """★#3(login): access_open_date 이전(유효 구독창 없음) → 403 SUBSCRIPTION_EXPIRED."""
+    from werkzeug.security import generate_password_hash
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+        # 접근창 밖 → subquery NULL(subscription_end=None)
+        mock_db["cursor"].fetchone.return_value = (
+            1, "YU", "student", False,
+            generate_password_hash("password"),
+            "active", None,
+            None,   # special_expires_at
+            None    # subscription_end (접근창 밖 → NULL)
+        )
+
+        resp = client.post("/api/auth/login",
+                          json={"email": "test@example.com", "password": "password"})
+
+        assert resp.status_code == 403
+        assert resp.get_json()["error"] == "SUBSCRIPTION_EXPIRED"
+
+
 def test_special_expires_at_past_blocks(client, mock_db):
     """★#5: special_expires_at 경과한 특별계정 → 차단 (SUBSCRIPTION_EXPIRED)."""
     from datetime import date, timedelta

@@ -151,16 +151,22 @@ def _authenticate():
             # [D4] NULL 폴백(기관 단위) 제거: subject_code는 가입 시 필수 채번되므로(§6-2) 정상 경로에
             #   NULL은 없다(§0-3·§0-4). 과목 축을 일급으로 양축(institution_id, subject_code) 매칭.
             # 반환 shape(session_token, status, subscription_end)는 변경하지 않는다(다운스트림·테스트 호환).
+            # [C] 접근창 집행: 유효 구독 창(access_open_date <= today <= subscription_end)인
+            #   active 구독만 본다. 미래 학기 구독이 미리 active여도 access_open_date 전에는
+            #   subquery가 NULL → 만료 처리(통과 금지). today는 KST(§16·§18 D10).
+            today = _today_kst()
             cur.execute(
                 """SELECT u.session_token, u.status, u.subject_code, u.special_expires_at,
                           (SELECT MAX(s.subscription_end)
                              FROM subscriptions s
                             WHERE s.institution_id = u.institution_id
                               AND s.subject_code = u.subject_code
-                              AND s.status = 'active')
+                              AND s.status = 'active'
+                              AND s.access_open_date <= %s
+                              AND s.subscription_end >= %s)
                    FROM users u
                    WHERE u.id = %s""",
-                (user_id,),
+                (today, today, user_id),
             )
             row = cur.fetchone()
     finally:
@@ -185,9 +191,7 @@ def _authenticate():
     if status != "active":
         return ("TOKEN_INVALID", "다시 로그인하세요")  # 비활성·잠금 계정
 
-    # ③ 만료 검사 (매 요청).
-    from datetime import date
-    today = date.today()
+    # ③ 만료 검사 (매 요청). today는 위에서 KST로 계산됨([C]).
     if payload.get("is_special"):
         # [B] 특별계정: 구독 만료는 면제하되 special_expires_at은 집행(§15-8).
         #     special_expires_at NULL(무기한)은 통과 — 비권장이나 허용. 경과 시 차단.
