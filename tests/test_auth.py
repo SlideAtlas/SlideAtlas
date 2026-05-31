@@ -27,6 +27,7 @@ from unittest.mock import MagicMock, patch, call
 os.environ["JWT_SECRET_KEY"] = "test-secret-key-for-pytest"
 os.environ["GMAIL_USER"] = "test@gmail.com"
 os.environ["GMAIL_APP_PW"] = "test-app-pw"
+os.environ["ADMIN_SECRET_KEY"] = "test-admin-secret-for-pytest"  # [#6] fail-closed: 미설정 시 기동 실패
 
 # Flask 앱 로딩
 from server_render import app
@@ -169,6 +170,40 @@ def test_register_success(client, mock_db):
         assert data["success"] is True
         assert "인증코드" in data["data"]["message"]
         assert mock_send.called
+
+
+def test_register_no_active_subscription_rejected(client, mock_db):
+    """[#4] 구독 없는 roster 사용자 가입 거부 → 403 SUBSCRIPTION_INACTIVE (active 계정 미생성)."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"), \
+         patch("auth.auth.send_verification_email"):
+        mock_get_db.return_value = mock_db["conn"]
+        mock_db["cursor"].fetchone.side_effect = [
+            ("HST",),    # roster subject_code (명단 존재)
+            None,        # 이메일 없음
+            None,        # 접근창 내 active 구독 없음 → 거부
+        ]
+        resp = client.post("/api/auth/register",
+                          json={"email": "new@test.com", "password": "pass123",
+                                "role": "student", "institution_id": "YU"})
+        assert resp.status_code == 403
+        assert resp.get_json()["error"] == "SUBSCRIPTION_INACTIVE"
+
+
+def test_verify_email_no_active_subscription_rejected(client, mock_db):
+    """[#4] 구독 없는 사용자 인증 거부 → 403 SUBSCRIPTION_INACTIVE (active 전환 금지)."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+        mock_db["cursor"].fetchone.side_effect = [
+            (1, "YU", "student", False, "HST"),   # user
+            (1, "123456", datetime.now(timezone.utc) + timedelta(minutes=5), False, 0),  # ev
+            None,   # 접근창 내 active 구독 없음 → 거부
+        ]
+        resp = client.post("/api/auth/verify-email",
+                          json={"email": "test@example.com", "code": "123456"})
+        assert resp.status_code == 403
+        assert resp.get_json()["error"] == "SUBSCRIPTION_INACTIVE"
 
 
 def test_verify_email_code_expired(client, mock_db):
@@ -1331,3 +1366,24 @@ def test_gate_not_deployed_403(client, mock_db):
         resp = client.get("http://localhost/dzi/SA-HST-001.dzi")
         assert resp.status_code == 403
         assert resp.get_json()["error"] == "FORBIDDEN"
+
+
+# ─────────────────────────────────────────────
+# [#6] ADMIN_SECRET_KEY fail-closed 기동
+# ─────────────────────────────────────────────
+
+def test_admin_secret_key_required_at_startup():
+    """[#6] ADMIN_SECRET_KEY 미설정 시 server_render import(기동) 실패 (고정 폴백 금지)."""
+    import importlib
+    import server_render as _sr
+    saved = os.environ.pop("ADMIN_SECRET_KEY", None)
+    try:
+        with pytest.raises(RuntimeError):
+            importlib.reload(_sr)
+    finally:
+        # 환경 복원 후 모듈을 정상 상태로 되돌린다(다른 테스트 격리).
+        if saved is not None:
+            os.environ["ADMIN_SECRET_KEY"] = saved
+        else:
+            os.environ["ADMIN_SECRET_KEY"] = "test-admin-secret-for-pytest"
+        importlib.reload(_sr)

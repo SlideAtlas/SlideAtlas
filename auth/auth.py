@@ -233,18 +233,25 @@ def register():
                 conn.rollback()
                 return _err("EMAIL_EXISTS", "이미 가입된 이메일입니다", 409)
 
-            # 3) 정원(좌석) 검사: subscriptions.max_seats(과목별) vs 해당 과목 active 유저 수
-            #    (§13-2·§16). institutions.max_users(deprecated)는 참조하지 않는다(§0-2).
+            # 3) 구독·정원 검사 (§13-2·§16). [#4] CEO 확정: 구독 계약·입금 전에는 학생을 받지 않는다.
+            #    (institution_id, subject_code)에 접근창 내 active 구독이 없으면 가입 거부 — active 계정
+            #    미생성. 온보딩 순서(구독 생성 → roster 등록 → 가입)를 코드가 강제. today는 KST(§18 D10).
             #    여기는 소프트 사전검사이며, 권위 있는 동시성 재검사는 verify_email에서 행 잠금으로 수행.
+            today = _today_kst()
             cur.execute(
                 """SELECT max_seats FROM subscriptions
                    WHERE institution_id = %s AND subject_code = %s AND status = 'active'
+                     AND access_open_date <= %s AND subscription_end >= %s
                    ORDER BY subscription_end DESC
                    LIMIT 1""",
-                (institution_id, subject_code),
+                (institution_id, subject_code, today, today),
             )
             sub = cur.fetchone()
-            max_seats = sub[0] if sub else None  # 구독 없음 → 정원 미설정으로 간주(허용)
+            if sub is None:
+                conn.rollback()
+                return _err("SUBSCRIPTION_INACTIVE",
+                            "해당 과목 구독이 활성화되지 않았습니다. 과 사무실에 문의하세요", 403)
+            max_seats = sub[0]
             cur.execute(
                 """SELECT COUNT(*) FROM users
                    WHERE institution_id = %s AND subject_code = %s AND status = 'active'""",
@@ -380,16 +387,23 @@ def verify_email():
             #   subscriptions.max_seats(과목별)를 기준으로 한다(§13-2·§16). institutions.max_users
             #   (deprecated)는 참조하지 않는다(§0-2). 구독 행을 FOR UPDATE로 잠가 동시 verify가
             #   마지막 좌석을 중복 통과하지 못하게 한다(과목 단위 직렬화).
+            # [#4] 접근창 내 active 구독 필수(없으면 거부 — active 전환 금지). today는 KST(§18 D10).
+            today = _today_kst()
             cur.execute(
                 """SELECT max_seats FROM subscriptions
                    WHERE institution_id = %s AND subject_code = %s AND status = 'active'
+                     AND access_open_date <= %s AND subscription_end >= %s
                    ORDER BY subscription_end DESC
                    LIMIT 1
                    FOR UPDATE""",
-                (institution_id, subject_code),
+                (institution_id, subject_code, today, today),
             )
             sub = cur.fetchone()
-            max_seats = sub[0] if sub else None  # 구독 없음 → 정원 미설정으로 간주(허용)
+            if sub is None:
+                conn.rollback()
+                return _err("SUBSCRIPTION_INACTIVE",
+                            "해당 과목 구독이 활성화되지 않았습니다. 과 사무실에 문의하세요", 403)
+            max_seats = sub[0]
             cur.execute(
                 """SELECT COUNT(*) FROM users
                    WHERE institution_id = %s AND subject_code = %s AND status = 'active'""",

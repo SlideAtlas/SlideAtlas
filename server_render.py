@@ -53,7 +53,12 @@ CATEGORY_MAP = {
 }
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('ADMIN_SECRET_KEY', 'slideatlas-dev-secret-2026')
+# [#6] fail-closed: 고정 폴백 금지. 키 누락 시 기동 실패시켜 알려진 secret으로 Flask 세션
+#   쿠키(admin 세션)가 위조되는 사고를 막는다(§18 D3). 환경변수/.env 에만 설정.
+_admin_secret = os.environ.get('ADMIN_SECRET_KEY')
+if not _admin_secret:
+    raise RuntimeError("ADMIN_SECRET_KEY 미설정 — 환경변수/.env 확인 (§18 D3). 고정 폴백 금지(어드민 세션 위조 방지).")
+app.secret_key = _admin_secret
 
 # -- JWT 인증 Blueprint 등록 ---------------------------------------------------
 from auth.auth import auth_bp
