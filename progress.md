@@ -361,3 +361,18 @@ python3 run_tests.py
   신규: token_invalid_no_cookie, session_revoked_on_db_mismatch, subscription_expired_returns_401, is_special_subscription_expired_passes, tile_token_invalid_returns_correct_code
 [2026-05-30][오케스트레이터][완료] 이메일 발송 성공 (boram@atlaslab.co.kr)
 [2026-05-30][오케스트레이터][완료] git commit a38fce9 + push origin/main 성공
+
+---
+## D4 subject_code 채번 + 정원 max_seats 이전 (2026-05-31)
+[2026-05-31][Lead Developer][완료] register() roster의 subject_code 캡처 → users INSERT 채번 (§6-2, D4-a)
+  - EMAIL_EXISTS 검사 (기관×과목×이메일) 단위로 정렬, ROSTER_SUBJECT_MISSING 가드 추가
+[2026-05-31][Lead Developer][완료] verify_email() subject_code 누락 시 active 전환 거부 (SUBJECT_CODE_MISSING, D4-b)
+[2026-05-31][Lead Developer][완료] login()·_authenticate() 'subject_code IS NULL 기관 폴백' 제거 (D4-c)
+  - 전제 확인: 코드/시드 INSERT INTO users 0건 + §18 D4 'v1.0 사용자 0' / 라이브 DB count는 §12·§19로 CEO·EC2 영역
+  - server_render.py:2349 특별계정 생성은 §15-8(과목 축 우회·만료 면제)로 subject_code NULL 정상 — D4 대상 아님
+[2026-05-31][Lead Developer][완료] 정원 검사 institutions.max_users → subscriptions.max_seats(과목별) 이전 (§13-2·§16, Q2)
+  - active 좌석 카운트 (institution_id, subject_code) 과목별 독립, verify 동시성 방어는 구독 행 FOR UPDATE
+[2026-05-31][test-runner][결과] pytest 45/45 PASSED (각 커밋별 독립 green 확인)
+  - run_tests.py는 베이스라인부터 Werkzeug 3.x set_cookie 시그니처로 깨진 stale 복제 하네스 — 미수정(보고)
+[2026-05-31][Lead Developer][완료] grep: 인증·정원 경로 institutions.max_users/subscription_end 실참조 0건, subject_code IS NULL 폴백 0건
+[2026-05-31][Lead Developer][완료] git commit 17bb18a(D4)·ddfab51(정원)·c8c6143(docs) + push origin/main
