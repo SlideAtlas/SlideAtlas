@@ -139,19 +139,18 @@ def _authenticate():
     conn = get_db_conn()
     try:
         with conn.cursor() as cur:
-            # [M2] 구독 만료 매 요청 검사 (§12-4 ③) — v2.9 subscriptions(기관×과목) 모델 사용.
+            # [M2] 구독 만료 매 요청 검사 (§12-4 ③) — subscriptions(기관×과목) 모델 사용.
             # 해당 user의 (institution_id, subject_code)에 매칭되는 활성 구독의 최신 종료일을 본다.
-            # v1.0 안전장치: users.subject_code가 아직 NULL이면(미채번) 기관의 활성 구독 전체를
-            #   매칭해 락아웃을 방지한다. subject_code가 채워지면 과목별 격리가 자동 작동.
+            # [D4] NULL 폴백(기관 단위) 제거: subject_code는 가입 시 필수 채번되므로(§6-2) 정상 경로에
+            #   NULL은 없다(§0-3·§0-4). 과목 축을 일급으로 양축(institution_id, subject_code) 매칭.
             # 반환 shape(session_token, status, subscription_end)는 변경하지 않는다(다운스트림·테스트 호환).
             cur.execute(
                 """SELECT u.session_token, u.status,
                           (SELECT MAX(s.subscription_end)
                              FROM subscriptions s
                             WHERE s.institution_id = u.institution_id
-                              AND s.status = 'active'
-                              AND (u.subject_code IS NULL
-                                   OR s.subject_code = u.subject_code))
+                              AND s.subject_code = u.subject_code
+                              AND s.status = 'active')
                    FROM users u
                    WHERE u.id = %s""",
                 (user_id,),

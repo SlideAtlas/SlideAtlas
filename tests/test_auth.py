@@ -100,7 +100,7 @@ def test_register_email_exists(client, mock_db):
     with patch("server_render.get_db_conn") as mock_get_db, \
          patch("server_render.release_db_conn"):
         mock_get_db.return_value = mock_db["conn"]
-        mock_db["cursor"].fetchone.side_effect = [(1,), (1,)]
+        mock_db["cursor"].fetchone.side_effect = [("HST",), (1,)]  # roster subject, 이메일 존재
         
         resp = client.post("/api/auth/register",
                           json={
@@ -122,7 +122,7 @@ def test_register_capacity_exceeded(client, mock_db):
          patch("auth.auth.send_verification_email"):
         mock_get_db.return_value = mock_db["conn"]
         mock_db["cursor"].fetchone.side_effect = [
-            (1,),        # 명단 존재
+            ("HST",),    # roster subject_code (명단 존재)
             None,        # 이메일 없음
             (10,),       # max_users=10
             (10,),       # active_count=10
@@ -149,7 +149,7 @@ def test_register_success(client, mock_db):
         mock_get_db.return_value = mock_db["conn"]
         
         mock_db["cursor"].fetchone.side_effect = [
-            (1,),        # 명단
+            ("HST",),    # roster subject_code (명단)
             None,        # 이메일 없음
             (100,),      # max_users
             (5,),        # active_count
@@ -178,7 +178,7 @@ def test_verify_email_code_expired(client, mock_db):
         mock_get_db.return_value = mock_db["conn"]
         
         mock_db["cursor"].fetchone.side_effect = [
-            (1, "YU", "student", False),
+            (1, "YU", "student", False, "HST"),
             (
                 1, "123456",
                 datetime.now(timezone.utc) - timedelta(minutes=20),
@@ -204,7 +204,7 @@ def test_verify_email_too_many_attempts(client, mock_db):
         mock_get_db.return_value = mock_db["conn"]
         
         mock_db["cursor"].fetchone.side_effect = [
-            (1, "YU", "student", False),
+            (1, "YU", "student", False, "HST"),
             (
                 1, "123456",
                 datetime.now(timezone.utc) + timedelta(minutes=5),
@@ -230,7 +230,7 @@ def test_verify_email_code_mismatch(client, mock_db):
         mock_get_db.return_value = mock_db["conn"]
         
         mock_db["cursor"].fetchone.side_effect = [
-            (1, "YU", "student", False),
+            (1, "YU", "student", False, "HST"),
             (
                 1, "123456",
                 datetime.now(timezone.utc) + timedelta(minutes=5),
@@ -259,7 +259,7 @@ def test_verify_email_code_mismatch_last_attempt(client, mock_db):
         mock_get_db.return_value = mock_db["conn"]
         
         mock_db["cursor"].fetchone.side_effect = [
-            (1, "YU", "student", False),
+            (1, "YU", "student", False, "HST"),
             (
                 1, "123456",
                 datetime.now(timezone.utc) + timedelta(minutes=5),
@@ -286,7 +286,7 @@ def test_verify_email_capacity_exceeded_at_verify(client, mock_db):
         mock_get_db.return_value = mock_db["conn"]
         
         mock_db["cursor"].fetchone.side_effect = [
-            (1, "YU", "student", False),
+            (1, "YU", "student", False, "HST"),
             (
                 1, "123456",
                 datetime.now(timezone.utc) + timedelta(minutes=5),
@@ -314,7 +314,7 @@ def test_verify_email_success(client, mock_db):
         mock_get_db.return_value = mock_db["conn"]
         
         mock_db["cursor"].fetchone.side_effect = [
-            (1, "YU", "student", False),
+            (1, "YU", "student", False, "HST"),
             (
                 1, "123456",
                 datetime.now(timezone.utc) + timedelta(minutes=5),
@@ -772,7 +772,7 @@ def test_verify_email_code_mismatch_triggers_lock(client, mock_db):
 
         window_start = datetime.now(timezone.utc) - timedelta(hours=1)
         mock_db["cursor"].fetchone.side_effect = [
-            (1, "YU", "student", False),
+            (1, "YU", "student", False, "HST"),
             (1, "123456", datetime.now(timezone.utc) + timedelta(minutes=5), False, 2),
             (9, window_start),   # 9 previous fails → 10th → locked
         ]

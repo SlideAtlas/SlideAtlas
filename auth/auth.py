@@ -201,18 +201,34 @@ def register():
     conn.autocommit = False
     try:
         with conn.cursor() as cur:
-            # 1) 명단 화이트리스트 (email + role 동시 일치)
+            # 1) 명단 화이트리스트 (email + role 일치) + 과목코드 캡처 (§6-2, D4)
+            #    roster의 (institution_id, subject_code, email)에서 subject_code를 가져와
+            #    users.subject_code로 채번한다. 한 이메일이 여러 과목 명단에 있으면 과목별
+            #    독립 레코드 구조(UNIQUE(institution_id, subject_code, email))를 따르며, 본 요청은
+            #    가장 이른 과목코드 1건을 등록한다(이메일 키 기반 인증·로그인 경로 호환).
             cur.execute(
-                """SELECT 1 FROM institution_rosters
-                   WHERE institution_id = %s AND lower(email) = %s AND role = %s""",
+                """SELECT subject_code FROM institution_rosters
+                   WHERE institution_id = %s AND lower(email) = %s AND role = %s
+                   ORDER BY subject_code
+                   LIMIT 1""",
                 (institution_id, email, role),
             )
-            if cur.fetchone() is None:
+            roster = cur.fetchone()
+            if roster is None:
                 conn.rollback()
                 return _err("ROSTER_MISMATCH", "과 사무실에 문의하세요", 403)
+            subject_code = roster[0]
+            if not subject_code:
+                # 명단에 과목코드가 비어있으면 데이터 결함 — 과목 축 없이는 가입 불가(§0-3·§0-4).
+                conn.rollback()
+                return _err("ROSTER_SUBJECT_MISSING", "과 사무실에 문의하세요", 403)
 
-            # 2) 이미 가입된 이메일
-            cur.execute("SELECT 1 FROM users WHERE lower(email) = %s", (email,))
+            # 2) 이미 가입된 이메일 (과목별 독립 레코드 단위, §6-2)
+            cur.execute(
+                """SELECT 1 FROM users
+                   WHERE institution_id = %s AND subject_code = %s AND lower(email) = %s""",
+                (institution_id, subject_code, email),
+            )
             if cur.fetchone() is not None:
                 conn.rollback()
                 return _err("EMAIL_EXISTS", "이미 가입된 이메일입니다", 409)
@@ -236,13 +252,13 @@ def register():
                 conn.rollback()
                 return _err("CAPACITY_EXCEEDED", "정원이 초과되었습니다", 409)
 
-            # 4) users INSERT (pending_verification) + 인증코드 INSERT
+            # 4) users INSERT (pending_verification, subject_code 채번) + 인증코드 INSERT
             pw_hash = generate_password_hash(password)
             cur.execute(
-                """INSERT INTO users (institution_id, email, password_hash, role, status)
-                   VALUES (%s, %s, %s, %s, 'pending_verification')
+                """INSERT INTO users (institution_id, subject_code, email, password_hash, role, status)
+                   VALUES (%s, %s, %s, %s, %s, 'pending_verification')
                    RETURNING id""",
-                (institution_id, email, pw_hash, role),
+                (institution_id, subject_code, email, pw_hash, role),
             )
             user_id = cur.fetchone()[0]
 
@@ -293,7 +309,7 @@ def verify_email():
     try:
         with conn.cursor() as cur:
             cur.execute(
-                """SELECT id, institution_id, role, is_special
+                """SELECT id, institution_id, role, is_special, subject_code
                    FROM users
                    WHERE lower(email) = %s AND status = 'pending_verification'""",
                 (email,),
@@ -302,7 +318,14 @@ def verify_email():
             if user is None:
                 conn.rollback()
                 return _err("USER_NOT_FOUND", "인증 대기 중인 사용자가 없습니다", 404)
-            user_id, institution_id, role, is_special = user
+            user_id, institution_id, role, is_special, subject_code = user
+
+            # D4(b): 가입 경로가 subject_code를 채웠어야 한다(§6-2). 비어 있으면 가입 경로 결함이므로
+            #   임의 기본값을 채우지 않고 거부한다(§0-3). 과목 축 없이 active 전환 금지.
+            if not subject_code:
+                conn.rollback()
+                print(f"[verify_email] subject_code 누락(user_id={user_id}, email={email}) — 가입 경로 결함")
+                return _err("SUBJECT_CODE_MISSING", "계정 설정 오류입니다. 과 사무실에 문의하세요", 409)
 
             cur.execute(
                 """SELECT id, code, expires_at, consumed, attempt_count
@@ -531,15 +554,17 @@ def login():
         with conn.cursor() as cur:
             # [M2] 구독 만료 검사도 subscriptions(기관×과목) 모델 사용 (decorators._authenticate와 동일 규칙).
             # 반환 shape(8컬럼, 마지막=subscription_end)는 유지 — 테스트 mock·언패킹 호환.
+            # [D4] 과목 격리 정식화: (institution_id, subject_code) 양축으로 매칭한다.
+            #   NULL 폴백(기관 단위)은 제거됨 — subject_code는 가입 시 필수 채번되므로(§6-2) 정상 경로에
+            #   NULL은 존재하지 않는다(§0-3·§0-4). subject_code 미일치 시 매칭 구독 없음 → 만료 검사 적용.
             cur.execute(
                 """SELECT u.id, u.institution_id, u.role, u.is_special,
                           u.password_hash, u.status, u.locked_at,
                           (SELECT MAX(s.subscription_end)
                              FROM subscriptions s
                             WHERE s.institution_id = u.institution_id
-                              AND s.status = 'active'
-                              AND (u.subject_code IS NULL
-                                   OR s.subject_code = u.subject_code))
+                              AND s.subject_code = u.subject_code
+                              AND s.status = 'active')
                    FROM users u
                    WHERE lower(u.email) = %s
                    FOR UPDATE OF u""",
