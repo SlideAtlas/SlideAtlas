@@ -433,6 +433,8 @@ var SLIDE_H         = {{ H }};
 var SLIDE_MPP       = {{ mpp }};
 var TILE_SOURCE_URL = {{ tile_source_url | tojson }};
 var THUMBNAIL_URL   = {{ thumbnail_url | tojson }};
+// [2-2#2] 타일 토큰(TTL 5분) — 만료 시 재발급해 끊김 없이 갱신. 초기값은 tileSource URL에서 추출.
+var CURRENT_TILE_TOKEN = (TILE_SOURCE_URL.match(/[?&]t=([^&]+)/) || [])[1] || '';
 
 // [H1] interceptor.js가 TILE_TOKEN_INVALID(타일토큰 5분 만료) 시 호출. 로그인 리다이렉트 금지·토스트만.
 window.showToast = function (msg) {
@@ -475,6 +477,48 @@ var osd = OpenSeadragon({
 
 osd.addHandler('zoom', updViewer);
 osd.addHandler('open', function() { osd.viewport.goHome(true); setTimeout(updViewer, 400); });
+
+// ── [2-2#2] 타일 토큰 5분 만료 대응: 끊김 없는 재발급 ──
+// 타일 URL은 매 요청 시 getTileUrl로 생성되므로, getTileUrl이 CURRENT_TILE_TOKEN(가변)을
+// 붙이도록 패치하면 토큰 갱신 시 새 타일이 자동으로 새 토큰을 사용한다(이미 로드된 타일은 캐시 유지).
+function _patchTileToken() {
+  var item = osd.world.getItemAt(0);
+  if (!item || !item.source || item.source._tokenPatched) return;
+  var src = item.source;
+  var orig = src.getTileUrl.bind(src);
+  src.getTileUrl = function(level, x, y) {
+    var u = orig(level, x, y).replace(/[?&]t=[^&]*/g, '');
+    return u + (u.indexOf('?') >= 0 ? '&' : '?') + 't=' + CURRENT_TILE_TOKEN;
+  };
+  src._tokenPatched = true;
+}
+osd.addHandler('open', _patchTileToken);
+
+// 새 타일 토큰 재발급 (접근권 게이트 통과 시에만 발급). 성공 시 CURRENT_TILE_TOKEN 갱신.
+function refreshTileToken() {
+  return fetch('/api/tile-token?slide=' + encodeURIComponent(SLIDE_ID), { credentials: 'include' })
+    .then(function(r) { return r.ok ? r.json() : null; })
+    .then(function(d) {
+      if (d && d.success && d.token) { CURRENT_TILE_TOKEN = d.token; return true; }
+      return false;
+    })
+    .catch(function() { return false; });
+}
+window.refreshTileToken = refreshTileToken;  // interceptor.js가 TILE_TOKEN_INVALID 시 호출
+
+// 선제 갱신: TTL 5분 → 4분마다 미리 토큰 교체(만료로 인한 끊김 자체를 예방)
+setInterval(function() { refreshTileToken(); }, 240000);
+
+// 반제(reactive): 타일 로드 실패(만료 등) 시 재발급 후 강제 재그리기. 강제 /login 리다이렉트 금지.
+var _reissuingTile = false;
+osd.addHandler('tile-load-failed', function() {
+  if (_reissuingTile) return;
+  _reissuingTile = true;
+  refreshTileToken().then(function(ok) {
+    _reissuingTile = false;
+    if (ok) osd.forceRedraw();
+  });
+});
 
 // ── 뷰어 상태 업데이트 (배율 · 스케일 · 헤더) ──
 function updViewer() {

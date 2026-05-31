@@ -819,6 +819,30 @@ def thumbnail(slide_id):
         buf.seek(0)
         return send_file(buf, mimetype='image/jpeg')
 
+@app.route('/api/tile-token')
+@login_required
+def api_tile_token():
+    """[2-2#2] 타일 토큰(TTL 5분) 재발급. 뷰어가 만료 전/후 호출해 끊김 없이 갱신.
+
+    발급 조건은 _slide_access_allowed 게이트 통과(묶음 A) — 접근권 없는 슬라이드는 재발급 거부.
+    @login_required로 구독·세션·특별계정 만료도 매 요청 검사된다.
+    """
+    slide_id = (request.args.get('slide') or '').strip()
+    if not slide_id:
+        resp = jsonify({'success': False, 'error': 'MISSING_SLIDE'})
+        resp.status_code = 400
+        resp.headers['Cache-Control'] = 'no-store, no-cache'
+        return resp
+    allowed, aerr = _slide_access_allowed(slide_id)
+    if not allowed:
+        return aerr  # 접근권 없는 슬라이드 토큰 재발급 금지 (403/404)
+    from flask import g as _g
+    token = generate_tile_token(
+        str(getattr(_g, 'user_id', '')), getattr(_g, 'institution_id', ''), slide_id)
+    resp = jsonify({'success': True, 'token': token})
+    resp.headers['Cache-Control'] = 'no-store, no-cache'
+    return resp
+
 @app.route('/admin/login', methods=['GET', 'POST'])
 def admin_login():
     # 이미 로그인된 어드민은 대시보드로

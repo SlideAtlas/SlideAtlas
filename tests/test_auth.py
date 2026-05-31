@@ -1372,6 +1372,47 @@ def test_gate_not_deployed_403(client, mock_db):
 # [#6] ADMIN_SECRET_KEY fail-closed 기동
 # ─────────────────────────────────────────────
 
+def test_tile_token_reissue_denied_without_access(client, mock_db):
+    """[2-2#2] 접근권 없는 슬라이드의 타일 토큰 재발급 거부 (403)."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"), \
+         patch("server_render.get_slide_institution", return_value=("SA", "PRT", "deployed")), \
+         patch("server_render._institution_subject_access", return_value=False):
+        mock_get_db.return_value = mock_db["conn"]
+        _gate_setup(client, mock_db, subject_code="HST")  # HST 학생이 PRT 슬라이드 토큰 요청
+        resp = client.get("http://localhost/api/tile-token?slide=SA-PRT-001")
+        assert resp.status_code == 403
+        assert resp.get_json()["error"] == "FORBIDDEN"
+
+
+def test_tile_token_reissue_success_with_access(client, mock_db):
+    """[2-2#2] 접근권 있는 슬라이드 → 새 타일 토큰 재발급 성공."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"), \
+         patch("server_render.get_slide_institution", return_value=("SA", "HST", "deployed")), \
+         patch("server_render._institution_subject_access", return_value=True):
+        mock_get_db.return_value = mock_db["conn"]
+        _gate_setup(client, mock_db, subject_code="HST")
+        resp = client.get("http://localhost/api/tile-token?slide=SA-HST-001")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["success"] is True
+        assert data["token"]
+        # 재발급 토큰이 실제 검증을 통과하는지 확인
+        from auth.decorators import verify_tile_token
+        assert verify_tile_token(data["token"], "1", "YU", "SA-HST-001") is True
+
+
+def test_tile_token_reissue_missing_slide(client, mock_db):
+    """[2-2#2] slide 누락 → 400."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+        _gate_setup(client, mock_db, subject_code="HST")
+        resp = client.get("http://localhost/api/tile-token")
+        assert resp.status_code == 400
+
+
 def test_xlsx_safe_neutralizes_formula_injection():
     """[2-2#4] =,+,-,@로 시작하는 셀 값은 ' 프리픽스로 무력화, 그 외는 원본 유지."""
     import server_render as _sr

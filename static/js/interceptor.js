@@ -87,8 +87,12 @@
       } else if (errCode === 'ACCOUNT_LOCKED') {
         location.href = '/login?view=locked';
       } else if (errCode === 'TILE_TOKEN_INVALID' || errCode === 'TOKEN_EXPIRED') {
-        // 뷰어 전용 에러 — 로그인 재유도 금지, 토스트만
-        if (typeof window.showToast === 'function') window.showToast('뷰어를 새로고침하세요');
+        // 뷰어 전용 에러 — 로그인 재유도 금지. [2-2#2] 재발급 경로가 있으면 토큰 갱신 시도.
+        if (typeof window.refreshTileToken === 'function') {
+          window.refreshTileToken();
+        } else if (typeof window.showToast === 'function') {
+          window.showToast('뷰어를 새로고침하세요');
+        }
       } else if (errCode === 'TOKEN_INVALID' || errCode === 'INVALID_TOKEN' || errCode === 'DB_UNAVAILABLE') {
         // 쿠키 없음·JWT 만료·변조 — 조용히 로그인 페이지로
         if (!location.pathname.startsWith('/login')) location.href = '/login';
