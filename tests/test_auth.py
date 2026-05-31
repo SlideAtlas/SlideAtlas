@@ -369,7 +369,7 @@ def test_login_invalid_credentials_wrong_password(client, mock_db):
         # Login query: id, institution_id, role, is_special, pw_hash, status, locked_at, subscription_end
         # Then _check_and_increment_failed queries: failed_attempts, failed_window_start
         mock_db["cursor"].fetchone.side_effect = [
-            (1, "YU", "student", False, correct_hash, "active", None,
+            (1, "YU", "student", False, correct_hash, "active", None, None,
              datetime.now(timezone.utc) + timedelta(days=365)),
             (0, None),  # _check_and_increment_failed
         ]
@@ -398,6 +398,7 @@ def test_login_email_not_verified(client, mock_db):
             generate_password_hash("password"),
             "pending_verification",
             None,  # locked_at
+            None,  # special_expires_at
             datetime.now(timezone.utc) + timedelta(days=365)
         )
         
@@ -425,6 +426,7 @@ def test_login_subscription_expired_regular_user(client, mock_db):
             generate_password_hash("password"),
             "active",
             None,  # locked_at
+            None,  # special_expires_at
             datetime.now(timezone.utc).date() - timedelta(days=1)
         )
 
@@ -452,6 +454,7 @@ def test_login_subscription_expired_but_is_special(client, mock_db):
             generate_password_hash("password"),
             "active",
             None,  # locked_at
+            None,  # special_expires_at
             datetime.now(timezone.utc).date() - timedelta(days=1)
         )
         
@@ -479,6 +482,7 @@ def test_login_success(client, mock_db):
             generate_password_hash("password"),
             "active",
             None,  # locked_at
+            None,  # special_expires_at
             datetime.now(timezone.utc).date() + timedelta(days=365)
         )
 
@@ -562,7 +566,7 @@ def test_login_required_session_token_mismatch(client, mock_db):
         client.set_cookie(COOKIE_NAME, token)
 
         mock_db["cursor"].fetchone.return_value = (
-            "new-session-token", "active", "HST", None  # session_token, status, subject_code, subscription_end
+            "new-session-token", "active", "HST", None, None  # session_token, status, subject_code, special_expires_at, subscription_end
         )
 
         resp = client.get("http://localhost/api/auth/me")
@@ -589,7 +593,7 @@ def test_login_required_pending_verification(client, mock_db):
         client.set_cookie(COOKIE_NAME, token)
         
         mock_db["cursor"].fetchone.return_value = (
-            "valid-session-123", "pending_verification", "HST", None
+            "valid-session-123", "pending_verification", "HST", None, None
         )
 
         resp = client.get("/api/auth/me")
@@ -615,8 +619,8 @@ def test_login_required_success(client, mock_db):
 
         mock_db["cursor"].fetchone.side_effect = [
             # fail-closed(§8): 매칭 구독 없으면(None) SUBSCRIPTION_EXPIRED → 유효 구독일 제공
-            ("valid-session-123", "active", "HST",
-             datetime.now(timezone.utc).date() + timedelta(days=365)),   # _authenticate: session_token, status, subject_code, subscription_end
+            ("valid-session-123", "active", "HST", None,
+             datetime.now(timezone.utc).date() + timedelta(days=365)),   # _authenticate: session_token, status, subject_code, special_expires_at, subscription_end
             (1, "test@example.com", "student", "YU", False, "active", None)  # me()
         ]
 
@@ -676,8 +680,8 @@ def test_logout_success(client, mock_db):
 
         mock_db["cursor"].fetchone.return_value = (
             # fail-closed(§8): 유효 구독일 제공해 _authenticate 통과 → logout 도달
-            "valid-session-123", "active", "HST",
-            datetime.now(timezone.utc).date() + timedelta(days=365)   # session_token, status, subject_code, subscription_end
+            "valid-session-123", "active", "HST", None,
+            datetime.now(timezone.utc).date() + timedelta(days=365)   # session_token, status, subject_code, special_expires_at, subscription_end
         )
 
         # Werkzeug 3.x: full URL for domain matching; X-CSRF-Token required by login_required
@@ -708,6 +712,7 @@ def test_login_account_locked(client, mock_db):
             generate_password_hash("password"),
             "locked",
             locked_at,  # locked_at 1시간 전 (24h 미경과)
+            None,  # special_expires_at
             datetime.now(timezone.utc).date() + timedelta(days=365)
         )
 
@@ -732,6 +737,7 @@ def test_login_account_auto_unlock(client, mock_db):
             generate_password_hash("password"),
             "locked",
             locked_at,
+            None,  # special_expires_at
             datetime.now(timezone.utc).date() + timedelta(days=365)
         )
 
@@ -755,7 +761,7 @@ def test_login_wrong_password_locks_account(client, mock_db):
 
         # Login query + _check_and_increment_failed: already at 9, new attempt = 10 → lock
         mock_db["cursor"].fetchone.side_effect = [
-            (1, "YU", "student", False, correct_hash, "active", None,
+            (1, "YU", "student", False, correct_hash, "active", None, None,
              datetime.now(timezone.utc).date() + timedelta(days=365)),
             (9, window_start),   # failed_attempts=9, window still active → new=10 → locked
         ]
@@ -904,7 +910,7 @@ def test_csrf_missing_header_returns_403(client, mock_db):
 
         # fail-closed(§8): 유효 구독일 제공해 _authenticate 통과 → CSRF 검사 도달
         mock_db["cursor"].fetchone.return_value = (
-            "sess123", "active", "HST", datetime.now(timezone.utc).date() + timedelta(days=365))
+            "sess123", "active", "HST", None, datetime.now(timezone.utc).date() + timedelta(days=365))
 
         # No X-CSRF-Token header → 403
         resp = client.post("http://localhost/api/auth/logout")
@@ -928,7 +934,7 @@ def test_csrf_mismatched_token_returns_403(client, mock_db):
 
         # fail-closed(§8): 유효 구독일 제공해 _authenticate 통과 → CSRF 검사 도달
         mock_db["cursor"].fetchone.return_value = (
-            "sess123", "active", "HST", datetime.now(timezone.utc).date() + timedelta(days=365))
+            "sess123", "active", "HST", None, datetime.now(timezone.utc).date() + timedelta(days=365))
 
         resp = client.post(
             "http://localhost/api/auth/logout",
@@ -1033,7 +1039,7 @@ def test_session_revoked_on_db_mismatch(client, mock_db):
 
         # DB에는 다른 session_token (다른 기기에서 로그인)
         mock_db["cursor"].fetchone.return_value = (
-            "different-token-in-db", "active", "HST", None
+            "different-token-in-db", "active", "HST", None, None
         )
 
         resp = client.get("http://localhost/api/auth/me")
@@ -1063,7 +1069,7 @@ def test_subscription_expired_returns_401(client, mock_db):
 
         expired_date = date.today() - timedelta(days=1)
         mock_db["cursor"].fetchone.return_value = (
-            "valid-sess", "active", "HST", expired_date
+            "valid-sess", "active", "HST", None, expired_date
         )
 
         resp = client.get("http://localhost/api/auth/me")
@@ -1071,6 +1077,74 @@ def test_subscription_expired_returns_401(client, mock_db):
         assert resp.status_code == 401
         data = resp.get_json()
         assert data["error"] == "SUBSCRIPTION_EXPIRED"
+
+
+def test_special_expires_at_past_blocks(client, mock_db):
+    """★#5: special_expires_at 경과한 특별계정 → 차단 (SUBSCRIPTION_EXPIRED)."""
+    from datetime import date, timedelta
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+
+        payload = {
+            "sub": "1", "institution_id": "YU", "role": "student",
+            "session_token": "valid-sess", "is_special": True,
+        }
+        client.set_cookie(COOKIE_NAME, encode_token(payload))
+        # is_special이지만 special_expires_at이 과거 → 차단. subscription_end는 무관(None).
+        mock_db["cursor"].fetchone.return_value = (
+            "valid-sess", "active", None, date.today() - timedelta(days=1), None
+        )
+
+        resp = client.get("http://localhost/api/auth/me")
+
+        assert resp.status_code == 401
+        assert resp.get_json()["error"] == "SUBSCRIPTION_EXPIRED"
+
+
+def test_special_expires_at_null_passes(client, mock_db):
+    """special_expires_at=NULL(무기한) 특별계정 → 통과 (§15-8 비권장이나 허용)."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+
+        payload = {
+            "sub": "1", "institution_id": "YU", "role": "admin",
+            "session_token": "valid-sess", "is_special": True,
+        }
+        client.set_cookie(COOKIE_NAME, encode_token(payload))
+        mock_db["cursor"].fetchone.side_effect = [
+            ("valid-sess", "active", None, None, None),   # _authenticate: special_expires_at=None → 통과
+            (1, "admin@test.com", "admin", "YU", True, "active", None),  # me()
+        ]
+
+        resp = client.get("http://localhost/api/auth/me")
+
+        assert resp.status_code == 200
+        assert resp.get_json()["success"] is True
+
+
+def test_login_special_expires_at_past_blocks(client, mock_db):
+    """★#5(login): special_expires_at 경과 특별계정 로그인 → 403 SUBSCRIPTION_EXPIRED."""
+    from werkzeug.security import generate_password_hash
+    from datetime import date, timedelta
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+        # is_special=True, special_expires_at 과거, subscription_end None
+        mock_db["cursor"].fetchone.return_value = (
+            1, "YU", "student", True,
+            generate_password_hash("password"),
+            "active", None,
+            date.today() - timedelta(days=1),  # special_expires_at 과거
+            None                                # subscription_end
+        )
+
+        resp = client.post("/api/auth/login",
+                          json={"email": "special@test.com", "password": "password"})
+
+        assert resp.status_code == 403
+        assert resp.get_json()["error"] == "SUBSCRIPTION_EXPIRED"
 
 
 def test_is_special_subscription_expired_passes(client, mock_db):
@@ -1092,7 +1166,7 @@ def test_is_special_subscription_expired_passes(client, mock_db):
 
         expired_date = date.today() - timedelta(days=30)
         mock_db["cursor"].fetchone.side_effect = [
-            ("valid-sess", "active", None, expired_date),   # _authenticate: is_special이라 subject_code 무관
+            ("valid-sess", "active", None, None, expired_date),   # _authenticate: is_special(subject_code·special_expires_at 무관, 구독만료 면제)
             (1, "admin@test.com", "admin", "YU", True, "active", None),  # me()
         ]
 
@@ -1126,7 +1200,7 @@ def test_tile_token_invalid_returns_correct_code(client, mock_db):
 
         # fail-closed(§8): 유효 구독일 + 과목(HST)이 슬라이드 과목과 일치 → 게이트 통과 → 타일토큰 검사 도달
         mock_db["cursor"].fetchone.return_value = (
-            "valid-sess", "active", "HST", datetime.now(timezone.utc).date() + timedelta(days=365)
+            "valid-sess", "active", "HST", None, datetime.now(timezone.utc).date() + timedelta(days=365)
         )
 
         # 타일 토큰 없이 DZI 접근 (?t= 미포함)
@@ -1151,9 +1225,9 @@ def _gate_setup(client, mock_db, *, subject_code, is_special=False,
         "session_token": "valid-sess", "is_special": is_special,
     }
     client.set_cookie(COOKIE_NAME, encode_token(payload))
-    # _authenticate row: (session_token, status, subject_code, subscription_end)
+    # _authenticate row: (session_token, status, subject_code, special_expires_at, subscription_end)
     mock_db["cursor"].fetchone.return_value = (
-        "valid-sess", "active", subject_code,
+        "valid-sess", "active", subject_code, None,
         datetime.now(timezone.utc).date() + timedelta(days=365),
     )
 

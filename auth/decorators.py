@@ -152,7 +152,7 @@ def _authenticate():
             #   NULL은 없다(§0-3·§0-4). 과목 축을 일급으로 양축(institution_id, subject_code) 매칭.
             # 반환 shape(session_token, status, subscription_end)는 변경하지 않는다(다운스트림·테스트 호환).
             cur.execute(
-                """SELECT u.session_token, u.status, u.subject_code,
+                """SELECT u.session_token, u.status, u.subject_code, u.special_expires_at,
                           (SELECT MAX(s.subscription_end)
                              FROM subscriptions s
                             WHERE s.institution_id = u.institution_id
@@ -170,7 +170,7 @@ def _authenticate():
     if row is None:
         return ("TOKEN_INVALID", "다시 로그인하세요")
 
-    db_session, status, subject_code, subscription_end = row
+    db_session, status, subject_code, special_expires_at, subscription_end = row
 
     # ② 세션 토큰 검증 — 반드시 아래 순서를 지킬 것 (순서 변경 금지)
     # token_session 존재 여부를 먼저 확인해야 None vs None 비교로
@@ -185,13 +185,18 @@ def _authenticate():
     if status != "active":
         return ("TOKEN_INVALID", "다시 로그인하세요")  # 비활성·잠금 계정
 
-    # ③ 구독 만료 — (institution_id, subject_code) 매칭 구독 기준, 매 요청 확인 (§8).
-    #    §8 명문: "매칭 구독이 없거나 만료면 SUBSCRIPTION_EXPIRED. is_special 예외."
-    #    → 매칭 구독이 없으면(subscription_end IS NULL) 라이선스 격리상 차단한다(fail-closed).
-    #    이전 `is not None` 가드는 매칭 없음을 통과시키는 fail-open 결함이었다(Codex FAIL1).
-    if not payload.get("is_special"):
-        from datetime import date
-        if subscription_end is None or subscription_end < date.today():
+    # ③ 만료 검사 (매 요청).
+    from datetime import date
+    today = date.today()
+    if payload.get("is_special"):
+        # [B] 특별계정: 구독 만료는 면제하되 special_expires_at은 집행(§15-8).
+        #     special_expires_at NULL(무기한)은 통과 — 비권장이나 허용. 경과 시 차단.
+        if special_expires_at is not None and special_expires_at < today:
+            return ("SUBSCRIPTION_EXPIRED", "특별계정 사용 기간이 만료되었습니다. 과 사무실에 문의하세요")
+    else:
+        # §8 명문: "매칭 구독이 없거나 만료면 SUBSCRIPTION_EXPIRED."
+        #   매칭 구독이 없으면(subscription_end IS NULL) 라이선스 격리상 차단(fail-closed, Codex FAIL1).
+        if subscription_end is None or subscription_end < today:
             return ("SUBSCRIPTION_EXPIRED", "구독이 만료되었습니다. 과 사무실에 문의하세요")
 
     g.user_id = user_id

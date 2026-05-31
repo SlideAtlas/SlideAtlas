@@ -572,7 +572,7 @@ def login():
             #   NULL은 존재하지 않는다(§0-3·§0-4). subject_code 미일치 시 매칭 구독 없음 → 만료 검사 적용.
             cur.execute(
                 """SELECT u.id, u.institution_id, u.role, u.is_special,
-                          u.password_hash, u.status, u.locked_at,
+                          u.password_hash, u.status, u.locked_at, u.special_expires_at,
                           (SELECT MAX(s.subscription_end)
                              FROM subscriptions s
                             WHERE s.institution_id = u.institution_id
@@ -588,7 +588,7 @@ def login():
                 conn.rollback()
                 return _err("INVALID_CREDENTIALS", "이메일 또는 비밀번호가 올바르지 않습니다", 401)
             (user_id, institution_id, role, is_special,
-             pw_hash, status, locked_at, subscription_end) = row
+             pw_hash, status, locked_at, special_expires_at, subscription_end) = row
 
             if status == "pending_verification":
                 conn.rollback()
@@ -611,11 +611,15 @@ def login():
                     return _err("ACCOUNT_LOCKED", "보안상 계정이 잠겼습니다. 과 사무실에 문의하세요", 403)
                 return _err("INVALID_CREDENTIALS", "이메일 또는 비밀번호가 올바르지 않습니다", 401)
 
-            # 구독 만료 검사 (§8: 매칭 구독이 없거나 만료면 차단, is_special 예외).
-            #    (institution_id, subject_code) 매칭 구독이 없으면 subscription_end=NULL →
-            #    라이선스 격리상 차단(fail-closed). is_special은 만료 무관 허용.
-            if not is_special:
-                today = datetime.now(timezone.utc).date()
+            # 만료 검사 (§8). is_special은 구독 만료 면제, 단 special_expires_at은 집행([B]).
+            today = datetime.now(timezone.utc).date()
+            if is_special:
+                # [B] 특별계정 사용 기간 만료 집행. NULL(무기한)은 통과(§15-8 비권장).
+                if special_expires_at is not None and special_expires_at < today:
+                    conn.rollback()
+                    return _err("SUBSCRIPTION_EXPIRED", "특별계정 사용 기간이 만료되었습니다", 403)
+            else:
+                # 매칭 구독이 없으면(subscription_end=NULL) 라이선스 격리상 차단(fail-closed).
                 if subscription_end is None or subscription_end < today:
                     conn.rollback()
                     return _err("SUBSCRIPTION_EXPIRED", "구독이 만료되었습니다", 403)
