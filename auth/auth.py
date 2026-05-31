@@ -233,22 +233,25 @@ def register():
                 conn.rollback()
                 return _err("EMAIL_EXISTS", "이미 가입된 이메일입니다", 409)
 
-            # 3) TO(정원) 검사: max_users vs active 유저 수
+            # 3) 정원(좌석) 검사: subscriptions.max_seats(과목별) vs 해당 과목 active 유저 수
+            #    (§13-2·§16). institutions.max_users(deprecated)는 참조하지 않는다(§0-2).
+            #    여기는 소프트 사전검사이며, 권위 있는 동시성 재검사는 verify_email에서 행 잠금으로 수행.
             cur.execute(
-                "SELECT max_users FROM institutions WHERE id = %s", (institution_id,)
+                """SELECT max_seats FROM subscriptions
+                   WHERE institution_id = %s AND subject_code = %s AND status = 'active'
+                   ORDER BY subscription_end DESC
+                   LIMIT 1""",
+                (institution_id, subject_code),
             )
-            inst = cur.fetchone()
-            if inst is None:
-                conn.rollback()
-                return _err("INSTITUTION_NOT_FOUND", "기관을 찾을 수 없습니다", 404)
-            max_users = inst[0]
+            sub = cur.fetchone()
+            max_seats = sub[0] if sub else None  # 구독 없음 → 정원 미설정으로 간주(허용)
             cur.execute(
                 """SELECT COUNT(*) FROM users
-                   WHERE institution_id = %s AND status = 'active'""",
-                (institution_id,),
+                   WHERE institution_id = %s AND subject_code = %s AND status = 'active'""",
+                (institution_id, subject_code),
             )
             active_count = cur.fetchone()[0]
-            if max_users is not None and active_count >= max_users:
+            if max_seats is not None and active_count >= max_seats:
                 conn.rollback()
                 return _err("CAPACITY_EXCEEDED", "정원이 초과되었습니다", 409)
 
@@ -373,20 +376,27 @@ def verify_email():
                     return _err("ACCOUNT_LOCKED", "보안상 계정이 잠겼습니다. 과 사무실에 문의하세요", 403)
                 return _err_with_remaining("CODE_MISMATCH", "인증코드가 일치하지 않습니다", remaining)
 
-            # 코드 일치 → TO 재검사 (동시성 방어): institutions row 잠금
+            # 코드 일치 → 정원(좌석) 재검사 (동시성 방어): 해당 (기관×과목) 구독 행 잠금.
+            #   subscriptions.max_seats(과목별)를 기준으로 한다(§13-2·§16). institutions.max_users
+            #   (deprecated)는 참조하지 않는다(§0-2). 구독 행을 FOR UPDATE로 잠가 동시 verify가
+            #   마지막 좌석을 중복 통과하지 못하게 한다(과목 단위 직렬화).
             cur.execute(
-                "SELECT max_users FROM institutions WHERE id = %s FOR UPDATE",
-                (institution_id,),
+                """SELECT max_seats FROM subscriptions
+                   WHERE institution_id = %s AND subject_code = %s AND status = 'active'
+                   ORDER BY subscription_end DESC
+                   LIMIT 1
+                   FOR UPDATE""",
+                (institution_id, subject_code),
             )
-            inst = cur.fetchone()
-            max_users = inst[0] if inst else None
+            sub = cur.fetchone()
+            max_seats = sub[0] if sub else None  # 구독 없음 → 정원 미설정으로 간주(허용)
             cur.execute(
                 """SELECT COUNT(*) FROM users
-                   WHERE institution_id = %s AND status = 'active'""",
-                (institution_id,),
+                   WHERE institution_id = %s AND subject_code = %s AND status = 'active'""",
+                (institution_id, subject_code),
             )
             active_count = cur.fetchone()[0]
-            if max_users is not None and active_count >= max_users:
+            if max_seats is not None and active_count >= max_seats:
                 conn.rollback()
                 return _err("CAPACITY_EXCEEDED", "정원이 초과되었습니다", 409)
 

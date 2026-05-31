@@ -124,7 +124,7 @@ def test_register_capacity_exceeded(client, mock_db):
         mock_db["cursor"].fetchone.side_effect = [
             ("HST",),    # roster subject_code (명단 존재)
             None,        # 이메일 없음
-            (10,),       # max_users=10
+            (10,),       # max_seats=10
             (10,),       # active_count=10
         ]
         
@@ -151,7 +151,7 @@ def test_register_success(client, mock_db):
         mock_db["cursor"].fetchone.side_effect = [
             ("HST",),    # roster subject_code (명단)
             None,        # 이메일 없음
-            (100,),      # max_users
+            (100,),      # max_seats
             (5,),        # active_count
             (42,),       # INSERT users RETURNING id
         ]
