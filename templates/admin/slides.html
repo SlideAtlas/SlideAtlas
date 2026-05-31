@@ -366,7 +366,7 @@ function depPill(ds, reason) {
   };
   const [pc,lc,label] = m[ds] || ['p-gray','l-gray',ds];
   let html = `<span class="pill ${pc}"><span class="led ${lc}"></span>${label}</span>`;
-  if (ds === 'rejected' && reason) html += `<div class="reject-reason" title="${reason}">⚠ ${reason}</div>`;
+  if (ds === 'rejected' && reason) html += `<div class="reject-reason" title="${escH(reason)}">⚠ ${escH(reason)}</div>`;
   return html;
 }
 
@@ -390,7 +390,7 @@ function renderTable() {
     const actions = buildActions(s);
     return `<tr data-id="${s.id}">
       <td>${cbx}</td>
-      <td><div class="sid">${s.id}</div><div class="stitle">${s.title_ko||''}</div><div class="smeta">${s.organ||''} ${s.stain?'· '+s.stain:''}</div></td>
+      <td><div class="sid">${escH(s.id)}</div><div class="stitle">${escH(s.title_ko||'')}</div><div class="smeta">${escH(s.organ||'')} ${s.stain?'· '+escH(s.stain):''}</div></td>
       <td><span class="fmt">${s.original_format||'—'}</span></td>
       <td>${convPill(s.conversion_status)}</td>
       <td>${depPill(s.deploy_status, s.reject_reason)}</td>
@@ -637,6 +637,12 @@ function closeModal(id) { document.getElementById(id).classList.remove('show'); 
 document.querySelectorAll('.overlay').forEach(o =>
   o.addEventListener('click', e => { if (e.target === o) o.classList.remove('show'); })
 );
+
+// [2-2#5] innerHTML 삽입용 HTML 이스케이프 (슬라이드 제목·organ·stain·reject_reason 등 XSS 방어)
+function escH(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
 
 // ── 토스트 ──────────────────────────────────────────────────
 function showToast(msg, ok) {
