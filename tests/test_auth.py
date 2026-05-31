@@ -1372,6 +1372,19 @@ def test_gate_not_deployed_403(client, mock_db):
 # [#6] ADMIN_SECRET_KEY fail-closed 기동
 # ─────────────────────────────────────────────
 
+def test_xlsx_safe_neutralizes_formula_injection():
+    """[2-2#4] =,+,-,@로 시작하는 셀 값은 ' 프리픽스로 무력화, 그 외는 원본 유지."""
+    import server_render as _sr
+    assert _sr._xlsx_safe("=1+1") == "'=1+1"
+    assert _sr._xlsx_safe("+82-10") == "'+82-10"
+    assert _sr._xlsx_safe("-cmd") == "'-cmd"
+    assert _sr._xlsx_safe("@SUM(A1)") == "'@SUM(A1)"
+    assert _sr._xlsx_safe("충남대 의대") == "충남대 의대"   # 정상 한글 — 변경 없음
+    assert _sr._xlsx_safe("H&E") == "H&E"
+    assert _sr._xlsx_safe(42) == 42                          # 숫자 — 변경 없음
+    assert _sr._xlsx_safe(None) is None
+
+
 def test_inquiry_reply_email_rejects_header_injection():
     """[2-2#3] 수신 주소에 개행(헤더 주입 시도) → 발송 거부(False)."""
     import server_render as _sr

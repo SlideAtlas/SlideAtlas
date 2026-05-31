@@ -2165,6 +2165,15 @@ def api_reports_top_slides():
         release_db_conn(conn)
 
 
+def _xlsx_safe(v):
+    """[2-2#4] 스프레드시트 수식 주입 방어(§18 D9): =,+,-,@(및 탭/CR로 시작) 문자열 셀은
+    앞에 작은따옴표(')를 붙여 텍스트로 무력화. 숫자/None 등은 그대로 둔다.
+    """
+    if isinstance(v, str) and v and v[0] in ('=', '+', '-', '@', '\t', '\r'):
+        return "'" + v
+    return v
+
+
 @app.route('/admin/api/reports/export/excel', methods=['GET'])
 @super_admin_required
 def api_reports_export_excel():
@@ -2255,10 +2264,10 @@ def api_reports_export_excel():
     # 시트 1: 요약
     ws = wb.active
     ws.title = '요약'
-    ws.append([f'{inst_name} 이용 리포트'])
+    ws.append([_xlsx_safe(f'{inst_name} 이용 리포트')])
     ws['A1'].font = Font(bold=True, size=13)
     period_label = {'term': '이번 학기', '30d': '최근 30일', 'all': '전체 기간'}.get(period, period)
-    ws.append([f'기간: {period_label}  /  과목: {subject_code}'])
+    ws.append([_xlsx_safe(f'기간: {period_label}  /  과목: {subject_code}')])
     ws.append([])
     ws.append(['지표', '수치'])
     for cell in ws[4]:
@@ -2276,7 +2285,7 @@ def api_reports_export_excel():
     for cell in ws2[1]:
         cell.font = HDR; cell.fill = HDR_FILL
     for wk, cnt in weekly_rows:
-        ws2.append([wk, cnt])
+        ws2.append([_xlsx_safe(wk), cnt])
     ws2.column_dimensions['A'].width = 16
     ws2.column_dimensions['B'].width = 14
 
@@ -2286,7 +2295,7 @@ def api_reports_export_excel():
     for cell in ws3[1]:
         cell.font = HDR; cell.fill = HDR_FILL
     for slide_id, title, stain, views in top_slides:
-        ws3.append([slide_id, title, stain, views])
+        ws3.append([_xlsx_safe(slide_id), _xlsx_safe(title), _xlsx_safe(stain), views])
     for col in ['A', 'B', 'C', 'D']:
         ws3.column_dimensions[col].width = 18
 
