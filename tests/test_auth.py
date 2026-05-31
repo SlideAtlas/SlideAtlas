@@ -1372,6 +1372,87 @@ def test_gate_not_deployed_403(client, mock_db):
 # [#6] ADMIN_SECRET_KEY fail-closed 기동
 # ─────────────────────────────────────────────
 
+def test_inquiry_reply_email_rejects_header_injection():
+    """[2-2#3] 수신 주소에 개행(헤더 주입 시도) → 발송 거부(False)."""
+    import server_render as _sr
+    ok = _sr._send_inquiry_reply_email("victim@test.com\nBcc: evil@x.com", "제목", "본문")
+    assert ok is False
+
+
+def test_inquiry_reply_email_escapes_html():
+    """[2-2#3] 본문·제목의 HTML이 escaping되어 발송 (스크립트 주입 방지)."""
+    import server_render as _sr
+    captured = {}
+
+    class _FakeSMTP:
+        def __init__(self, *a, **k): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def login(self, *a): pass
+        def send_message(self, msg): captured['msg'] = msg
+
+    with patch("smtplib.SMTP_SSL", _FakeSMTP):
+        ok = _sr._send_inquiry_reply_email(
+            "user@test.com", "<b>title</b>", "<script>alert(1)</script>")
+    assert ok is True
+    payload = captured['msg'].get_payload()[0].get_payload(decode=True).decode('utf-8')
+    assert '<script>' not in payload
+    assert '&lt;script&gt;' in payload
+    # Subject는 개행 없이 한 줄
+    assert '\n' not in str(captured['msg']['Subject']).strip()
+
+
+def _admin_session(client, csrf='admin-csrf'):
+    with client.session_transaction() as sess:
+        sess['admin_user_id'] = 1
+        sess['admin_csrf_token'] = csrf
+
+
+def test_inquiry_reply_mail_failure_keeps_open(client, mock_db):
+    """[2-2#3] 메일 발송 실패 시 status='answered'로 바꾸지 않음(open 유지) + 경고 반환."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"), \
+         patch("server_render._send_inquiry_reply_email", return_value=False):
+        mock_get_db.return_value = mock_db["conn"]
+        mock_db["cursor"].fetchone.side_effect = [
+            (1, "super_admin", "Admin", "active"),  # _get_admin_user
+            ("문의제목", "user@test.com"),           # SELECT title, user_email
+            (99,),                                   # INSERT reply RETURNING id
+        ]
+        _admin_session(client, 'admin-csrf')
+        resp = client.post("/admin/api/inquiries/1/reply",
+                           json={"body": "답변 내용"},
+                           headers={"X-CSRF-Token": "admin-csrf"})
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["sent_via_ses"] is False
+        assert "warning" in data
+        # answered UPDATE가 실행되지 않았는지 확인
+        executed = " ".join(str(c.args[0]) for c in mock_db["cursor"].execute.call_args_list)
+        assert "answered" not in executed
+
+
+def test_inquiry_reply_mail_success_marks_answered(client, mock_db):
+    """[2-2#3] 메일 발송 성공 시에만 status='answered' 전환."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"), \
+         patch("server_render._send_inquiry_reply_email", return_value=True):
+        mock_get_db.return_value = mock_db["conn"]
+        mock_db["cursor"].fetchone.side_effect = [
+            (1, "super_admin", "Admin", "active"),
+            ("문의제목", "user@test.com"),
+            (99,),
+        ]
+        _admin_session(client, 'admin-csrf')
+        resp = client.post("/admin/api/inquiries/1/reply",
+                           json={"body": "답변 내용"},
+                           headers={"X-CSRF-Token": "admin-csrf"})
+        assert resp.status_code == 200
+        assert resp.get_json()["sent_via_ses"] is True
+        executed = " ".join(str(c.args[0]) for c in mock_db["cursor"].execute.call_args_list)
+        assert "answered" in executed
+
+
 def test_admin_secret_key_required_at_startup():
     """[#6] ADMIN_SECRET_KEY 미설정 시 server_render import(기동) 실패 (고정 폴백 금지)."""
     import importlib

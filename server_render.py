@@ -2743,20 +2743,30 @@ def _send_inquiry_reply_email(to_email: str, inquiry_title: str, reply_body: str
     """
     try:
         import smtplib
+        import re as _re
+        import html as _html
         from email.mime.multipart import MIMEMultipart
         from email.mime.text import MIMEText as _MIMEText
         # GMAIL_USER / GMAIL_APP_PW 는 .env 또는 Render 환경변수에서만 읽음 (하드코딩 금지)
         sender = os.environ.get('GMAIL_USER', '')
         if not sender:
             return False
+        # [2-2#3] 헤더 주입 방지: Subject/To에서 개행·제어문자 제거(거부). To에 CR/LF 있으면 발송 거부.
+        if _re.search(r'[\r\n]', to_email or ''):
+            print('[S5-8] 답변 이메일: 수신 주소에 개행 포함 — 발송 거부')
+            return False
+        safe_subject_title = _re.sub(r'[\r\n\t]+', ' ', inquiry_title or '').strip()[:150]
+        # [2-2#3] HTML 주입 방지: 사용자 입력(제목·본문) escaping.
+        esc_title = _html.escape(inquiry_title or '')
+        esc_body  = _html.escape(reply_body or '')
         msg = MIMEMultipart('alternative')
-        msg['Subject'] = f'[SlideAtlas] "{inquiry_title}" 문의 답변'
+        msg['Subject'] = f'[SlideAtlas] "{safe_subject_title}" 문의 답변'
         msg['From']    = sender
         msg['To']      = to_email
         html = f"""<p>안녕하세요, SlideAtlas입니다.</p>
-<p><b>'{inquiry_title}'</b> 문의에 대한 답변입니다.</p>
+<p><b>'{esc_title}'</b> 문의에 대한 답변입니다.</p>
 <hr style="border:none;border-top:1px solid #eee;margin:16px 0">
-<p style="white-space:pre-wrap">{reply_body}</p>
+<p style="white-space:pre-wrap">{esc_body}</p>
 <p style="color:#888;font-size:12px;margin-top:24px">SlideAtlas | atlaslab.co.kr</p>"""
         msg.attach(_MIMEText(html, 'html'))
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as s:
@@ -2897,7 +2907,7 @@ def api_inquiries_reply(inq_id):
 
                 title, to_email = row
 
-                # 이메일 발송 (실패해도 DB 기록은 정상 진행)
+                # 이메일 발송. 답변 레코드는 감사 목적상 항상 기록(sent_via_ses에 결과 보존).
                 sent = _send_inquiry_reply_email(to_email or '', title or '', body)
 
                 cur.execute("""
@@ -2908,12 +2918,20 @@ def api_inquiries_reply(inq_id):
                 """, (inq_id, body, g.admin_user_id, sent))
                 reply_id = cur.fetchone()[0]
 
-                # 상태 → answered
-                cur.execute("""
-                    UPDATE inquiries SET status = 'answered' WHERE id = %s
-                """, (inq_id,))
+                # [2-2#3] 메일 발송 성공 시에만 answered로 전환. 실패 시 open 유지(조용한 실패 방지)
+                #   → 운영자가 재발송하도록 경고 반환.
+                if sent:
+                    cur.execute("""
+                        UPDATE inquiries SET status = 'answered' WHERE id = %s
+                    """, (inq_id,))
 
-        return jsonify({'ok': True, 'reply_id': reply_id, 'sent_via_ses': sent})
+        if not sent:
+            print(f'[S5-8] 문의 #{inq_id} 답변 메일 발송 실패 — 상태 open 유지(answered 미전환)')
+            return jsonify({
+                'ok': True, 'reply_id': reply_id, 'sent_via_ses': False,
+                'warning': '답변은 기록됐으나 메일 발송에 실패했습니다. 상태를 미답변으로 유지합니다.',
+            })
+        return jsonify({'ok': True, 'reply_id': reply_id, 'sent_via_ses': True})
     finally:
         release_db_conn(conn)
 
