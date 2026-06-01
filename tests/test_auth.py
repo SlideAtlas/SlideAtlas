@@ -1687,3 +1687,422 @@ def test_tileserver_token_contract_tampered_and_expired():
     msg = f"1:YU:SA-HST-001:{past}"
     s = _h.new(os.environ["JWT_SECRET_KEY"].encode(), msg.encode(), _hh.sha256).hexdigest()
     assert _tileserver_verify(f"{past}:{s}", "1", "YU", "SA-HST-001") is False
+
+
+# ════════════════════════════════════════════════════════════════════════
+# 실사용 단계 경계·상태전이·집계 정합성 시나리오 (edge-scenarios-2026-06)
+#
+# 한계 명시: RDS 직접 접속 불가로 DB는 mock(cursor.fetchone side_effect)으로 구동한다.
+# 따라서 SQL WHERE 부등호(<=,>=) 자체의 의미는 DB가 실행하므로 mock으로는 검증 불가.
+# 이 시나리오들은 (1) Python 측 경계 비교·fail-closed 분기, (2) today 소스가 KST인지,
+# (3) 집계가 어떤 컬럼/테이블을 기준으로 하는지(SQL 문자열 근거), (4) 게이트 분기를 검증한다.
+# 집계/스키마 정합성(5·9)은 실행된 SQL 문자열·DDL 파일을 근거로 한 정적 검증이다.
+# ════════════════════════════════════════════════════════════════════════
+
+# ── 공통 헬퍼: 로그인 row (9컬럼) ──
+def _login_row(status="active", subscription_end=None, is_special=False,
+               special_expires_at=None, locked_at=None, pw="password"):
+    from werkzeug.security import generate_password_hash
+    return (1, "YU", "student", is_special,
+            generate_password_hash(pw), status, locked_at, special_expires_at,
+            subscription_end)
+
+
+# ─────────────────────── A. 접근창·만료 경계 ───────────────────────
+
+# 시나리오 1a: _today_kst()가 서버 로컬 TZ와 무관하게 UTC+9(KST)로 산출되는가
+def test_s1_today_kst_is_utc_plus_9_and_tz_independent(monkeypatch):
+    """[시나리오1] _today_kst()는 서버 TZ(UTC/America/New_York 등) 설정과 무관하게
+    동일한 KST 날짜를 낸다. UTC 15:30(06-01)은 KST 00:30(06-02) → 날짜가 하루 넘어감(9h 차이 검증)."""
+    import time as _time
+    from datetime import datetime as _dt, timezone as _tz, date as _date
+    import auth.decorators as deco
+
+    fixed_utc = _dt(2026, 6, 1, 15, 30, tzinfo=_tz.utc)  # KST로는 2026-06-02 00:30
+
+    class _FakeDatetime:
+        @staticmethod
+        def now(tz=None):
+            return fixed_utc
+    monkeypatch.setattr(deco, "datetime", _FakeDatetime)
+
+    # 순수 UTC .date()였다면 06-01 이 나왔을 것 — KST는 06-02 여야 한다(9시간 경계).
+    assert fixed_utc.date() == _date(2026, 6, 1)
+    expected_kst = _date(2026, 6, 2)
+
+    saved_tz = os.environ.get("TZ")
+    try:
+        for tzname in ("UTC", "America/New_York", "Asia/Kolkata", "Asia/Seoul"):
+            os.environ["TZ"] = tzname
+            try:
+                _time.tzset()
+            except AttributeError:
+                pass  # Windows: tzset 없음 — 그래도 now(utc)는 절대시각이라 무관
+            assert deco._today_kst() == expected_kst, f"TZ={tzname} 에서 KST 날짜가 어긋남"
+    finally:
+        if saved_tz is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = saved_tz
+        try:
+            _time.tzset()
+        except AttributeError:
+            pass
+
+
+# 시나리오 1b/3: 만료 경계 — subscription_end == today 는 통과(<=포함), today-1 은 차단
+def test_s1_s3_login_boundary_subscription_end_inclusive(client, mock_db, monkeypatch):
+    """[시나리오1·3] login 의 Python 만료 비교는 subscription_end >= today(당일 포함).
+    today == end → 통과(200). end == today-1 → SUBSCRIPTION_EXPIRED(403)."""
+    import auth.auth as aa
+    from datetime import date as _date
+    D = _date(2026, 6, 1)
+    monkeypatch.setattr(aa, "_today_kst", lambda: D)
+
+    # (3) today == subscription_end → 접근 허용
+    with patch("server_render.get_db_conn") as g1, patch("server_render.release_db_conn"):
+        g1.return_value = mock_db["conn"]
+        mock_db["cursor"].fetchone.return_value = _login_row(subscription_end=D)
+        resp = client.post("/api/auth/login",
+                           json={"email": "t@example.com", "password": "password"})
+        assert resp.status_code == 200, "당일(== end)은 통과해야 함(<= 경계 포함)"
+        assert resp.get_json()["success"] is True
+
+    # (1b) 다음날(today = end+1 → end == today-1) → 차단
+    with patch("server_render.get_db_conn") as g2, patch("server_render.release_db_conn"):
+        g2.return_value = mock_db["conn"]
+        mock_db["cursor"].fetchone.return_value = _login_row(subscription_end=D - timedelta(days=1))
+        resp = client.post("/api/auth/login",
+                           json={"email": "t@example.com", "password": "password"})
+        assert resp.status_code == 403
+        assert resp.get_json()["error"] == "SUBSCRIPTION_EXPIRED"
+
+
+# 시나리오 2: access_open_date 하루 전 — 미래 active 구독이 있어도 접근창 전엔 가입·로그인 차단
+def test_s2_before_access_window_blocks_login_and_register(client, mock_db, monkeypatch):
+    """[시나리오2/Codex#3] 미래 학기 구독이 status='active'여도 access_open_date 전이면
+    접근창 쿼리가 매칭 0건 → login(subscription_end=None)→SUBSCRIPTION_EXPIRED,
+    register(매칭 구독 None)→SUBSCRIPTION_INACTIVE."""
+    import auth.auth as aa
+    from datetime import date as _date
+    monkeypatch.setattr(aa, "_today_kst", lambda: _date(2026, 6, 1))
+
+    # login: 접근창 밖이므로 subquery(subscription_end)=None → fail-closed
+    with patch("server_render.get_db_conn") as g1, patch("server_render.release_db_conn"):
+        g1.return_value = mock_db["conn"]
+        mock_db["cursor"].fetchone.return_value = _login_row(subscription_end=None)
+        resp = client.post("/api/auth/login",
+                           json={"email": "t@example.com", "password": "password"})
+        assert resp.status_code == 403
+        assert resp.get_json()["error"] == "SUBSCRIPTION_EXPIRED"
+
+    # register: 접근창 내 active 구독 매칭 0건 → SUBSCRIPTION_INACTIVE
+    with patch("server_render.get_db_conn") as g2, patch("server_render.release_db_conn"):
+        g2.return_value = mock_db["conn"]
+        mock_db["cursor"].fetchone.side_effect = [
+            ("HST",),   # roster subject_code
+            None,        # 기존 user 없음
+            None,        # 접근창 내 active 구독 없음 → 거부
+        ]
+        resp = client.post("/api/auth/register",
+                           json={"email": "t@example.com", "password": "pw",
+                                 "role": "student", "institution_id": "YU"})
+        assert resp.status_code == 403
+        assert resp.get_json()["error"] == "SUBSCRIPTION_INACTIVE"
+
+
+# 시나리오 4: 학기 사이 공백 → 차단, 다음 학기 access_open_date 도래 → 통과
+def test_s4_inter_term_gap_blocks_then_opens(client, mock_db, monkeypatch):
+    """[시나리오4] 이전 학기 만료 + 다음 학기 구독 존재. 두 접근창 사이 공백엔 차단(매칭 None),
+    다음 학기 창이 열리면 매칭되어 통과. (동일 fail-closed 메커니즘의 시간 전이 표현.)"""
+    import auth.auth as aa
+    from datetime import date as _date
+
+    # 공백 기간: 접근창 매칭 없음 → None → 차단
+    monkeypatch.setattr(aa, "_today_kst", lambda: _date(2026, 8, 15))  # 가을학기 오픈(8/1~ 가정) 이전 공백
+    with patch("server_render.get_db_conn") as g1, patch("server_render.release_db_conn"):
+        g1.return_value = mock_db["conn"]
+        mock_db["cursor"].fetchone.return_value = _login_row(subscription_end=None)
+        resp = client.post("/api/auth/login",
+                           json={"email": "t@example.com", "password": "password"})
+        assert resp.status_code == 403
+        assert resp.get_json()["error"] == "SUBSCRIPTION_EXPIRED"
+
+    # 다음 학기 창 도래: 매칭되어 유효 subscription_end 반환 → 통과
+    monkeypatch.setattr(aa, "_today_kst", lambda: _date(2026, 9, 1))
+    with patch("server_render.get_db_conn") as g2, patch("server_render.release_db_conn"):
+        g2.return_value = mock_db["conn"]
+        mock_db["cursor"].fetchone.return_value = _login_row(
+            subscription_end=_date(2027, 2, 28))
+        resp = client.post("/api/auth/login",
+                           json={"email": "t@example.com", "password": "password"})
+        assert resp.status_code == 200
+
+
+# ─────────────────────── B. 자동해제 상태전이 ───────────────────────
+
+# 시나리오 6: 미검증 계정 자동해제 → pending 유지(active 안 됨)
+def test_s6_unverified_autounlock_stays_pending(client, mock_db):
+    """[시나리오6/블로커4] pending_verification → locked → 24h 후 자동해제 시 active 승급 금지.
+    정답 비번 로그인해도 403 ACCOUNT_INACTIVE."""
+    from werkzeug.security import generate_password_hash
+    with patch("server_render.get_db_conn") as g1, patch("server_render.release_db_conn"):
+        g1.return_value = mock_db["conn"]
+        locked_at = datetime.now(timezone.utc) - timedelta(hours=25)
+        mock_db["cursor"].fetchone.side_effect = [
+            (1, "YU", "student", False, generate_password_hash("password"),
+             "locked", locked_at, None,
+             datetime.now(timezone.utc).date() + timedelta(days=365)),
+            (None,),  # _check_auto_unlock: last_login NULL → 미검증
+        ]
+        resp = client.post("/api/auth/login",
+                           json={"email": "t@example.com", "password": "password"})
+        assert resp.status_code == 403
+        assert resp.get_json()["error"] == "ACCOUNT_INACTIVE"
+
+
+# ─────────────────────── C. 좌석 카운터 정합성 ───────────────────────
+
+# 시나리오 8: 정원 경계 — max_seats 꽉 참 → 가입/인증 거부
+def test_s8_capacity_full_blocks_register(client, mock_db, monkeypatch):
+    """[시나리오8] register: active_count >= max_seats 면 CAPACITY_EXCEEDED(409). 단건 순차 경계."""
+    import auth.auth as aa
+    from datetime import date as _date
+    monkeypatch.setattr(aa, "_today_kst", lambda: _date(2026, 6, 1))
+    with patch("server_render.get_db_conn") as g1, patch("server_render.release_db_conn"):
+        g1.return_value = mock_db["conn"]
+        mock_db["cursor"].fetchone.side_effect = [
+            ("HST",),   # roster
+            None,        # 기존 user 없음
+            (2,),        # max_seats = 2
+            (2,),        # active_count = 2 → 2>=2 초과
+        ]
+        resp = client.post("/api/auth/register",
+                           json={"email": "t@example.com", "password": "pw",
+                                 "role": "student", "institution_id": "YU"})
+        assert resp.status_code == 409
+        assert resp.get_json()["error"] == "CAPACITY_EXCEEDED"
+
+
+def test_s8_capacity_full_blocks_verify_email(client, mock_db, monkeypatch):
+    """[시나리오8] verify_email: 좌석 재검사(동시성 방어, FOR UPDATE)도 active_count>=max_seats 차단."""
+    import auth.auth as aa
+    from datetime import date as _date
+    monkeypatch.setattr(aa, "_today_kst", lambda: _date(2026, 6, 1))
+    future = datetime.now(timezone.utc) + timedelta(minutes=5)
+    with patch("server_render.get_db_conn") as g1, patch("server_render.release_db_conn"):
+        g1.return_value = mock_db["conn"]
+        mock_db["cursor"].fetchone.side_effect = [
+            (1, "YU", "student", False, "HST"),       # user (pending)
+            (10, "123456", future, False, 0),          # email_verifications row
+            (2,),                                       # max_seats
+            (2,),                                       # active_count → 초과
+        ]
+        resp = client.post("/api/auth/verify-email",
+                           json={"email": "t@example.com", "code": "123456"})
+        assert resp.status_code == 409
+        assert resp.get_json()["error"] == "CAPACITY_EXCEEDED"
+
+
+# 시나리오 7: 가입→삭제→재가입 좌석 반환 — 좌석 카운터 기준 검증 + 삭제 경로 부재 노출
+def test_s7_register_capacity_counts_active_users(client, mock_db, monkeypatch):
+    """[시나리오7] 가입 정원 게이트의 좌석 카운터 기준은 COUNT(users WHERE status='active').
+    좌석이 빈 상태(active_count < max_seats)면 가입 통과 → 점유. (반환=행 삭제/비활성이지만
+    학생 삭제 엔드포인트가 코드에 없음 — 보고서 (b) 참조.)"""
+    import auth.auth as aa
+    from datetime import date as _date
+    monkeypatch.setattr(aa, "_today_kst", lambda: _date(2026, 6, 1))
+    with patch("server_render.get_db_conn") as g1, patch("server_render.release_db_conn"), \
+         patch("auth.auth.send_verification_email", return_value=None):
+        g1.return_value = mock_db["conn"]
+        mock_db["cursor"].fetchone.side_effect = [
+            ("HST",),   # roster
+            None,        # 기존 user 없음
+            (50,),       # max_seats = 50
+            (10,),       # active_count = 10 < 50 → 여유
+            (123,),      # INSERT users RETURNING id
+        ]
+        resp = client.post("/api/auth/register",
+                           json={"email": "new@example.com", "password": "pw",
+                                 "role": "student", "institution_id": "YU"})
+        assert resp.status_code == 200
+        # 좌석 카운터 기준이 users.status='active' 임을 실행된 SQL로 확인
+        sqls = " ".join(str(c.args[0]) for c in mock_db["cursor"].execute.call_args_list)
+        assert "COUNT(*)" in sqls and "status = 'active'" in sqls
+
+
+def test_s7_no_student_delete_route_exists():
+    """[시나리오7] §9 '학생 삭제 시 좌석 반환' 흐름의 전제인 roster/학생 삭제 라우트가
+    현재 서버에 존재하지 않음을 노출(좌석 반환 흐름 미구현)."""
+    from server_render import app as _app
+    rules = [str(r) for r in _app.url_map.iter_rules()]
+    # users/roster 를 DELETE 하는 학생 관리 라우트가 없음(공지/슬라이드 삭제만 존재)
+    student_delete = [r for r in rules if ("roster" in r.lower() or "student" in r.lower())]
+    assert student_delete == [], f"예상과 달리 학생/roster 라우트 발견: {student_delete}"
+
+
+# 시나리오 9: 한 학생 두 과목 — register 는 단일 과목만 채번 + 스키마가 다과목 N-레코드 불가
+def test_s9_register_captures_single_subject_only(client, mock_db, monkeypatch):
+    """[시나리오9/D12] register 의 roster 조회는 ORDER BY subject_code LIMIT 1 →
+    한 이메일이 두 과목 명단에 있어도 가장 이른 과목 1건만 채번(두 번째 과목 미등록)."""
+    import auth.auth as aa
+    from datetime import date as _date
+    monkeypatch.setattr(aa, "_today_kst", lambda: _date(2026, 6, 1))
+    with patch("server_render.get_db_conn") as g1, patch("server_render.release_db_conn"), \
+         patch("auth.auth.send_verification_email", return_value=None):
+        g1.return_value = mock_db["conn"]
+        # roster 가 (HST, PARA) 두 행이어도 LIMIT 1 → 'HST' 한 건만 반환되도록 mock
+        mock_db["cursor"].fetchone.side_effect = [
+            ("HST",),   # roster: ORDER BY subject_code LIMIT 1 → 'HST'
+            None,        # 기존 user 없음
+            (50,),       # max_seats
+            (0,),        # active_count
+            (200,),      # INSERT RETURNING id
+        ]
+        resp = client.post("/api/auth/register",
+                           json={"email": "dual@example.com", "password": "pw",
+                                 "role": "student", "institution_id": "YU"})
+        assert resp.status_code == 200
+        # INSERT 된 users.subject_code 가 단일('HST')임을 확인 — PARA 는 별도 가입 불가
+        insert_calls = [c for c in mock_db["cursor"].execute.call_args_list
+                        if "INSERT INTO users" in str(c.args[0])]
+        assert insert_calls, "users INSERT 가 실행되지 않음"
+        params = insert_calls[0].args[1]
+        assert "HST" in params and "PARA" not in params
+
+
+def test_s9_schema_blocks_multi_subject_records():
+    """[시나리오9/D12] 실제 DDL이 다과목 N-레코드 모델을 막는다는 근거(스키마 파일).
+    users.email UNIQUE(전역) + institution_rosters UNIQUE(institution_id, email) →
+    동일 이메일의 과목별 독립 레코드 불가. CLAUDE.md §7(UNIQUE(institution_id,subject_code,email))과 불일치."""
+    import os as _os
+    base = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+    with open(_os.path.join(base, "db", "schema.sql"), encoding="utf-8") as f:
+        schema = f.read()
+    with open(_os.path.join(base, "db", "auth_schema.sql"), encoding="utf-8") as f:
+        auth_schema = f.read()
+    # users.email 이 전역 UNIQUE (복합 UNIQUE 아님)
+    assert "email           VARCHAR(200) UNIQUE NOT NULL" in schema
+    # roster UNIQUE 에 subject_code 없음
+    assert "UNIQUE(institution_id, email)" in auth_schema
+    assert "UNIQUE(institution_id, subject_code, email)" not in auth_schema
+
+
+# ─────────────────────── D. 슬라이드 상태 경계 (2축) ───────────────────────
+
+def _gate_eval(slide_tuple, *, subject="HST", inst="YU", is_special=False, access=True):
+    """_slide_access_allowed 를 request context + g 세팅으로 평가."""
+    from server_render import _slide_access_allowed
+    from flask import g
+    with app.test_request_context():
+        g.user_id = 1
+        g.institution_id = inst
+        g.subject_code = subject
+        g.is_special = is_special
+        with patch("server_render.get_slide_institution", return_value=slide_tuple), \
+             patch("server_render._institution_subject_access", return_value=access):
+            return _slide_access_allowed("SA-HST-001")
+
+
+# 시나리오 10: ready 비배포 → 학생 비노출 (변환완료 != 배포)
+def test_s10_ready_not_deployed_blocked(client, mock_db):
+    """[시나리오10] conversion_status='ready'여도 deploy_status != 'deployed' 면 게이트 차단(403).
+    게이트는 deploy_status만 보고 conversion_status는 보지 않는다(§4-5)."""
+    # get_slide_institution 은 (institution_id, subject_code, deploy_status) 반환 — conversion_status 무관
+    allowed, err = _gate_eval(("SA", "HST", "qc_pending"))
+    assert allowed is False
+    assert err.status_code == 403
+
+    # 목록(_visible_slides)에서도 제외
+    from server_render import _visible_slides
+    with app.test_request_context():
+        from flask import g
+        g.is_special = False
+        g.subject_code = "HST"
+        g.institution_id = "YU"
+        with patch("server_render._institution_subject_access", return_value=True):
+            vis = _visible_slides([
+                {"id": "SA-HST-001", "deploy_status": "qc_pending", "subject_code": "HST"},
+                {"id": "SA-HST-002", "deploy_status": "deployed", "subject_code": "HST"},
+            ])
+    assert [s["id"] for s in vis] == ["SA-HST-002"]
+
+
+# 시나리오 11: revoked 즉시 차단 (deployed → revoke → qc_pending)
+def test_s11_revoked_immediately_blocked(client, mock_db):
+    """[시나리오11] 배포 슬라이드가 철회되면 deploy_status='deployed'→'qc_pending'(§7 revoked→qc_pending).
+    동일 슬라이드가 배포 상태에선 통과, 철회 후 상태에선 즉시 차단됨을 게이트로 확인."""
+    # 배포 상태: 통과
+    allowed_before, _ = _gate_eval(("SA", "HST", "deployed"))
+    assert allowed_before is True
+    # 철회 후 상태(qc_pending): 차단
+    allowed_after, err = _gate_eval(("SA", "HST", "qc_pending"))
+    assert allowed_after is False
+    assert err.status_code == 403
+
+    # 철회 엔드포인트 SQL 이 deployed→qc_pending 전이임을 근거로 확인
+    import server_render as _sr, inspect
+    src = inspect.getsource(_sr.api_slide_revoke)
+    assert "deploy_status='qc_pending'" in src and "deploy_status='deployed'" in src
+
+
+# 시나리오 12: ready_no_mpp 서빙 — 배포되면 타일 정상 서빙(배율만 별도 비활성)
+def test_s12_ready_no_mpp_served_when_deployed(client, mock_db):
+    """[시나리오12] conversion_status='ready_no_mpp' + deploy_status='deployed' → 게이트 통과(서빙).
+    게이트는 conversion_status를 보지 않으므로 ready_no_mpp도 배포되면 타일 응답 정상.
+    (배율 비활성은 뷰어 측 mpp 처리 — 게이트 책임 아님.)"""
+    allowed, err = _gate_eval(("SA", "HST", "deployed"))  # deploy_status='deployed'
+    assert allowed is True and err is None
+
+
+# ─────────────────────── B(추가). 만료 구독의 집계 동결 ───────────────────────
+
+# 시나리오 5: 만료 구독 학생이 좌석/리포트 '활성' 집계에서 빠지는가 (집계 기준 검증)
+def test_s5_active_user_aggregation_basis_is_users_status_not_subscription(client, mock_db):
+    """[시나리오5/D9] 이용 리포트의 '활성 사용자' 집계가 무엇을 기준으로 하는지 실행 SQL로 확인.
+    현재 구현은 COUNT(users WHERE status='active') 기준이며 subscriptions(유효 구독 창)와
+    조인하지 않는다. 따라서 구독이 만료돼도 users.status가 active로 남으면 집계가 0으로
+    동결되지 않는다(만료 시 status를 바꾸는 배치/트리거 부재). → 보고서 (b) 결함."""
+    with patch("server_render.get_db_conn") as g1, patch("server_render.release_db_conn"):
+        g1.return_value = mock_db["conn"]
+        mock_db["cursor"].fetchone.side_effect = [
+            (1, "super_admin", "Admin", "active"),  # _get_admin_user
+            (5,),     # active_users (users.status='active')
+            (150,),   # max_seats (subscriptions)
+            (300,),   # total_views
+            (40,),    # ai_questions
+            (None,),  # last_activity
+        ]
+        _admin_session(client, "admin-csrf")
+        resp = client.get("/admin/api/reports/kpi?inst_id=YU&subject_code=HST&period=all")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["active_users"] == 5  # mock 이 그대로 반환 — 집계가 status 기준임을 전제
+
+        # 활성 사용자 집계 SQL 추출: COUNT(u.id) / FROM users / status='active'
+        active_sql = None
+        for c in mock_db["cursor"].execute.call_args_list:
+            s = str(c.args[0])
+            if "COUNT(u.id)" in s and "FROM" in s and "users" in s and "status" in s:
+                active_sql = s
+                break
+        assert active_sql is not None, "활성 사용자 집계 SQL 을 찾지 못함"
+        # (b) 근거 1: subscriptions(유효 구독 창)와 조인/필터하지 않음 → 만료돼도 집계 미동결
+        assert "subscription" not in active_sql.lower()
+        # (b) 근거 2: subject_code 로 분리하지 않음 → 과목별 산출 아님(기관 전체 합산), §18 D9
+        assert "subject_code" not in active_sql
+
+
+def test_s5_dashboard_active_user_kpi_also_status_based():
+    """[시나리오5/D9] 대시보드 KPI '활성 사용자'도 동일하게 users.status 기준이며 subscriptions
+    유효성과 무관함을 소스로 확인(다중 쿼리 mock 회피 위해 정적 검증)."""
+    import server_render as _sr, inspect
+    src = inspect.getsource(_sr.api_dashboard)
+    # KPI3 활성 사용자 블록: users 를 status='active' 로 카운트
+    assert "SELECT COUNT(*) FROM users" in src
+    assert "status, 'active') = 'active'" in src
+    # 해당 카운트가 subscriptions 와 조인되지 않음(블록 단위 근거): users 카운트 줄에
+    # subscription_end 조건이 붙지 않는다 — 만료 사용자도 집계됨.
+    idx = src.find("SELECT COUNT(*) FROM users")
+    snippet = src[idx:idx + 200]
+    assert "subscription" not in snippet.lower()
