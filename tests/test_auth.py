@@ -1522,3 +1522,214 @@ def test_admin_secret_key_required_at_startup():
         else:
             os.environ["ADMIN_SECRET_KEY"] = "test-admin-secret-for-pytest"
         importlib.reload(_sr)
+
+
+# ─────────────────────────────────────────────
+# 기관 관리자 등록·인증·포털 (§9 — admin roster onboarding)
+# ─────────────────────────────────────────────
+def test_register_admin_only_allowed(client, mock_db):
+    """②: 관리자 등록(role='admin')만 있어도 /register 통과 — 과목·구독·좌석 게이트 면제."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"), \
+         patch("auth.auth.send_verification_email") as mock_send:
+        mock_get_db.return_value = mock_db["conn"]
+        # admin roster에는 센티넬 과목코드. 구독/좌석 SELECT는 호출되지 않아야 한다.
+        mock_db["cursor"].fetchone.side_effect = [
+            ("__ADMIN__",),   # roster subject_code (관리자 행)
+            None,             # 이메일 미존재
+            (42,),            # INSERT users RETURNING id
+        ]
+        resp = client.post("/api/auth/register",
+                          json={"email": "prof@univ.ac.kr", "password": "secure123",
+                                "role": "admin", "institution_id": "YU"})
+        assert resp.status_code == 200
+        assert resp.get_json()["success"] is True
+        assert mock_send.called
+        # 구독·정원 게이트 면제 확인: 실행된 SQL에 subscriptions 조회가 없어야 한다.
+        executed = " ".join(str(c.args[0]) for c in mock_db["cursor"].execute.call_args_list)
+        assert "FROM subscriptions" not in executed
+
+
+def test_register_admin_skips_subscription_even_if_none(client, mock_db):
+    """②(보강): 구독이 전혀 없어도 admin은 SUBSCRIPTION_INACTIVE로 거부되지 않는다."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"), \
+         patch("auth.auth.send_verification_email"):
+        mock_get_db.return_value = mock_db["conn"]
+        mock_db["cursor"].fetchone.side_effect = [
+            ("__ADMIN__",),   # roster
+            None,             # 이메일 미존재
+            (7,),             # INSERT users RETURNING id
+        ]
+        resp = client.post("/api/auth/register",
+                          json={"email": "admin@univ.ac.kr", "password": "pw123456",
+                                "role": "admin", "institution_id": "YU"})
+        assert resp.status_code == 200
+
+
+def test_verify_email_admin_creates_admin_role(client, mock_db):
+    """③: 관리자 인증 완료 → users.role='admin' 활성, 구독·좌석 재검사 면제."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+        mock_db["cursor"].fetchone.side_effect = [
+            (1, "YU", "admin", False, "__ADMIN__"),   # user (role='admin')
+            (1, "123456", datetime.now(timezone.utc) + timedelta(minutes=5), False, 0),  # ev
+        ]
+        resp = client.post("/api/auth/verify-email",
+                          json={"email": "prof@univ.ac.kr", "code": "123456"})
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["success"] is True
+        assert data["data"]["role"] == "admin"
+        # active 전환 시 구독/좌석 재검사가 없어야 한다(면제).
+        executed = " ".join(str(c.args[0]) for c in mock_db["cursor"].execute.call_args_list)
+        assert "FROM subscriptions" not in executed
+        cookies = resp.headers.getlist("Set-Cookie")
+        assert any(COOKIE_NAME in c for c in cookies)
+
+
+def test_portal_admin_access(client, mock_db):
+    """④: role='admin' 사용자는 /portal 진입 가능(200). _authenticate 구독 게이트 면제도 검증."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+        payload = {"sub": "1", "institution_id": "YU", "role": "admin",
+                   "session_token": "sess-admin-1", "is_special": False}
+        client.set_cookie(COOKIE_NAME, encode_token(payload))
+        mock_db["cursor"].fetchone.side_effect = [
+            # _authenticate: subscription_end=None이어도 role='admin'이라 통과해야 한다.
+            ("sess-admin-1", "active", "__ADMIN__", None, None),
+            ("연세대 의과대학",),   # 포털: institutions.name_ko
+        ]
+        resp = client.get("http://localhost/portal")
+        assert resp.status_code == 200
+        assert "포털" in resp.get_data(as_text=True)
+
+
+def test_portal_non_admin_redirected(client, mock_db):
+    """일반 학생(role='student', 관리자 명단 없음)은 /portal에서 랜딩으로 리다이렉트."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+        payload = {"sub": "2", "institution_id": "YU", "role": "student",
+                   "session_token": "sess-stu-1", "is_special": False}
+        client.set_cookie(COOKIE_NAME, encode_token(payload))
+        mock_db["cursor"].fetchone.side_effect = [
+            # _authenticate: 유효 구독창(학생은 구독 필요)
+            ("sess-stu-1", "active", "HST", None,
+             datetime.now(timezone.utc).date() + timedelta(days=365)),
+            None,   # _is_institution_admin: 관리자 명단 행 없음
+        ]
+        resp = client.get("http://localhost/portal")
+        assert resp.status_code == 302
+        assert resp.headers["Location"].endswith("/")
+
+
+def test_institution_create_registers_admin_roster(client, mock_db):
+    """①: 기관 추가 시 admin_contacts → institution_rosters(role='admin', '__ADMIN__', position) 등록."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"), \
+         patch("server_render._send_portal_invite_email", return_value=True) as mock_invite:
+        mock_get_db.return_value = mock_db["conn"]
+        mock_db["cursor"].fetchone.side_effect = [
+            (1, "super_admin", "Admin", "active"),  # _get_admin_user
+            None,                                   # SELECT id FROM institutions (미존재)
+        ]
+        _admin_session(client, 'admin-csrf')
+        resp = client.post("/admin/api/institutions",
+                           json={"id": "YU", "university": "연세대", "college": "의과대학",
+                                 "admin_contacts": [
+                                     {"name": "김교수", "position": "교수", "email": "prof@univ.ac.kr", "phone": "010"},
+                                 ],
+                                 "subscriptions": []},
+                           headers={"X-CSRF-Token": "admin-csrf"})
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["ok"] is True
+        assert data["admins_registered"] == 1
+        # roster INSERT 호출에 센티넬 과목코드·role='admin'·position·이메일이 들어갔는지 확인.
+        roster_inserts = [
+            c for c in mock_db["cursor"].execute.call_args_list
+            if "INSERT INTO institution_rosters" in str(c.args[0])
+        ]
+        assert roster_inserts, "institution_rosters INSERT가 호출되지 않음"
+        params = roster_inserts[0].args[1]
+        assert "__ADMIN__" in params
+        assert "prof@univ.ac.kr" in params
+        assert "교수" in params
+        # 포털 안내 메일 발송 시도
+        assert mock_invite.called
+
+
+def test_institution_update_syncs_admin_roster(client, mock_db):
+    """기관 수정(PUT): 관리자 제거 = __ADMIN__ roster 행만 DELETE. 계정/과목 권한은 불가침."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"), \
+         patch("server_render._send_portal_invite_email", return_value=True):
+        mock_get_db.return_value = mock_db["conn"]
+        mock_db["cursor"].fetchone.side_effect = [
+            (1, "super_admin", "Admin", "active"),  # _get_admin_user
+        ]
+        # 기존 admin roster: 두 명(old@, keep@) → 폼에는 keep@만 남김 → old@ 제거
+        mock_db["cursor"].fetchall.return_value = [("old@univ.ac.kr",), ("keep@univ.ac.kr",)]
+        _admin_session(client, 'admin-csrf')
+        resp = client.put("/admin/api/institutions/YU",
+                          json={"university": "연세대", "college": "의과대학",
+                                "admin_contacts": [
+                                    {"name": "유지", "position": "교수", "email": "keep@univ.ac.kr", "phone": ""},
+                                ]},
+                          headers={"X-CSRF-Token": "admin-csrf"})
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["admins_removed"] == 1
+        executed = mock_db["cursor"].execute.call_args_list
+        # 제거: __ADMIN__ roster 행 DELETE 1건 (관리 권한만 회수)
+        del_calls = [c for c in executed if "DELETE FROM institution_rosters" in str(c.args[0])]
+        assert del_calls, "admin roster DELETE 미호출"
+        assert "__ADMIN__" in del_calls[0].args[1]
+        # 관리/열람 분리: 계정 정지·계정/유저 삭제 절대 금지
+        assert not any("status = 'suspended'" in str(c.args[0]) for c in executed)
+        assert not any("suspended" in str(c.args[0]) for c in executed)
+        assert not any("DELETE FROM users" in str(c.args[0]) for c in executed)
+        assert not any("UPDATE users" in str(c.args[0]) for c in executed)
+
+
+def test_moonlighter_admin_removed_portal_blocked(client, mock_db):
+    """겸직자(admin+조직학 학생) 관리자 제거 후: 포털 차단.
+
+    __ADMIN__ 행만 삭제 → admin 명단 행 부재 → role='student' + _is_institution_admin=None → 랜딩 리다이렉트.
+    계정은 active 그대로(정지 아님)임을 _authenticate 통과로 확인.
+    """
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+        payload = {"sub": "3", "institution_id": "YU", "role": "student",
+                   "session_token": "sess-moon", "is_special": False}
+        client.set_cookie(COOKIE_NAME, encode_token(payload))
+        mock_db["cursor"].fetchone.side_effect = [
+            # _authenticate: 계정 active, HST 등록, 유효 구독 (정지 안 됨)
+            ("sess-moon", "active", "HST", None,
+             datetime.now(timezone.utc).date() + timedelta(days=365)),
+            None,   # _is_institution_admin: 관리자 행 없음(제거됨)
+        ]
+        resp = client.get("http://localhost/portal")
+        assert resp.status_code == 302
+        assert resp.headers["Location"].endswith("/")
+
+
+def test_moonlighter_admin_removed_slides_kept(client, mock_db):
+    """겸직자 관리자 제거 후: 조직학 슬라이드는 계속 열람.
+
+    __ADMIN__ 행만 삭제이므로 users 계정·HST 과목 행은 그대로 → 슬라이드 게이트(과목 좌석) 영향 없음.
+    HST 게이트 통과 → 503(미적재 로딩; 403/401 아님)으로 접근 허용 증명.
+    """
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"), \
+         patch("server_render.get_slide_institution", return_value=("SA", "HST", "deployed")), \
+         patch("server_render._institution_subject_access", return_value=True):
+        mock_get_db.return_value = mock_db["conn"]
+        _gate_setup(client, mock_db, subject_code="HST", institution_id="YU", user_id="3")
+        t = generate_tile_token("3", "YU", "SA-HST-001")
+        resp = client.get(f"http://localhost/dzi/SA-HST-001.dzi?t={t}")
+        assert resp.status_code == 503  # 게이트·타일토큰 통과 = 슬라이드 접근 허용

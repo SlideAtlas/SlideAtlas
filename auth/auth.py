@@ -22,7 +22,9 @@ from dotenv import load_dotenv
 from flask import Blueprint, request, jsonify, g
 from werkzeug.security import generate_password_hash, check_password_hash
 
-from .decorators import encode_token, login_required, COOKIE_NAME, _today_kst
+from .decorators import (
+    encode_token, login_required, COOKIE_NAME, _today_kst, ADMIN_ROSTER_SUBJECT,
+)
 
 load_dotenv()  # .env 있으면 읽기, 없으면(Render) 환경변수 그대로 사용
 
@@ -218,10 +220,18 @@ def register():
                 conn.rollback()
                 return _err("ROSTER_MISMATCH", "과 사무실에 문의하세요", 403)
             subject_code = roster[0]
-            if not subject_code:
-                # 명단에 과목코드가 비어있으면 데이터 결함 — 과목 축 없이는 가입 불가(§0-3·§0-4).
+            # 기관 관리자(role='admin') 등록은 과목·구독·좌석에 묶이지 않는다(§9). roster의
+            #   subject_code 센티넬('__ADMIN__')을 그대로 users에 채번하며, 아래 구독·정원 게이트를
+            #   건너뛴다(관리자 등록만 있어도 가입·인증이 통과해야 함 — CEO 확정). 슬라이드 접근은
+            #   별도 단일 게이트가 과목 좌석으로 판정하므로 본 면제가 콘텐츠 노출을 넓히지 않는다(§8).
+            is_admin_reg = (role == "admin")
+            if not subject_code and not is_admin_reg:
+                # 학생 명단에 과목코드가 비어있으면 데이터 결함 — 과목 축 없이는 가입 불가(§0-3·§0-4).
                 conn.rollback()
                 return _err("ROSTER_SUBJECT_MISSING", "과 사무실에 문의하세요", 403)
+            if is_admin_reg and not subject_code:
+                # admin roster 행은 센티넬 과목코드를 갖는다(NULL이면 데이터 정합성 보정).
+                subject_code = ADMIN_ROSTER_SUBJECT
 
             # 2) 이미 가입된 이메일 (과목별 독립 레코드 단위, §6-2)
             cur.execute(
@@ -237,30 +247,32 @@ def register():
             #    (institution_id, subject_code)에 접근창 내 active 구독이 없으면 가입 거부 — active 계정
             #    미생성. 온보딩 순서(구독 생성 → roster 등록 → 가입)를 코드가 강제. today는 KST(§18 D10).
             #    여기는 소프트 사전검사이며, 권위 있는 동시성 재검사는 verify_email에서 행 잠금으로 수행.
-            today = _today_kst()
-            cur.execute(
-                """SELECT max_seats FROM subscriptions
-                   WHERE institution_id = %s AND subject_code = %s AND status = 'active'
-                     AND access_open_date <= %s AND subscription_end >= %s
-                   ORDER BY subscription_end DESC
-                   LIMIT 1""",
-                (institution_id, subject_code, today, today),
-            )
-            sub = cur.fetchone()
-            if sub is None:
-                conn.rollback()
-                return _err("SUBSCRIPTION_INACTIVE",
-                            "해당 과목 구독이 활성화되지 않았습니다. 과 사무실에 문의하세요", 403)
-            max_seats = sub[0]
-            cur.execute(
-                """SELECT COUNT(*) FROM users
-                   WHERE institution_id = %s AND subject_code = %s AND status = 'active'""",
-                (institution_id, subject_code),
-            )
-            active_count = cur.fetchone()[0]
-            if max_seats is not None and active_count >= max_seats:
-                conn.rollback()
-                return _err("CAPACITY_EXCEEDED", "정원이 초과되었습니다", 409)
+            #    관리자(is_admin_reg)는 과목 좌석을 소비하지 않으므로 이 게이트를 건너뛴다(§9).
+            if not is_admin_reg:
+                today = _today_kst()
+                cur.execute(
+                    """SELECT max_seats FROM subscriptions
+                       WHERE institution_id = %s AND subject_code = %s AND status = 'active'
+                         AND access_open_date <= %s AND subscription_end >= %s
+                       ORDER BY subscription_end DESC
+                       LIMIT 1""",
+                    (institution_id, subject_code, today, today),
+                )
+                sub = cur.fetchone()
+                if sub is None:
+                    conn.rollback()
+                    return _err("SUBSCRIPTION_INACTIVE",
+                                "해당 과목 구독이 활성화되지 않았습니다. 과 사무실에 문의하세요", 403)
+                max_seats = sub[0]
+                cur.execute(
+                    """SELECT COUNT(*) FROM users
+                       WHERE institution_id = %s AND subject_code = %s AND status = 'active'""",
+                    (institution_id, subject_code),
+                )
+                active_count = cur.fetchone()[0]
+                if max_seats is not None and active_count >= max_seats:
+                    conn.rollback()
+                    return _err("CAPACITY_EXCEEDED", "정원이 초과되었습니다", 409)
 
             # 4) users INSERT (pending_verification, subject_code 채번) + 인증코드 INSERT
             pw_hash = generate_password_hash(password)
@@ -332,10 +344,15 @@ def verify_email():
 
             # D4(b): 가입 경로가 subject_code를 채웠어야 한다(§6-2). 비어 있으면 가입 경로 결함이므로
             #   임의 기본값을 채우지 않고 거부한다(§0-3). 과목 축 없이 active 전환 금지.
-            if not subject_code:
+            #   단 기관 관리자(role='admin')는 과목에 묶이지 않으므로 센티넬('__ADMIN__')을 갖거나
+            #   비어 있어도 통과시킨다(§9 — 관리자 등록만으로 인증 완료 가능).
+            is_admin_user = (role == "admin")
+            if not subject_code and not is_admin_user:
                 conn.rollback()
                 print(f"[verify_email] subject_code 누락(user_id={user_id}, email={email}) — 가입 경로 결함")
                 return _err("SUBJECT_CODE_MISSING", "계정 설정 오류입니다. 과 사무실에 문의하세요", 409)
+            if is_admin_user and not subject_code:
+                subject_code = ADMIN_ROSTER_SUBJECT
 
             cur.execute(
                 """SELECT id, code, expires_at, consumed, attempt_count
@@ -388,31 +405,33 @@ def verify_email():
             #   (deprecated)는 참조하지 않는다(§0-2). 구독 행을 FOR UPDATE로 잠가 동시 verify가
             #   마지막 좌석을 중복 통과하지 못하게 한다(과목 단위 직렬화).
             # [#4] 접근창 내 active 구독 필수(없으면 거부 — active 전환 금지). today는 KST(§18 D10).
-            today = _today_kst()
-            cur.execute(
-                """SELECT max_seats FROM subscriptions
-                   WHERE institution_id = %s AND subject_code = %s AND status = 'active'
-                     AND access_open_date <= %s AND subscription_end >= %s
-                   ORDER BY subscription_end DESC
-                   LIMIT 1
-                   FOR UPDATE""",
-                (institution_id, subject_code, today, today),
-            )
-            sub = cur.fetchone()
-            if sub is None:
-                conn.rollback()
-                return _err("SUBSCRIPTION_INACTIVE",
-                            "해당 과목 구독이 활성화되지 않았습니다. 과 사무실에 문의하세요", 403)
-            max_seats = sub[0]
-            cur.execute(
-                """SELECT COUNT(*) FROM users
-                   WHERE institution_id = %s AND subject_code = %s AND status = 'active'""",
-                (institution_id, subject_code),
-            )
-            active_count = cur.fetchone()[0]
-            if max_seats is not None and active_count >= max_seats:
-                conn.rollback()
-                return _err("CAPACITY_EXCEEDED", "정원이 초과되었습니다", 409)
+            #   관리자(is_admin_user)는 좌석을 소비하지 않으므로 구독·정원 재검사를 건너뛴다(§9).
+            if not is_admin_user:
+                today = _today_kst()
+                cur.execute(
+                    """SELECT max_seats FROM subscriptions
+                       WHERE institution_id = %s AND subject_code = %s AND status = 'active'
+                         AND access_open_date <= %s AND subscription_end >= %s
+                       ORDER BY subscription_end DESC
+                       LIMIT 1
+                       FOR UPDATE""",
+                    (institution_id, subject_code, today, today),
+                )
+                sub = cur.fetchone()
+                if sub is None:
+                    conn.rollback()
+                    return _err("SUBSCRIPTION_INACTIVE",
+                                "해당 과목 구독이 활성화되지 않았습니다. 과 사무실에 문의하세요", 403)
+                max_seats = sub[0]
+                cur.execute(
+                    """SELECT COUNT(*) FROM users
+                       WHERE institution_id = %s AND subject_code = %s AND status = 'active'""",
+                    (institution_id, subject_code),
+                )
+                active_count = cur.fetchone()[0]
+                if max_seats is not None and active_count >= max_seats:
+                    conn.rollback()
+                    return _err("CAPACITY_EXCEEDED", "정원이 초과되었습니다", 409)
 
             session_token, payload = _issue_token_payload(
                 user_id, institution_id, role, is_special
@@ -637,6 +656,10 @@ def login():
                 if special_expires_at is not None and special_expires_at < today:
                     conn.rollback()
                     return _err("SUBSCRIPTION_EXPIRED", "특별계정 사용 기간이 만료되었습니다", 403)
+            elif role == "admin":
+                # 기관 관리자(포털 전용): 과목 구독에 묶이지 않으므로 구독 만료 게이트 면제(§9).
+                #   슬라이드 접근은 별도 단일 게이트가 과목 좌석으로 판정(§8).
+                pass
             else:
                 # 매칭 구독이 없으면(subscription_end=NULL) 라이선스 격리상 차단(fail-closed).
                 if subscription_end is None or subscription_end < today:

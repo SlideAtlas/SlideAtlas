@@ -66,6 +66,7 @@ app.register_blueprint(auth_bp)
 from auth.decorators import (
     login_required, page_login_required,
     generate_tile_token, verify_tile_token,
+    ADMIN_ROSTER_SUBJECT,
 )
 
 # -- 어드민 템플릿 컨텍스트 프로세서 -------------------------------------------
@@ -642,6 +643,51 @@ def slides():
         total=total,
         stain_class=stain_class,
     )
+
+def _is_institution_admin(user_id, institution_id):
+    """로그인 사용자가 자기 기관 관리자 명단(role='admin')에 등록돼 있는지 확인(§9).
+    같은 이메일이 과목 행/관리자 행으로 공존할 수 있으므로 role='admin' 행 존재로만 판정한다.
+    """
+    conn = get_db_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT 1 FROM institution_rosters r
+                   JOIN users u ON lower(u.email) = lower(r.email)
+                  WHERE u.id = %s AND r.institution_id = %s AND r.role = 'admin'
+                  LIMIT 1""",
+                (user_id, institution_id),
+            )
+            return cur.fetchone() is not None
+    finally:
+        release_db_conn(conn)
+
+
+@app.route('/portal')
+@page_login_required
+def portal():
+    # 멀티테넌시 1급 규칙(§9): scope는 로그인 사용자의 기관으로 강제. 다른 기관 데이터 접근 불가.
+    #   포털 접근 게이트 = users.role=='admin'(순수 관리자) 또는 자기 기관 관리자 명단 등록(겸직).
+    #   둘 다 아니면 일반 학생 → 랜딩으로 리다이렉트(슬라이드는 /slides에서 과목 좌석으로 판정).
+    inst_id = g.institution_id
+    if g.get('role') != 'admin' and not _is_institution_admin(g.user_id, inst_id):
+        return redirect('/')
+
+    inst_name = inst_id
+    conn = get_db_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT name_ko FROM institutions WHERE id = %s", (inst_id,))
+            row = cur.fetchone()
+            if row and row[0]:
+                inst_name = row[0]
+    finally:
+        release_db_conn(conn)
+
+    # 최소 라우트(§18 D15): scope 격리·게이트만 우선 구현. 3탭(명단관리·구독플랜·이용리포트)
+    #   본화면은 D15 별도 작업에서 institution_portal.html 목업(§17) 기준으로 구현.
+    return render_template('portal.html', institution_id=inst_id, institution_name=inst_name)
+
 
 @app.route('/api/chat', methods=['POST'])
 @login_required
@@ -1595,6 +1641,78 @@ def api_institutions_list():
         release_db_conn(conn)
 
 
+def _send_portal_invite_email(to_email: str, name: str) -> bool:
+    """기관 관리자에게 포털 가입 안내 발송 (현재: Gmail SMTP 임시 stub).
+
+    # TODO(D2): SES 도메인 인증(slide-atlas.net) 완료 후 boto3 SES로 교체. 호출부 무변경.
+    발송 실패가 기관 추가 트랜잭션을 되돌리지는 않는다(호출부에서 결과만 수집).
+    """
+    try:
+        import smtplib
+        import re as _re
+        from email.mime.text import MIMEText as _MIMEText
+        # GMAIL_USER / GMAIL_APP_PW 는 .env 또는 Render 환경변수에서만 읽음 (하드코딩 금지)
+        sender = os.environ.get('GMAIL_USER', '')
+        if not sender:
+            return False
+        # 헤더 주입 방지: 수신 주소에 개행 있으면 발송 거부(§8 v3.1).
+        if _re.search(r'[\r\n]', to_email or ''):
+            print('[portal-invite] 수신 주소에 개행 포함 — 발송 거부')
+            return False
+        greet = (name or '').strip() or '기관 관리자'
+        body = (
+            f"{greet}님, 안녕하세요.\n\n"
+            "SlideAtlas 기관 관리자로 등록됐습니다.\n"
+            "https://slide-atlas.net/register 에서 회원가입 후 포털에 접속하세요.\n\n"
+            "— SlideAtlas | atlaslab.co.kr"
+        )
+        msg = _MIMEText(body)
+        msg['Subject'] = '[SlideAtlas] 기관 관리자 포털 가입 안내'
+        msg['From'] = sender
+        msg['To'] = to_email
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as s:
+            s.login(sender, os.environ['GMAIL_APP_PW'])
+            s.send_message(msg)
+        return True
+    except Exception as e:
+        print(f'[portal-invite] 발송 실패({to_email}): {e}')
+        return False
+
+
+def _upsert_admin_roster(cur, inst_id, contacts):
+    """admin_contacts 각 행을 institution_rosters에 관리자(role='admin')로 등록/갱신.
+
+    roster는 (institution_id, subject_code, email) 독립 행이며 관리자 행은 센티넬 과목코드
+    '__ADMIN__'을 쓴다 → 같은 이메일이 과목 명단('HST' 등)과 충돌 없이 공존(§9).
+    role='admin'(시스템 권한, 포털 접근)과 position(교수/조교 등, 표시용)은 별개 개념이다.
+    이미 존재하는 이메일은 ON CONFLICT DO NOTHING(중복 무시) 후 name/position만 갱신.
+    반환: 새로 INSERT 시도한(=안내 발송 대상) (email, name) 목록.
+    """
+    invited = []
+    for c in contacts:
+        email = (c.get('email') or '').strip().lower()
+        if not email:
+            continue
+        name = (c.get('name') or '').strip() or None
+        position = (c.get('position') or '').strip() or None
+        cur.execute(
+            """INSERT INTO institution_rosters
+                   (institution_id, subject_code, email, name, role, position)
+               VALUES (%s, %s, %s, %s, 'admin', %s)
+               ON CONFLICT DO NOTHING""",
+            (inst_id, ADMIN_ROSTER_SUBJECT, email, name, position),
+        )
+        # 기존 행이 있었으면 표시 정보(name/position)만 최신화(권한 role='admin' 유지).
+        cur.execute(
+            """UPDATE institution_rosters
+                  SET name = %s, position = %s, role = 'admin'
+                WHERE institution_id = %s AND subject_code = %s AND lower(email) = %s""",
+            (name, position, inst_id, ADMIN_ROSTER_SUBJECT, email),
+        )
+        invited.append((email, name or ''))
+    return invited
+
+
 @app.route('/admin/api/institutions', methods=['POST'])
 @super_admin_required
 @admin_csrf_required
@@ -1668,7 +1786,14 @@ def api_institution_create():
                         ON CONFLICT DO NOTHING
                     """, (inst_id, subject_code))
 
-        return jsonify({'ok': True, 'id': inst_id})
+                # 관리자 명단 등록 (§9): admin_contacts → institution_rosters(role='admin').
+                #   같은 트랜잭션으로 기관·구독과 함께 커밋. 안내 메일은 커밋 후 발송.
+                invited = _upsert_admin_roster(cur, inst_id, contacts)
+
+        # 트랜잭션 커밋 완료 — 포털 안내 메일 발송(실패해도 기관 추가는 완료 처리).
+        sent = sum(1 for em, nm in invited if _send_portal_invite_email(em, nm))
+        return jsonify({'ok': True, 'id': inst_id,
+                        'admins_registered': len(invited), 'invites_sent': sent})
     except psycopg2.IntegrityError as e:
         return jsonify({'ok': False, 'error': str(e)}), 409
     except Exception as e:
@@ -1743,8 +1868,16 @@ def api_institution_update(inst_id):
     if len(contacts) > 5:
         return jsonify({'ok': False, 'error': '관리자는 최대 5명입니다'}), 400
 
+    # 현재 폼이 보낸 관리자 이메일 집합(소문자 정규화).
+    contact_emails = {
+        (c.get('email') or '').strip().lower()
+        for c in contacts if (c.get('email') or '').strip()
+    }
+
     conn = get_db_conn()
     try:
+        to_add = set()
+        to_remove = set()
         with conn:
             with conn.cursor() as cur:
                 cur.execute("""
@@ -1754,7 +1887,41 @@ def api_institution_update(inst_id):
                     WHERE id=%s
                 """, (name_ko, name_en, university, college, domain,
                       json.dumps(contacts, ensure_ascii=False), inst_id))
-        return jsonify({'ok': True})
+
+                # 관리자 명단 변경분 반영 (§9). 기존 admin roster와 폼 입력의 차집합 계산.
+                cur.execute(
+                    """SELECT lower(email) FROM institution_rosters
+                       WHERE institution_id = %s AND role = 'admin'""",
+                    (inst_id,),
+                )
+                existing = {r[0] for r in cur.fetchall()}
+                to_add = contact_emails - existing
+                to_remove = existing - contact_emails
+
+                # 추가/유지: roster upsert(role='admin' 유지, name/position 갱신).
+                _upsert_admin_roster(cur, inst_id, contacts)
+
+                # 제거 = "포털 관리 권한만 회수"다(관리/열람 분리 원칙). admin roster 행(__ADMIN__)만
+                #   DELETE한다. users 계정·다른 과목 roster 행은 절대 건드리지 않는다 → 겸직(학생/교수)이면
+                #   슬라이드 열람 유지, 순수 관리자였으면 단지 포털 접근만 사라진다(계정 정지 아님).
+                for em in to_remove:
+                    cur.execute(
+                        """DELETE FROM institution_rosters
+                           WHERE institution_id = %s AND subject_code = %s AND lower(email) = %s""",
+                        (inst_id, ADMIN_ROSTER_SUBJECT, em),
+                    )
+
+        # 새로 추가된 관리자에게만 포털 안내 발송(기존 유지/제거 대상 제외). 실패해도 수정은 완료.
+        new_contacts = [
+            c for c in contacts
+            if (c.get('email') or '').strip().lower() in to_add
+        ]
+        sent = sum(
+            1 for c in new_contacts
+            if _send_portal_invite_email((c.get('email') or '').strip().lower(), c.get('name') or '')
+        )
+        return jsonify({'ok': True, 'admins_added': len(to_add),
+                        'admins_removed': len(to_remove), 'invites_sent': sent})
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)}), 500
     finally:

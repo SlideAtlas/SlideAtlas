@@ -25,6 +25,14 @@ JWT_ALGO = "HS256"
 JWT_EXP_HOURS = 24
 COOKIE_NAME = "access_token"
 
+# 기관 관리자(포털) 전용 roster 센티넬 과목코드 (§9).
+#   roster는 (institution_id, subject_code, email) 단위 독립 행이므로, 같은 이메일이
+#   관리자 행(subject_code='__ADMIN__')과 과목 행('HST' 등)으로 충돌 없이 공존한다.
+#   role='admin'은 시스템 권한(포털 접근), position(교수/조교 등)은 표시용으로 권한과 무관.
+#   admin은 과목·좌석·구독에 묶이지 않으므로 인증 경로의 과목 구독 게이트에서 면제된다
+#   (슬라이드 접근은 별도 단일 게이트 _slide_access_allowed가 과목 좌석으로 판정, §8).
+ADMIN_ROSTER_SUBJECT = "__ADMIN__"
+
 TILE_TOKEN_TTL = 300  # 타일 접근 토큰 유효시간 5분 (CLAUDE.md §8 Presigned URL TTL 5분)
 
 
@@ -197,6 +205,11 @@ def _authenticate():
         #     special_expires_at NULL(무기한)은 통과 — 비권장이나 허용. 경과 시 차단.
         if special_expires_at is not None and special_expires_at < today:
             return ("SUBSCRIPTION_EXPIRED", "특별계정 사용 기간이 만료되었습니다. 과 사무실에 문의하세요")
+    elif payload.get("role") == "admin":
+        # 기관 관리자(포털 전용): 과목 구독에 묶이지 않으므로 매 요청 구독 만료 게이트 면제.
+        #   콘텐츠 노출은 넓히지 않는다 — 슬라이드/타일은 _slide_access_allowed가 과목 좌석으로
+        #   별도 판정하며(§8), admin의 subject_code='__ADMIN__'는 어떤 슬라이드 과목과도 불일치한다.
+        pass
     else:
         # §8 명문: "매칭 구독이 없거나 만료면 SUBSCRIPTION_EXPIRED."
         #   매칭 구독이 없으면(subscription_end IS NULL) 라이선스 격리상 차단(fail-closed, Codex FAIL1).

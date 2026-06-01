@@ -30,12 +30,14 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_at           TIMESTAMP NULL;
 CREATE TABLE IF NOT EXISTS institution_rosters (
   id              SERIAL       PRIMARY KEY,
   institution_id  VARCHAR(20)  REFERENCES institutions(id) ON DELETE CASCADE,
+  subject_code    VARCHAR(10),                              -- 과목 명단 축. 관리자 행은 센티넬 '__ADMIN__'(§9)
   email           VARCHAR(200) NOT NULL,
   name            VARCHAR(100),
-  role            VARCHAR(20)  NOT NULL DEFAULT 'student',  -- 'student', 'professor', 'ta'
+  role            VARCHAR(20)  NOT NULL DEFAULT 'student',  -- 'student'|'professor'|'ta'|'admin'(포털 권한)
+  position        VARCHAR(50),                              -- 관리자 지위(교수/조교/행정직원/기타) 표시용, 권한과 무관
   is_verified     BOOLEAN      DEFAULT FALSE,
   added_at        TIMESTAMP    DEFAULT NOW(),
-  UNIQUE(institution_id, email)
+  UNIQUE(institution_id, subject_code, email)               -- 같은 이메일이 과목 행/관리자 행으로 공존(§9·D12)
 );
 
 -- ─────────────────────────────────────────────

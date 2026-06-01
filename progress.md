@@ -1,5 +1,38 @@
 # SlideAtlas 슈퍼관리자 구현 진행 상황
 
+## 기관 관리자 등록 흐름 (admin roster onboarding) — 2026-06-01 구현 (Codex 외부검증 대기)
+
+브랜치: `feature/admin-roster-onboarding-2026-06`. CLAUDE.md §9·§18 D12·D15.
+
+### 구현 완료
+- `auth/decorators.py` — `ADMIN_ROSTER_SUBJECT='__ADMIN__'` 센티넬 상수. `_authenticate` 매 요청
+  구독 게이트에 `role=='admin'` 면제 분기(반환 shape 무변경, §13-2).
+- `auth/auth.py` — `register`·`verify_email`·`login` 3경로에 admin 분기: 과목코드 누락 거부 면제 +
+  구독·좌석 게이트 skip. 관리자 등록만 있어도 가입·인증 통과(§9).
+- `server_render.py` — `_send_portal_invite_email`(Gmail SMTP stub, 실패해도 기관추가 완료),
+  `_upsert_admin_roster`(admin_contacts→roster role='admin'/`__ADMIN__`/position),
+  `api_institution_create`/`api_institution_update`(PUT) 명단 동기화(추가 INSERT·제거는 __ADMIN__ 행만 DELETE = 포털 권한만 회수, 계정/과목 권한 불가침),
+  `/portal` 라우트(role='admin' or 명단 등록 게이트 + 자기 기관 scope) + `_is_institution_admin`.
+- `templates/portal.html` — 최소 포털(3탭 placeholder, scope 표시). 본화면은 D15 별도 작업.
+- `db/admin_roster_schema.sql`(신규 멱등 마이그레이션: position·subject_code 컬럼 + UNIQUE(institution_id,subject_code,email)),
+  `db/auth_schema.sql`(fresh install 정합).
+
+### 테스트
+- `tests/test_auth.py` +9건. pytest **74/74 통과**(기존 65 + 신규 9). 테스트 ①②③④ + 겸직자 제거(포털 차단/슬라이드 유지) 커버.
+
+### 마이그레이션 (EC2에서, CEO 승인 후 — §12)
+```bash
+psql -h slideatlas-db... -U slideatlas_admin -d slideatlas -p 5432 -f db/admin_roster_schema.sql
+```
+실행 전 점검: `SELECT institution_id, subject_code, email, COUNT(*) FROM institution_rosters GROUP BY 1,2,3 HAVING COUNT(*)>1;` (신 UNIQUE 위반 0건 확인)
+
+### 미결/주의
+- Codex 외부검증 대상(인증 코어 수정). 통과 전 main 병합 금지.
+- 겸직(admin+학생) 단일 이메일 동시 권한은 UNIQUE(institution_id,subject_code,email) 전제(D12 마이그레이션 필요).
+- 관리자 제거 = __ADMIN__ roster 행만 DELETE(포털 권한만 회수). 계정·과목 행 불가침 → 겸직자 슬라이드 열람 유지(관리/열람 분리, CEO 확정).
+
+---
+
 ## S5-9 대시보드 — 2026-05-31 완료
 
 ### 구현 완료

@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>기관 관리자 포털 — SlideAtlas</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+           margin: 0; background: #f5f6f8; color: #1a2238; }
+    header { background: #1a2238; color: #fff; padding: 18px 28px; }
+    header h1 { font-size: 18px; margin: 0; }
+    header .inst { font-size: 13px; opacity: .8; margin-top: 4px; }
+    .tabs { display: flex; gap: 4px; background: #fff; padding: 0 28px; border-bottom: 1px solid #e3e6ec; }
+    .tabs button { border: none; background: none; padding: 14px 18px; font-size: 14px;
+                   cursor: pointer; color: #5a6478; border-bottom: 2px solid transparent; }
+    .tabs button.on { color: #1a2238; border-bottom-color: #1a2238; font-weight: 600; }
+    main { padding: 28px; }
+    .note { background: #fff; border: 1px solid #e3e6ec; border-radius: 8px;
+            padding: 20px; color: #5a6478; font-size: 14px; line-height: 1.6; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>기관 관리자 포털</h1>
+    <div class="inst">{{ institution_name }} ({{ institution_id }})</div>
+  </header>
+  <nav class="tabs">
+    <button class="on" data-tab="roster">명단 관리</button>
+    <button data-tab="plan">구독 플랜</button>
+    <button data-tab="report">이용 리포트</button>
+  </nav>
+  <main>
+    <div class="note">
+      기관 관리자 포털에 접속했습니다. 본 화면(명단 관리·구독 플랜·이용 리포트 3탭)의
+      세부 기능은 준비 중입니다. 명단·리포트는 자기 기관({{ institution_id }}) 범위로만
+      제공됩니다.
+    </div>
+  </main>
+  <script>
+    document.querySelectorAll('.tabs button').forEach(b => {
+      b.addEventListener('click', () => {
+        document.querySelectorAll('.tabs button').forEach(x => x.classList.remove('on'));
+        b.classList.add('on');
+      });
+    });
+  </script>
+</body>
+</html>

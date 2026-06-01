@@ -1,3 +1,56 @@
+# COMPLETION_REPORT — 기관 관리자 등록 흐름 (admin roster onboarding)
+
+작업일: 2026-06-01 | 작업자: Lead Developer | 기준: CLAUDE.md §9·§18 D12·D15·§13-2
+브랜치: `feature/admin-roster-onboarding-2026-06` | 상태: 구현·내부테스트 완료, **Codex 외부검증 대기**
+
+## 0. 문제
+기관 추가 시 `admin_contacts`는 `institutions.admin_contacts`(JSONB)에만 저장되고
+명단 등록(`institution_rosters`)·포털 안내 메일이 **모두 끊겨 있었다**. 또한 기존 `/register`·
+`verify_email`·`login`·`_authenticate`는 학생 전용(과목 subject_code + 접근창 active 구독 + 좌석)
+게이트로, 관리자(role='admin')는 가입 자체가 거부되는 구조였다. `/portal` 라우트는 부재(D15).
+
+## 1. 설계 (CEO 확정)
+- roster는 (institution_id, subject_code, email) 독립 행. 관리자 행은 센티넬 `subject_code='__ADMIN__'`,
+  과목 행은 'HST' 등 → 같은 이메일이 충돌 없이 공존.
+- users 계정은 이메일당 1개. role(시스템 권한, 'admin'=포털 접근)과 position(교수/조교 등, 표시용)은 별개.
+- register/verify는 관리자 등록만 있어도 통과(과목·구독·좌석 게이트 면제). 슬라이드 접근 게이트는 불변
+  (과목 좌석 안에 있어야 열람) — admin의 `__ADMIN__`은 어떤 슬라이드 과목과도 불일치하므로 콘텐츠 비노출.
+
+## 2. 변경 내역
+| 파일 | 변경 |
+|---|---|
+| auth/decorators.py | `ADMIN_ROSTER_SUBJECT='__ADMIN__'`. `_authenticate` 구독 게이트에 `role=='admin'` 면제(elif) — 반환 shape 무변경 |
+| auth/auth.py | `register`(subject 누락 면제+센티넬 채번, 구독·좌석 skip)·`verify_email`(동일)·`login`(구독 게이트 admin 면제 elif) |
+| server_render.py | `_send_portal_invite_email`(Gmail SMTP stub, 실패 비치명)·`_upsert_admin_roster`·`api_institution_create`(roster+메일)·`api_institution_update`(추가INSERT / 제거는 __ADMIN__ 행만 DELETE=포털 권한만 회수)·`/portal`+`_is_institution_admin` |
+| templates/portal.html | 최소 포털(scope·3탭 placeholder). 본화면 D15 |
+| db/admin_roster_schema.sql (신규) | 멱등: position·subject_code 컬럼 + UNIQUE(institution_id,subject_code,email) 정식화(D12) |
+| db/auth_schema.sql | fresh install 정합(컬럼·UNIQUE) |
+| tests/test_auth.py | +7건 |
+
+## 3. 테스트 결과 (pytest 74/74 통과, 기존 65 + 신규 9)
+| 요구 | 테스트 | 결과 |
+|---|---|---|
+| ① 기관추가→roster(role='admin',position,'__ADMIN__') 등록 | test_institution_create_registers_admin_roster | ✅ |
+| ② 그 이메일 /register 허용 | test_register_admin_only_allowed / _skips_subscription_even_if_none | ✅ |
+| ③ 인증완료→users.role='admin' 생성 | test_verify_email_admin_creates_admin_role | ✅ |
+| ④ /portal 진입 가능 | test_portal_admin_access (+ 학생 차단 test_portal_non_admin_redirected) | ✅ |
+| (PUT) 제거=__ADMIN__ 행만 DELETE, suspend/계정삭제 금지 | test_institution_update_syncs_admin_roster | ✅ |
+| 겸직자 제거 → 포털 차단 | test_moonlighter_admin_removed_portal_blocked | ✅ |
+| 겸직자 제거 → 조직학 슬라이드 열람 유지(503) | test_moonlighter_admin_removed_slides_kept | ✅ |
+
+## 4. 마이그레이션 (EC2, CEO 승인 후 — §12, 코드 작업자 RDS 직접 변경 금지)
+`psql ... -f db/admin_roster_schema.sql` (멱등). 실행 전 신 UNIQUE 위반 0건 확인 쿼리 포함.
+
+## 5. 잔여·주의
+- **Codex 외부검증 대상**(인증 코어 4경로 수정). 통과 전 main 병합 금지(§12).
+- 겸직(admin+학생) 단일 이메일 동시 권한은 D12 UNIQUE 마이그레이션 전제.
+- **관리/열람 분리(CEO 확정)**: 관리자 제거 = __ADMIN__ roster 행만 DELETE(포털 권한 회수). users 계정·다른
+  과목 roster 행은 불가침 → 겸직자는 슬라이드 열람 유지, 순수 관리자는 포털 접근만 사라짐(계정 정지 아님).
+  (suspend·users 변경 코드 제거됨, 테스트로 회귀 방지.)
+- 메일은 Gmail SMTP stub(D2 SES 전환 시 `_send_portal_invite_email`만 교체).
+
+---
+
 # COMPLETION_REPORT — D4 subject_code 채번 + 정원 max_seats 이전
 
 작업일: 2026-05-31 | 작업자: Lead Developer | 기준: CLAUDE.md v3.0 (§0·§6-2·§8·§13-2·§16·§18)
