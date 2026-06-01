@@ -148,17 +148,30 @@ def load_institutions():
     finally:
         release_db_conn(conn)
 
+# 어드민 계정 잠금 정책 (학생 users 정책과 동일, Gemini#1).
+ADMIN_LOCK_THRESHOLD = 10    # 24h 윈도우 내 실패 누적 임계값
+ADMIN_LOCK_WINDOW_HRS = 24   # 카운팅 윈도우 / 자동 해제 시간
+
+
 def _get_admin_user():
-    """session에서 admin_user_id를 읽어 DB status 확인. 유효하면 dict, 아니면 None."""
+    """session에서 admin_user_id를 읽어 DB status + session_token을 확인. 유효하면 dict, 아니면 None.
+
+    [Codex#2] 어드민 세션도 매 요청 DB 대조한다. admin_login이 발급한 session_token을 Flask 세션과
+      DB(admin_users.session_token) 양쪽에 저장해 두고, 매 요청 compare_digest로 일치를 확인한다.
+      → 다른 곳에서 재로그인(토큰 회전)·세션 무효화 시 구 세션 쿠키는 즉시 무효(None 반환).
+    """
     admin_user_id = session.get('admin_user_id')
     if not admin_user_id:
+        return None
+    sess_token = session.get('admin_session_token')
+    if not sess_token:
         return None
     try:
         conn = get_db_conn()
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT id, role, name, status FROM admin_users WHERE id = %s",
+                    "SELECT id, role, name, status, session_token FROM admin_users WHERE id = %s",
                     (admin_user_id,),
                 )
                 row = cur.fetchone()
@@ -166,9 +179,66 @@ def _get_admin_user():
             release_db_conn(conn)
         if row is None or row[3] != 'active':
             return None
+        import secrets as _sec
+        db_token = row[4]
+        if not db_token or not _sec.compare_digest(str(db_token), str(sess_token)):
+            return None
         return {'id': row[0], 'role': row[1], 'name': row[2] or ''}
     except Exception:
         return None
+
+
+def _admin_check_and_increment_failed(cur, admin_id):
+    """어드민 로그인 실패 카운터 증가 + 임계값 도달 시 잠금. 잠겼으면 True (학생 정책 미러)."""
+    from datetime import datetime, timezone, timedelta
+    cur.execute(
+        "SELECT failed_attempts, failed_window_start FROM admin_users WHERE id = %s FOR UPDATE",
+        (admin_id,),
+    )
+    r = cur.fetchone()
+    if r is None:
+        return False
+    failed, window_start = r
+    now = datetime.now(timezone.utc)
+    if window_start is not None and window_start.tzinfo is None:
+        window_start = window_start.replace(tzinfo=timezone.utc)
+    if window_start is None or (now - window_start).total_seconds() > ADMIN_LOCK_WINDOW_HRS * 3600:
+        new_count = 1
+        cur.execute(
+            "UPDATE admin_users SET failed_attempts = 1, failed_window_start = %s WHERE id = %s",
+            (now, admin_id),
+        )
+    else:
+        new_count = (failed or 0) + 1
+        cur.execute(
+            "UPDATE admin_users SET failed_attempts = %s WHERE id = %s",
+            (new_count, admin_id),
+        )
+    if new_count >= ADMIN_LOCK_THRESHOLD:
+        cur.execute(
+            "UPDATE admin_users SET locked_at = %s WHERE id = %s",
+            (now, admin_id),
+        )
+        return True
+    return False
+
+
+def _admin_is_locked(cur, admin_id, locked_at):
+    """locked_at 기준 24h 경과 시 자동 해제. 현재 잠금 여부 반환(True=잠김)."""
+    from datetime import datetime, timezone
+    if locked_at is None:
+        return False
+    if locked_at.tzinfo is None:
+        locked_at = locked_at.replace(tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc)
+    if (now - locked_at).total_seconds() > ADMIN_LOCK_WINDOW_HRS * 3600:
+        cur.execute(
+            "UPDATE admin_users SET locked_at = NULL, failed_attempts = 0, "
+            "failed_window_start = NULL WHERE id = %s",
+            (admin_id,),
+        )
+        return False
+    return True
 
 
 def _admin_json_err(message, status):
@@ -230,16 +300,18 @@ def admin_csrf_required(f):
 
 
 def get_slide_institution(slide_id):
-    """DB에서 slide의 (institution_id, subject_code, deploy_status) 반환. 없으면 None.
+    """DB에서 slide의 (institution_id, subject_code, deploy_status, conversion_status) 반환. 없으면 None.
 
     institution_id는 콘텐츠 소유자 표시('SA')일 뿐 접근 격리 기준이 아니다(§6-1·CEO 결정).
     접근 격리는 subject_code(과목 구독)로 한다. 함수명은 호출부 호환을 위해 유지.
+    conversion_status는 특별계정의 QC 미완료 노출 차단(Gemini#7)에 쓰인다.
     """
     conn = get_db_conn()
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT institution_id, subject_code, deploy_status FROM slides WHERE id = %s",
+                "SELECT institution_id, subject_code, deploy_status, conversion_status"
+                " FROM slides WHERE id = %s",
                 (slide_id,),
             )
             return cur.fetchone()
@@ -295,18 +367,23 @@ def _slide_access_allowed(slide_id):
       (1) deploy_status == 'deployed'
       (2) g.subject_code == slide.subject_code   (등록 과목 == 슬라이드 과목)
       (3) 사용자 기관이 그 과목 접근권 보유 (_institution_subject_access)
-    is_special: deploy_status=='rejected'만 차단, institution·subject 축은 우회(§15-8).
+    is_special: deploy_status=='rejected' 차단 + conversion_status 미완료 차단,
+                institution·subject 축은 우회(§15-8).
     """
     from flask import g
     info = get_slide_institution(slide_id)
     if info is None:
         return False, _tile_err("SLIDE_NOT_FOUND", "슬라이드를 찾을 수 없습니다", 404)
-    _inst_id, slide_subject, deploy_status = info
+    _inst_id, slide_subject, deploy_status, conversion_status = info
     if getattr(g, 'is_special', False):
         # [M1] 특별계정: rejected(반려)만 차단, 나머지(qc_pending/deployed) 허용 (CEO 결정, §15-8).
         # 반려 원본은 품질 문제/재공급 대상이므로 특별계정에도 노출 금지(§15-3 라이선스 격리).
         if deploy_status == 'rejected':
             return False, _tile_err("FORBIDDEN", "반려된 슬라이드입니다", 403)
+        # [Gemini#7] 변환 미완료(converting/qc_check/pending/failed) 슬라이드는 타일이 깨졌거나
+        #   QC 전이므로 특별계정에도 노출 금지. ready / ready_no_mpp만 열람 허용(§4-5).
+        if conversion_status not in ('ready', 'ready_no_mpp'):
+            return False, _tile_err("FORBIDDEN", "변환이 완료되지 않은 슬라이드입니다", 403)
         return True, None
     # (1) 미배포 슬라이드 학생 접근 불가 (§8 라이선스 격리)
     if deploy_status != 'deployed':
@@ -325,11 +402,15 @@ def _visible_slides(slides):
 
     일반 사용자: deploy_status='deployed' AND slide.subject==g.subject_code AND 기관이 그 과목 접근권 보유.
        (2)가 과목 일치를 강제하므로 (3)은 g.subject_code 접근권 1회 확인으로 충분(과목당 N쿼리 회피).
-    is_special: rejected만 제외(§15-8 검수 목적).
+    is_special: rejected 제외 + 변환 미완료 제외(§15-8 검수 목적, ready/ready_no_mpp만).
     """
     from flask import g
     if getattr(g, 'is_special', False):
-        return [s for s in slides if s.get('deploy_status') != 'rejected']
+        return [
+            s for s in slides
+            if s.get('deploy_status') != 'rejected'
+            and s.get('conversion_status') in ('ready', 'ready_no_mpp')
+        ]
     subject = getattr(g, 'subject_code', None)
     inst = getattr(g, 'institution_id', None)
     if not subject or not _institution_subject_access(inst, subject):
@@ -645,8 +726,13 @@ def slides():
     )
 
 def _is_institution_admin(user_id, institution_id):
-    """로그인 사용자가 자기 기관 관리자 명단(role='admin')에 등록돼 있는지 확인(§9).
-    같은 이메일이 과목 행/관리자 행으로 공존할 수 있으므로 role='admin' 행 존재로만 판정한다.
+    """로그인 사용자가 자기 기관 관리자 명단에 '현재' 등록돼 있는지 확인(§9).
+
+    [Codex#1/Gemini#3] 포털 접근의 유일한 권위는 관리자 roster 행의 존재다.
+      (institution_id, subject_code='__ADMIN__', email, role='admin') 행이 지금 존재해야만 True.
+      users.role 단독으로는 통과시키지 않는다 → 관리자 권한 회수(roster 행 DELETE) 시 즉시 차단.
+    같은 이메일이 과목 행('HST' 등)과 관리자 행('__ADMIN__')으로 공존할 수 있으므로 센티넬 과목코드까지
+    함께 대조한다(과목 학생 행을 관리자 권한으로 오인하지 않게).
     """
     conn = get_db_conn()
     try:
@@ -654,9 +740,10 @@ def _is_institution_admin(user_id, institution_id):
             cur.execute(
                 """SELECT 1 FROM institution_rosters r
                    JOIN users u ON lower(u.email) = lower(r.email)
-                  WHERE u.id = %s AND r.institution_id = %s AND r.role = 'admin'
+                  WHERE u.id = %s AND r.institution_id = %s
+                    AND r.subject_code = %s AND r.role = 'admin'
                   LIMIT 1""",
-                (user_id, institution_id),
+                (user_id, institution_id, ADMIN_ROSTER_SUBJECT),
             )
             return cur.fetchone() is not None
     finally:
@@ -667,10 +754,10 @@ def _is_institution_admin(user_id, institution_id):
 @page_login_required
 def portal():
     # 멀티테넌시 1급 규칙(§9): scope는 로그인 사용자의 기관으로 강제. 다른 기관 데이터 접근 불가.
-    #   포털 접근 게이트 = users.role=='admin'(순수 관리자) 또는 자기 기관 관리자 명단 등록(겸직).
-    #   둘 다 아니면 일반 학생 → 랜딩으로 리다이렉트(슬라이드는 /slides에서 과목 좌석으로 판정).
+    #   [Codex#1/Gemini#3] 포털 접근 게이트는 '현재 관리자 roster 행 존재' 단일 기준으로만 판정한다.
+    #   users.role=='admin' 단독 우회는 제거 — 권한 회수(roster DELETE) 시 즉시 포털 차단되어야 하므로.
     inst_id = g.institution_id
-    if g.get('role') != 'admin' and not _is_institution_admin(g.user_id, inst_id):
+    if not _is_institution_admin(g.user_id, inst_id):
         return redirect('/')
 
     inst_name = inst_id
@@ -907,31 +994,45 @@ def admin_login():
             try:
                 with conn.cursor() as cur:
                     cur.execute(
-                        "SELECT id, password_hash, role, name, status FROM admin_users"
+                        "SELECT id, password_hash, role, name, status, locked_at FROM admin_users"
                         " WHERE lower(email) = %s",
                         (email,),
                     )
                     row = cur.fetchone()
                     if row is None:
                         error = '이메일 또는 비밀번호가 올바르지 않습니다.'
+                        conn.rollback()
                     else:
-                        admin_id, pw_hash, role, name, status = row
+                        admin_id, pw_hash, role, name, status, locked_at = row
                         if status != 'active':
                             error = '비활성화된 계정입니다. 관리자에게 문의하세요.'
+                            conn.rollback()
+                        # [Gemini#1] 무차별 대입 차단: 24h 윈도우 10회 실패 → 잠금, 24h 후 자동 해제.
+                        elif _admin_is_locked(cur, admin_id, locked_at):
+                            conn.commit()  # 자동해제 미발생 — 트랜잭션 마무리만
+                            error = '보안상 계정이 잠겼습니다. 24시간 후 다시 시도하세요.'
                         elif not check_password_hash(pw_hash, password):
-                            error = '이메일 또는 비밀번호가 올바르지 않습니다.'
+                            now_locked = _admin_check_and_increment_failed(cur, admin_id)
+                            conn.commit()
+                            error = ('보안상 계정이 잠겼습니다. 24시간 후 다시 시도하세요.'
+                                     if now_locked else '이메일 또는 비밀번호가 올바르지 않습니다.')
                         else:
+                            import secrets as _sec_admin
+                            import uuid as _uuid_admin
+                            # [Codex#2] 세션 토큰 회전 — 로그인 성공 시 새 토큰을 DB·세션에 저장(매 요청 대조).
+                            admin_session_token = str(_uuid_admin.uuid4())
                             cur.execute(
-                                "UPDATE admin_users SET last_login = NOW() WHERE id = %s",
-                                (admin_id,),
+                                "UPDATE admin_users SET last_login = NOW(), session_token = %s, "
+                                "failed_attempts = 0, failed_window_start = NULL WHERE id = %s",
+                                (admin_session_token, admin_id),
                             )
                             conn.commit()
-                            import secrets as _sec_admin
                             session.clear()
                             session['admin_user_id'] = admin_id
                             session['admin_role'] = role
                             session['admin_name'] = name or email.split('@')[0]
                             session['admin_csrf_token'] = _sec_admin.token_hex(32)
+                            session['admin_session_token'] = admin_session_token
                             return redirect('/admin')
             except Exception:
                 conn.rollback()
@@ -948,10 +1049,32 @@ def admin_login():
 
 @app.route('/admin/logout')
 def admin_logout():
+    # [Codex#2] DB의 session_token도 무효화 → 동일 토큰을 가진 다른 쿠키도 즉시 차단.
+    admin_user_id = session.get('admin_user_id')
+    if admin_user_id:
+        try:
+            conn = get_db_conn()
+            conn.autocommit = False
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE admin_users SET session_token = NULL WHERE id = %s",
+                        (admin_user_id,),
+                    )
+                conn.commit()
+            finally:
+                try:
+                    conn.autocommit = True
+                except Exception:
+                    pass
+                release_db_conn(conn)
+        except Exception:
+            pass
     session.pop('admin_user_id', None)
     session.pop('admin_role', None)
     session.pop('admin_name', None)
     session.pop('admin_csrf_token', None)
+    session.pop('admin_session_token', None)
     return redirect('/admin/login')
 
 
@@ -1555,6 +1678,90 @@ def _term_end_after(start_term: str, term_count: int) -> str:
 
 PLAN_SEATS = {'department': 50, 'standard': 150, 'campus': 300, 'institution': 500}
 
+# 구독 입력 검증 상수/한계 (Codex#5). 잘못된 타입·범위는 500이 아니라 400으로 거른다.
+VALID_PLANS = set(PLAN_SEATS) | {'custom'}
+MAX_TERM_COUNT = 20        # 학기 수 상한 (10년)
+MAX_SEATS_LIMIT = 100000   # 좌석 수 상한
+MAX_FEE_LIMIT = 10 ** 12   # 구독료 상한(원)
+
+
+def _parse_int_field(raw, name, *, default=None, minimum=0, maximum=None, allow_none=False):
+    """int 변환 + 범위 검증. 성공 시 (value, None), 실패 시 (None, error_message).
+
+    빈 값/None은 default로 대체(allow_none이면 None 허용). 콤마 포함 금액 문자열도 허용.
+    """
+    if raw is None or (isinstance(raw, str) and raw.strip() == ''):
+        if allow_none:
+            return default, None
+        raw = default
+    if raw is None and allow_none:
+        return None, None
+    try:
+        if isinstance(raw, bool):           # bool은 int 서브타입 — 명시적 거부
+            raise ValueError()
+        value = int(str(raw).replace(',', '').strip())
+    except (ValueError, TypeError):
+        return None, f'{name} 값이 올바르지 않습니다(정수 필요)'
+    if value < minimum:
+        return None, f'{name} 값은 {minimum} 이상이어야 합니다'
+    if maximum is not None and value > maximum:
+        return None, f'{name} 값이 허용 범위를 초과했습니다'
+    return value, None
+
+
+def _subject_codes_set():
+    """subject_codes 테이블의 코드 집합 (allowlist, 하드코딩 금지 §6-1)."""
+    conn = get_db_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT code FROM subject_codes")
+            return {r[0] for r in cur.fetchall()}
+    finally:
+        release_db_conn(conn)
+
+
+def _validate_subscription_payload(raw, valid_subjects):
+    """구독 1건 입력 검증·정규화. 성공 시 (fields_dict, None), 실패 시 (None, error_message).
+
+    fields: subject_code, plan, max_seats, term_count, fee, start_term, payment_method.
+    plan·subject_code allowlist, term_count·max_seats·fee 타입·범위 검증(Codex#5).
+    """
+    start_term = (raw.get('start_term') or '').strip()
+    subject_code = (raw.get('subject_code') or '').strip().upper()
+    plan = (raw.get('plan') or '').strip().lower()
+    if not start_term:
+        return None, 'start_term은 필수입니다'
+    if subject_code not in valid_subjects:
+        return None, f'알 수 없는 과목코드입니다: {subject_code or "(빈값)"}'
+    if plan not in VALID_PLANS:
+        return None, f'알 수 없는 플랜입니다: {plan or "(빈값)"}'
+
+    term_count, err = _parse_int_field(raw.get('term_count'), 'term_count',
+                                       default=1, minimum=1, maximum=MAX_TERM_COUNT)
+    if err:
+        return None, err
+    # max_seats 미지정 시 플랜 기본값. custom 플랜은 명시 좌석 필요.
+    seats_raw = raw.get('max_seats')
+    if seats_raw is None or (isinstance(seats_raw, str) and seats_raw.strip() == ''):
+        seats_default = PLAN_SEATS.get(plan)
+        if seats_default is None:
+            return None, 'custom 플랜은 max_seats를 명시해야 합니다'
+        max_seats = seats_default
+    else:
+        max_seats, err = _parse_int_field(seats_raw, 'max_seats', minimum=1, maximum=MAX_SEATS_LIMIT)
+        if err:
+            return None, err
+    fee, err = _parse_int_field(raw.get('fee'), 'fee', default=None,
+                                minimum=0, maximum=MAX_FEE_LIMIT, allow_none=True)
+    if err:
+        return None, err
+    payment_method = (raw.get('payment_method') or '학기 선불')
+    return {
+        'subject_code': subject_code, 'plan': plan, 'max_seats': max_seats,
+        'term_count': term_count, 'fee': fee, 'start_term': start_term,
+        'payment_method': payment_method,
+    }, None
+
 
 @app.route('/admin/institutions')
 @super_admin_required
@@ -1733,6 +1940,20 @@ def api_institution_create():
     if len(contacts) > 5:
         return jsonify({'ok': False, 'error': '관리자는 최대 5명입니다'}), 400
 
+    # [Codex#5] 트랜잭션 진입 전 구독 입력 전수 검증 → 잘못된 타입·범위는 400(500 아님).
+    #   UI가 보낸 완전 빈 행(과목·학기·플랜 모두 공란)은 placeholder로 보고 건너뛴다.
+    valid_subjects = _subject_codes_set()
+    parsed_subs = []
+    for sub in subs_data:
+        if not (sub.get('subject_code') or '').strip() and \
+           not (sub.get('start_term') or '').strip() and \
+           not (sub.get('plan') or '').strip():
+            continue
+        fields, err = _validate_subscription_payload(sub, valid_subjects)
+        if err:
+            return jsonify({'ok': False, 'error': err}), 400
+        parsed_subs.append(fields)
+
     name_ko = f'{university} {college}'
     conn = get_db_conn()
     try:
@@ -1748,17 +1969,14 @@ def api_institution_create():
                 """, (inst_id, name_ko, name_en, university, college, domain,
                       json.dumps(contacts, ensure_ascii=False)))
 
-                for sub in subs_data:
-                    start_term = sub.get('start_term', '')
-                    term_count = int(sub.get('term_count', 1))
-                    plan = (sub.get('plan') or '').lower()
-                    max_seats = int(sub.get('max_seats') or PLAN_SEATS.get(plan, 0))
-                    subject_code = (sub.get('subject_code') or '').upper()
-                    _fee_raw = sub.get('fee')
-                    fee = int(str(_fee_raw).replace(',', '')) if _fee_raw else None
-                    payment_method = sub.get('payment_method') or '학기 선불'
-                    if not start_term or not subject_code:
-                        continue
+                for f in parsed_subs:
+                    subject_code = f['subject_code']
+                    plan = f['plan']
+                    max_seats = f['max_seats']
+                    term_count = f['term_count']
+                    fee = f['fee']
+                    start_term = f['start_term']
+                    payment_method = f['payment_method']
                     end_term = _term_end_after(start_term, term_count)
                     open_date, _ = _sem_dates(start_term)
                     _, end_date = _sem_dates(end_term)
@@ -1933,17 +2151,17 @@ def api_institution_update(inst_id):
 @admin_csrf_required
 def api_subscription_add(inst_id):
     data = request.get_json(silent=True) or {}
-    start_term = data.get('start_term', '')
-    term_count = int(data.get('term_count', 1))
-    plan = (data.get('plan') or '').lower()
-    max_seats = int(data.get('max_seats') or PLAN_SEATS.get(plan, 0))
-    subject_code = (data.get('subject_code') or '').upper()
-    _fee_raw = data.get('fee')
-    fee = int(str(_fee_raw).replace(',', '')) if _fee_raw else None
-    payment_method = data.get('payment_method') or '학기 선불'
-
-    if not start_term or not subject_code or not plan:
-        return jsonify({'ok': False, 'error': '필수 항목 누락'}), 400
+    # [Codex#5] 타입·범위·allowlist 검증 → 실패 시 400(500 아님).
+    fields, err = _validate_subscription_payload(data, _subject_codes_set())
+    if err:
+        return jsonify({'ok': False, 'error': err}), 400
+    subject_code = fields['subject_code']
+    plan = fields['plan']
+    max_seats = fields['max_seats']
+    term_count = fields['term_count']
+    fee = fields['fee']
+    start_term = fields['start_term']
+    payment_method = fields['payment_method']
 
     end_term = _term_end_after(start_term, term_count)
     open_date, _ = _sem_dates(start_term)
@@ -1990,11 +2208,22 @@ def api_subscription_add(inst_id):
 @admin_csrf_required
 def api_subscription_renew(inst_id, sub_id):
     data = request.get_json(silent=True) or {}
-    plan = (data.get('plan') or '').lower()
-    extra_seats = int(data.get('extra_seats') or 0)
-    term_count = int(data.get('term_count', 1))
-    _fee_raw = data.get('fee')
-    fee = int(str(_fee_raw).replace(',', '')) if _fee_raw else None
+    # [Codex#5] 타입·범위·plan allowlist 검증 → 실패 시 400. subject_code는 기존 구독에서 승계.
+    plan = (data.get('plan') or '').strip().lower()
+    if plan and plan not in VALID_PLANS:
+        return jsonify({'ok': False, 'error': f'알 수 없는 플랜입니다: {plan}'}), 400
+    extra_seats, err = _parse_int_field(data.get('extra_seats'), 'extra_seats',
+                                        default=0, minimum=0, maximum=MAX_SEATS_LIMIT)
+    if err:
+        return jsonify({'ok': False, 'error': err}), 400
+    term_count, err = _parse_int_field(data.get('term_count'), 'term_count',
+                                       default=1, minimum=1, maximum=MAX_TERM_COUNT)
+    if err:
+        return jsonify({'ok': False, 'error': err}), 400
+    fee, err = _parse_int_field(data.get('fee'), 'fee', default=None,
+                                minimum=0, maximum=MAX_FEE_LIMIT, allow_none=True)
+    if err:
+        return jsonify({'ok': False, 'error': err}), 400
     payment_method = data.get('payment_method') or '학기 선불'
     note = data.get('note') or None
 

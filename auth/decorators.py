@@ -163,8 +163,13 @@ def _authenticate():
             #   active 구독만 본다. 미래 학기 구독이 미리 active여도 access_open_date 전에는
             #   subquery가 NULL → 만료 처리(통과 금지). today는 KST(§16·§18 D10).
             today = _today_kst()
+            # [Codex#2/Gemini#4] JWT payload 신뢰 금지 — role·is_special·institution_id를 매 요청
+            #   DB에서 다시 읽어 g에 주입한다(권위는 DB). 어드민이 DB에서 강등/특별계정 해제하면
+            #   기존 JWT가 만료(24h) 전이라도 다음 요청에서 즉시 반영된다. 권한 변경 즉시 무효화가
+            #   필요하면 session_token 회전(login·logout 경로)으로 구 토큰을 끊는다.
             cur.execute(
                 """SELECT u.session_token, u.status, u.subject_code, u.special_expires_at,
+                          u.role, u.is_special, u.institution_id,
                           (SELECT MAX(s.subscription_end)
                              FROM subscriptions s
                             WHERE s.institution_id = u.institution_id
@@ -184,7 +189,9 @@ def _authenticate():
     if row is None:
         return ("TOKEN_INVALID", "다시 로그인하세요")
 
-    db_session, status, subject_code, special_expires_at, subscription_end = row
+    (db_session, status, subject_code, special_expires_at,
+     db_role, db_is_special, db_institution_id, subscription_end) = row
+    db_is_special = bool(db_is_special)
 
     # ② 세션 토큰 검증 — 반드시 아래 순서를 지킬 것 (순서 변경 금지)
     # token_session 존재 여부를 먼저 확인해야 None vs None 비교로
@@ -200,12 +207,13 @@ def _authenticate():
         return ("TOKEN_INVALID", "다시 로그인하세요")  # 비활성·잠금 계정
 
     # ③ 만료 검사 (매 요청). today는 위에서 KST로 계산됨([C]).
-    if payload.get("is_special"):
+    #    [Codex#2/Gemini#4] is_special·role은 payload가 아닌 DB 값(db_is_special·db_role)으로 판정.
+    if db_is_special:
         # [B] 특별계정: 구독 만료는 면제하되 special_expires_at은 집행(§15-8).
         #     special_expires_at NULL(무기한)은 통과 — 비권장이나 허용. 경과 시 차단.
         if special_expires_at is not None and special_expires_at < today:
             return ("SUBSCRIPTION_EXPIRED", "특별계정 사용 기간이 만료되었습니다. 과 사무실에 문의하세요")
-    elif payload.get("role") == "admin":
+    elif db_role == "admin":
         # 기관 관리자(포털 전용): 과목 구독에 묶이지 않으므로 매 요청 구독 만료 게이트 면제.
         #   콘텐츠 노출은 넓히지 않는다 — 슬라이드/타일은 _slide_access_allowed가 과목 좌석으로
         #   별도 판정하며(§8), admin의 subject_code='__ADMIN__'는 어떤 슬라이드 과목과도 불일치한다.
@@ -217,10 +225,11 @@ def _authenticate():
             return ("SUBSCRIPTION_EXPIRED", "구독이 만료되었습니다. 과 사무실에 문의하세요")
 
     g.user_id = user_id
-    g.institution_id = payload.get("institution_id")
+    # 권위는 DB — payload(JWT)가 아니라 방금 조회한 DB 값을 g에 적재한다.
+    g.institution_id = db_institution_id
     g.subject_code = subject_code   # [A] 과목 격리 게이트의 기준 (사용자가 등록된 과목)
-    g.role = payload.get("role")
-    g.is_special = payload.get("is_special", False)
+    g.role = db_role
+    g.is_special = db_is_special
     return None
 
 

@@ -601,7 +601,8 @@ def test_login_required_session_token_mismatch(client, mock_db):
         client.set_cookie(COOKIE_NAME, token)
 
         mock_db["cursor"].fetchone.return_value = (
-            "new-session-token", "active", "HST", None, None  # session_token, status, subject_code, special_expires_at, subscription_end
+            # session_token, status, subject_code, special_expires_at, role, is_special, institution_id, subscription_end
+            "new-session-token", "active", "HST", None, "student", False, "YU", None
         )
 
         resp = client.get("http://localhost/api/auth/me")
@@ -628,7 +629,7 @@ def test_login_required_pending_verification(client, mock_db):
         client.set_cookie(COOKIE_NAME, token)
         
         mock_db["cursor"].fetchone.return_value = (
-            "valid-session-123", "pending_verification", "HST", None, None
+            "valid-session-123", "pending_verification", "HST", None, "student", False, "YU", None
         )
 
         resp = client.get("/api/auth/me")
@@ -654,8 +655,8 @@ def test_login_required_success(client, mock_db):
 
         mock_db["cursor"].fetchone.side_effect = [
             # fail-closed(§8): 매칭 구독 없으면(None) SUBSCRIPTION_EXPIRED → 유효 구독일 제공
-            ("valid-session-123", "active", "HST", None,
-             datetime.now(timezone.utc).date() + timedelta(days=365)),   # _authenticate: session_token, status, subject_code, special_expires_at, subscription_end
+            ("valid-session-123", "active", "HST", None, "student", False, "YU",
+             datetime.now(timezone.utc).date() + timedelta(days=365)),   # _authenticate: +role,is_special,institution_id
             (1, "test@example.com", "student", "YU", False, "active", None)  # me()
         ]
 
@@ -715,8 +716,8 @@ def test_logout_success(client, mock_db):
 
         mock_db["cursor"].fetchone.return_value = (
             # fail-closed(§8): 유효 구독일 제공해 _authenticate 통과 → logout 도달
-            "valid-session-123", "active", "HST", None,
-            datetime.now(timezone.utc).date() + timedelta(days=365)   # session_token, status, subject_code, special_expires_at, subscription_end
+            "valid-session-123", "active", "HST", None, "student", False, "YU",
+            datetime.now(timezone.utc).date() + timedelta(days=365)   # +role,is_special,institution_id
         )
 
         # Werkzeug 3.x: full URL for domain matching; X-CSRF-Token required by login_required
@@ -945,7 +946,8 @@ def test_csrf_missing_header_returns_403(client, mock_db):
 
         # fail-closed(§8): 유효 구독일 제공해 _authenticate 통과 → CSRF 검사 도달
         mock_db["cursor"].fetchone.return_value = (
-            "sess123", "active", "HST", None, datetime.now(timezone.utc).date() + timedelta(days=365))
+            "sess123", "active", "HST", None, "student", False, "YU",
+            datetime.now(timezone.utc).date() + timedelta(days=365))
 
         # No X-CSRF-Token header → 403
         resp = client.post("http://localhost/api/auth/logout")
@@ -969,7 +971,8 @@ def test_csrf_mismatched_token_returns_403(client, mock_db):
 
         # fail-closed(§8): 유효 구독일 제공해 _authenticate 통과 → CSRF 검사 도달
         mock_db["cursor"].fetchone.return_value = (
-            "sess123", "active", "HST", None, datetime.now(timezone.utc).date() + timedelta(days=365))
+            "sess123", "active", "HST", None, "student", False, "YU",
+            datetime.now(timezone.utc).date() + timedelta(days=365))
 
         resp = client.post(
             "http://localhost/api/auth/logout",
@@ -990,12 +993,13 @@ def test_admin_csrf_required_no_header(client, mock_db):
     with patch("server_render.get_db_conn") as mock_get_db, \
          patch("server_render.release_db_conn"):
         mock_get_db.return_value = mock_db["conn"]
-        # _get_admin_user: SELECT id, role, name, status FROM admin_users
-        mock_db["cursor"].fetchone.return_value = (1, "super_admin", "Admin", "active")
+        # _get_admin_user: SELECT id, role, name, status, session_token FROM admin_users
+        mock_db["cursor"].fetchone.return_value = (1, "super_admin", "Admin", "active", "admin-sess-tok")
 
         with client.session_transaction() as sess:
             sess['admin_user_id'] = 1
             sess['admin_csrf_token'] = 'test-admin-csrf-123'
+            sess['admin_session_token'] = 'admin-sess-tok'
 
         resp = client.post('/admin/api/slide',
                            json={"id": "TEST-001", "title_ko": "테스트"},
@@ -1010,11 +1014,12 @@ def test_admin_csrf_required_wrong_token(client, mock_db):
     with patch("server_render.get_db_conn") as mock_get_db, \
          patch("server_render.release_db_conn"):
         mock_get_db.return_value = mock_db["conn"]
-        mock_db["cursor"].fetchone.return_value = (1, "super_admin", "Admin", "active")
+        mock_db["cursor"].fetchone.return_value = (1, "super_admin", "Admin", "active", "admin-sess-tok")
 
         with client.session_transaction() as sess:
             sess['admin_user_id'] = 1
             sess['admin_csrf_token'] = 'correct-token'
+            sess['admin_session_token'] = 'admin-sess-tok'
 
         resp = client.post('/admin/api/slide',
                            json={"id": "TEST-001"},
@@ -1030,11 +1035,12 @@ def test_admin_csrf_delete_no_header(client, mock_db):
     with patch("server_render.get_db_conn") as mock_get_db, \
          patch("server_render.release_db_conn"):
         mock_get_db.return_value = mock_db["conn"]
-        mock_db["cursor"].fetchone.return_value = (1, "super_admin", "Admin", "active")
+        mock_db["cursor"].fetchone.return_value = (1, "super_admin", "Admin", "active", "admin-sess-tok")
 
         with client.session_transaction() as sess:
             sess['admin_user_id'] = 1
             sess['admin_csrf_token'] = 'test-csrf'
+            sess['admin_session_token'] = 'admin-sess-tok'
 
         resp = client.delete('/admin/api/slide/TEST-001')
         assert resp.status_code == 403
@@ -1074,7 +1080,7 @@ def test_session_revoked_on_db_mismatch(client, mock_db):
 
         # DB에는 다른 session_token (다른 기기에서 로그인)
         mock_db["cursor"].fetchone.return_value = (
-            "different-token-in-db", "active", "HST", None, None
+            "different-token-in-db", "active", "HST", None, "student", False, "YU", None
         )
 
         resp = client.get("http://localhost/api/auth/me")
@@ -1104,7 +1110,7 @@ def test_subscription_expired_returns_401(client, mock_db):
 
         expired_date = date.today() - timedelta(days=1)
         mock_db["cursor"].fetchone.return_value = (
-            "valid-sess", "active", "HST", None, expired_date
+            "valid-sess", "active", "HST", None, "student", False, "YU", expired_date
         )
 
         resp = client.get("http://localhost/api/auth/me")
@@ -1129,9 +1135,9 @@ def test_before_access_open_date_blocks(client, mock_db):
             "session_token": "valid-sess", "is_special": False,
         }
         client.set_cookie(COOKIE_NAME, encode_token(payload))
-        # 접근창 밖 → subquery NULL: (session, status, subject, special_expires_at, subscription_end=None)
+        # 접근창 밖 → subquery NULL: (session, status, subject, special_expires_at, role, is_special, institution_id, subscription_end=None)
         mock_db["cursor"].fetchone.return_value = (
-            "valid-sess", "active", "HST", None, None
+            "valid-sess", "active", "HST", None, "student", False, "YU", None
         )
 
         resp = client.get("http://localhost/api/auth/me")
@@ -1175,8 +1181,10 @@ def test_special_expires_at_past_blocks(client, mock_db):
         }
         client.set_cookie(COOKIE_NAME, encode_token(payload))
         # is_special이지만 special_expires_at이 과거 → 차단. subscription_end는 무관(None).
+        # g.is_special은 DB값으로 판정(Codex#2) → 행의 is_special=True.
         mock_db["cursor"].fetchone.return_value = (
-            "valid-sess", "active", None, date.today() - timedelta(days=1), None
+            "valid-sess", "active", None, date.today() - timedelta(days=1),
+            "student", True, "YU", None
         )
 
         resp = client.get("http://localhost/api/auth/me")
@@ -1197,7 +1205,7 @@ def test_special_expires_at_null_passes(client, mock_db):
         }
         client.set_cookie(COOKIE_NAME, encode_token(payload))
         mock_db["cursor"].fetchone.side_effect = [
-            ("valid-sess", "active", None, None, None),   # _authenticate: special_expires_at=None → 통과
+            ("valid-sess", "active", None, None, "admin", True, "YU", None),   # _authenticate: is_special=True, special_expires_at=None → 통과
             (1, "admin@test.com", "admin", "YU", True, "active", None),  # me()
         ]
 
@@ -1249,7 +1257,7 @@ def test_is_special_subscription_expired_passes(client, mock_db):
 
         expired_date = date.today() - timedelta(days=30)
         mock_db["cursor"].fetchone.side_effect = [
-            ("valid-sess", "active", None, None, expired_date),   # _authenticate: is_special(subject_code·special_expires_at 무관, 구독만료 면제)
+            ("valid-sess", "active", None, None, "admin", True, "YU", expired_date),   # _authenticate: is_special=True → 구독만료 면제
             (1, "admin@test.com", "admin", "YU", True, "active", None),  # me()
         ]
 
@@ -1267,8 +1275,8 @@ def test_tile_token_invalid_returns_correct_code(client, mock_db):
          patch("server_render.get_slide_institution") as mock_inst, \
          patch("server_render._institution_subject_access", return_value=True):
         mock_get_db.return_value = mock_db["conn"]
-        # 단일 게이트 계약: (institution_id, subject_code, deploy_status)
-        mock_inst.return_value = ("SA", "HST", "deployed")
+        # 단일 게이트 계약: (institution_id, subject_code, deploy_status, conversion_status)
+        mock_inst.return_value = ("SA", "HST", "deployed", "ready")
 
         payload = {
             "sub": "1",
@@ -1283,7 +1291,8 @@ def test_tile_token_invalid_returns_correct_code(client, mock_db):
 
         # fail-closed(§8): 유효 구독일 + 과목(HST)이 슬라이드 과목과 일치 → 게이트 통과 → 타일토큰 검사 도달
         mock_db["cursor"].fetchone.return_value = (
-            "valid-sess", "active", "HST", None, datetime.now(timezone.utc).date() + timedelta(days=365)
+            "valid-sess", "active", "HST", None, "student", False, "YU",
+            datetime.now(timezone.utc).date() + timedelta(days=365)
         )
 
         # 타일 토큰 없이 DZI 접근 (?t= 미포함)
@@ -1308,9 +1317,12 @@ def _gate_setup(client, mock_db, *, subject_code, is_special=False,
         "session_token": "valid-sess", "is_special": is_special,
     }
     client.set_cookie(COOKIE_NAME, encode_token(payload))
-    # _authenticate row: (session_token, status, subject_code, special_expires_at, subscription_end)
+    # _authenticate row: (session_token, status, subject_code, special_expires_at,
+    #                     role, is_special, institution_id, subscription_end)
+    # g.is_special은 DB값으로 판정(Codex#2) → is_special 파라미터를 행에 반영.
     mock_db["cursor"].fetchone.return_value = (
         "valid-sess", "active", subject_code, None,
+        "student", is_special, institution_id,
         datetime.now(timezone.utc).date() + timedelta(days=365),
     )
 
@@ -1319,7 +1331,7 @@ def test_gate_cross_institution_same_subject_allowed(client, mock_db):
     """★#1: 기관이 SA가 아니어도(YU 학생) SA-HST-* 슬라이드 접근 허용 (과목 구독 기준)."""
     with patch("server_render.get_db_conn") as mock_get_db, \
          patch("server_render.release_db_conn"), \
-         patch("server_render.get_slide_institution", return_value=("SA", "HST", "deployed")), \
+         patch("server_render.get_slide_institution", return_value=("SA", "HST", "deployed", "ready")), \
          patch("server_render._institution_subject_access", return_value=True):
         mock_get_db.return_value = mock_db["conn"]
         _gate_setup(client, mock_db, subject_code="HST", institution_id="YU")
@@ -1333,7 +1345,7 @@ def test_gate_institution_not_subscribed_subject_403(client, mock_db):
     """★#2: 기관이 PRT 미구독 → 그 기관 PRT 학생의 SA-PRT-* 접근 403 (게이트 (3) 기관 미구독)."""
     with patch("server_render.get_db_conn") as mock_get_db, \
          patch("server_render.release_db_conn"), \
-         patch("server_render.get_slide_institution", return_value=("SA", "PRT", "deployed")), \
+         patch("server_render.get_slide_institution", return_value=("SA", "PRT", "deployed", "ready")), \
          patch("server_render._institution_subject_access", return_value=False):  # 기관이 PRT 미구독
         mock_get_db.return_value = mock_db["conn"]
         _gate_setup(client, mock_db, subject_code="PRT", institution_id="YU")
@@ -1346,7 +1358,7 @@ def test_gate_subject_mismatch_403(client, mock_db):
     """g.subject_code != slide.subject_code (같은 기관·다른 과목 등록) → 403 (게이트 (2))."""
     with patch("server_render.get_db_conn") as mock_get_db, \
          patch("server_render.release_db_conn"), \
-         patch("server_render.get_slide_institution", return_value=("SA", "PRT", "deployed")), \
+         patch("server_render.get_slide_institution", return_value=("SA", "PRT", "deployed", "ready")), \
          patch("server_render._institution_subject_access", return_value=True):
         mock_get_db.return_value = mock_db["conn"]
         _gate_setup(client, mock_db, subject_code="HST")  # HST 등록 학생이 PRT 슬라이드 접근
@@ -1359,7 +1371,7 @@ def test_gate_not_deployed_403(client, mock_db):
     """deploy_status != 'deployed' 슬라이드 → 일반 사용자 403 (게이트 (1))."""
     with patch("server_render.get_db_conn") as mock_get_db, \
          patch("server_render.release_db_conn"), \
-         patch("server_render.get_slide_institution", return_value=("SA", "HST", "qc_pending")), \
+         patch("server_render.get_slide_institution", return_value=("SA", "HST", "qc_pending", "ready")), \
          patch("server_render._institution_subject_access", return_value=True):
         mock_get_db.return_value = mock_db["conn"]
         _gate_setup(client, mock_db, subject_code="HST")
@@ -1376,7 +1388,7 @@ def test_tile_token_reissue_denied_without_access(client, mock_db):
     """[2-2#2] 접근권 없는 슬라이드의 타일 토큰 재발급 거부 (403)."""
     with patch("server_render.get_db_conn") as mock_get_db, \
          patch("server_render.release_db_conn"), \
-         patch("server_render.get_slide_institution", return_value=("SA", "PRT", "deployed")), \
+         patch("server_render.get_slide_institution", return_value=("SA", "PRT", "deployed", "ready")), \
          patch("server_render._institution_subject_access", return_value=False):
         mock_get_db.return_value = mock_db["conn"]
         _gate_setup(client, mock_db, subject_code="HST")  # HST 학생이 PRT 슬라이드 토큰 요청
@@ -1389,7 +1401,7 @@ def test_tile_token_reissue_success_with_access(client, mock_db):
     """[2-2#2] 접근권 있는 슬라이드 → 새 타일 토큰 재발급 성공."""
     with patch("server_render.get_db_conn") as mock_get_db, \
          patch("server_render.release_db_conn"), \
-         patch("server_render.get_slide_institution", return_value=("SA", "HST", "deployed")), \
+         patch("server_render.get_slide_institution", return_value=("SA", "HST", "deployed", "ready")), \
          patch("server_render._institution_subject_access", return_value=True):
         mock_get_db.return_value = mock_db["conn"]
         _gate_setup(client, mock_db, subject_code="HST")
@@ -1456,10 +1468,11 @@ def test_inquiry_reply_email_escapes_html():
     assert '\n' not in str(captured['msg']['Subject']).strip()
 
 
-def _admin_session(client, csrf='admin-csrf'):
+def _admin_session(client, csrf='admin-csrf', session_token='admin-sess-tok'):
     with client.session_transaction() as sess:
         sess['admin_user_id'] = 1
         sess['admin_csrf_token'] = csrf
+        sess['admin_session_token'] = session_token   # [Codex#2] 매 요청 DB 대조 토큰
 
 
 def test_inquiry_reply_mail_failure_keeps_open(client, mock_db):
@@ -1469,7 +1482,7 @@ def test_inquiry_reply_mail_failure_keeps_open(client, mock_db):
          patch("server_render._send_inquiry_reply_email", return_value=False):
         mock_get_db.return_value = mock_db["conn"]
         mock_db["cursor"].fetchone.side_effect = [
-            (1, "super_admin", "Admin", "active"),  # _get_admin_user
+            (1, "super_admin", "Admin", "active", "admin-sess-tok"),  # _get_admin_user (+session_token)
             ("문의제목", "user@test.com"),           # SELECT title, user_email
             (99,),                                   # INSERT reply RETURNING id
         ]
@@ -1493,7 +1506,7 @@ def test_inquiry_reply_mail_success_marks_answered(client, mock_db):
          patch("server_render._send_inquiry_reply_email", return_value=True):
         mock_get_db.return_value = mock_db["conn"]
         mock_db["cursor"].fetchone.side_effect = [
-            (1, "super_admin", "Admin", "active"),
+            (1, "super_admin", "Admin", "active", "admin-sess-tok"),
             ("문의제목", "user@test.com"),
             (99,),
         ]
@@ -1590,7 +1603,11 @@ def test_verify_email_admin_creates_admin_role(client, mock_db):
 
 
 def test_portal_admin_access(client, mock_db):
-    """④: role='admin' 사용자는 /portal 진입 가능(200). _authenticate 구독 게이트 면제도 검증."""
+    """④: 관리자 roster 행이 존재하는 사용자는 /portal 진입 가능(200).
+
+    [Codex#1/Gemini#3] role='admin'만으로는 통과하지 않는다 — _is_institution_admin(roster 행 존재)이
+      권위. 본 테스트는 roster 행이 있는 정상 관리자 경로(200)를 검증한다.
+    """
     with patch("server_render.get_db_conn") as mock_get_db, \
          patch("server_render.release_db_conn"):
         mock_get_db.return_value = mock_db["conn"]
@@ -1598,8 +1615,9 @@ def test_portal_admin_access(client, mock_db):
                    "session_token": "sess-admin-1", "is_special": False}
         client.set_cookie(COOKIE_NAME, encode_token(payload))
         mock_db["cursor"].fetchone.side_effect = [
-            # _authenticate: subscription_end=None이어도 role='admin'이라 통과해야 한다.
-            ("sess-admin-1", "active", "__ADMIN__", None, None),
+            # _authenticate: subscription_end=None이어도 db_role='admin'이라 통과.
+            ("sess-admin-1", "active", "__ADMIN__", None, "admin", False, "YU", None),
+            (1,),                  # _is_institution_admin: 관리자 roster 행 존재
             ("연세대 의과대학",),   # 포털: institutions.name_ko
         ]
         resp = client.get("http://localhost/portal")
@@ -1617,7 +1635,7 @@ def test_portal_non_admin_redirected(client, mock_db):
         client.set_cookie(COOKIE_NAME, encode_token(payload))
         mock_db["cursor"].fetchone.side_effect = [
             # _authenticate: 유효 구독창(학생은 구독 필요)
-            ("sess-stu-1", "active", "HST", None,
+            ("sess-stu-1", "active", "HST", None, "student", False, "YU",
              datetime.now(timezone.utc).date() + timedelta(days=365)),
             None,   # _is_institution_admin: 관리자 명단 행 없음
         ]
@@ -1633,7 +1651,7 @@ def test_institution_create_registers_admin_roster(client, mock_db):
          patch("server_render._send_portal_invite_email", return_value=True) as mock_invite:
         mock_get_db.return_value = mock_db["conn"]
         mock_db["cursor"].fetchone.side_effect = [
-            (1, "super_admin", "Admin", "active"),  # _get_admin_user
+            (1, "super_admin", "Admin", "active", "admin-sess-tok"),  # _get_admin_user (+session_token)
             None,                                   # SELECT id FROM institutions (미존재)
         ]
         _admin_session(client, 'admin-csrf')
@@ -1669,7 +1687,7 @@ def test_institution_update_syncs_admin_roster(client, mock_db):
          patch("server_render._send_portal_invite_email", return_value=True):
         mock_get_db.return_value = mock_db["conn"]
         mock_db["cursor"].fetchone.side_effect = [
-            (1, "super_admin", "Admin", "active"),  # _get_admin_user
+            (1, "super_admin", "Admin", "active", "admin-sess-tok"),  # _get_admin_user (+session_token)
         ]
         # 기존 admin roster: 두 명(old@, keep@) → 폼에는 keep@만 남김 → old@ 제거
         mock_db["cursor"].fetchall.return_value = [("old@univ.ac.kr",), ("keep@univ.ac.kr",)]
@@ -1709,7 +1727,7 @@ def test_moonlighter_admin_removed_portal_blocked(client, mock_db):
         client.set_cookie(COOKIE_NAME, encode_token(payload))
         mock_db["cursor"].fetchone.side_effect = [
             # _authenticate: 계정 active, HST 등록, 유효 구독 (정지 안 됨)
-            ("sess-moon", "active", "HST", None,
+            ("sess-moon", "active", "HST", None, "student", False, "YU",
              datetime.now(timezone.utc).date() + timedelta(days=365)),
             None,   # _is_institution_admin: 관리자 행 없음(제거됨)
         ]
@@ -1726,10 +1744,257 @@ def test_moonlighter_admin_removed_slides_kept(client, mock_db):
     """
     with patch("server_render.get_db_conn") as mock_get_db, \
          patch("server_render.release_db_conn"), \
-         patch("server_render.get_slide_institution", return_value=("SA", "HST", "deployed")), \
+         patch("server_render.get_slide_institution", return_value=("SA", "HST", "deployed", "ready")), \
          patch("server_render._institution_subject_access", return_value=True):
         mock_get_db.return_value = mock_db["conn"]
         _gate_setup(client, mock_db, subject_code="HST", institution_id="YU", user_id="3")
         t = generate_tile_token("3", "YU", "SA-HST-001")
         resp = client.get(f"http://localhost/dzi/SA-HST-001.dzi?t={t}")
         assert resp.status_code == 503  # 게이트·타일토큰 통과 = 슬라이드 접근 허용
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 외부검증(Codex·Gemini) 보안 결함 7건 — 회귀 테스트
+# ══════════════════════════════════════════════════════════════════════════
+
+# ── #1 포털 권한 회수 우회 (Codex#1 / Gemini#3) ──────────────────────────
+def test_portal_role_admin_but_roster_removed_blocked(client, mock_db):
+    """#1: users.role='admin'이 DB에 남아 있어도 관리자 roster 행이 없으면 포털 차단(302).
+
+    role 단독 우회 제거의 핵심 — 권한 회수(roster DELETE) 즉시 포털이 닫혀야 한다.
+    """
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+        payload = {"sub": "9", "institution_id": "YU", "role": "admin",
+                   "session_token": "sess-ex-admin", "is_special": False}
+        client.set_cookie(COOKIE_NAME, encode_token(payload))
+        mock_db["cursor"].fetchone.side_effect = [
+            # _authenticate: db_role='admin'이라 구독 게이트는 통과(계정 자체는 유효)
+            ("sess-ex-admin", "active", "__ADMIN__", None, "admin", False, "YU", None),
+            None,   # _is_institution_admin: 관리자 roster 행 없음(회수됨) → 포털 차단
+        ]
+        resp = client.get("http://localhost/portal")
+        assert resp.status_code == 302
+        assert resp.headers["Location"].endswith("/")
+
+
+# ── #2 JWT 신뢰 → DB 권위 (Codex#2 / Gemini#4) ──────────────────────────
+def test_db_authority_is_special_revoked_blocks(client, mock_db):
+    """#2: JWT payload는 is_special=True여도, DB의 is_special=False가 권위 → 만료 구독이면 차단.
+
+    구 토큰을 신뢰했다면 만료 면제로 통과했을 것 — DB 값으로 판정해 SUBSCRIPTION_EXPIRED.
+    """
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+        payload = {"sub": "1", "institution_id": "YU", "role": "student",
+                   "session_token": "valid-sess", "is_special": True}  # JWT는 특별계정이라 주장
+        client.set_cookie(COOKIE_NAME, encode_token(payload))
+        # DB 권위: is_special=False, 만료 구독(None) → 차단
+        mock_db["cursor"].fetchone.return_value = (
+            "valid-sess", "active", "HST", None, "student", False, "YU", None
+        )
+        resp = client.get("http://localhost/api/auth/me")
+        assert resp.status_code == 401
+        assert resp.get_json()["error"] == "SUBSCRIPTION_EXPIRED"
+
+
+def test_db_authority_role_admin_from_db_passes(client, mock_db):
+    """#2: JWT role='student'(구독 없음)이어도 DB role='admin'이면 구독 게이트 면제(DB 권위)."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+        payload = {"sub": "1", "institution_id": "YU", "role": "student",
+                   "session_token": "valid-sess", "is_special": False}
+        client.set_cookie(COOKIE_NAME, encode_token(payload))
+        mock_db["cursor"].fetchone.side_effect = [
+            # DB role='admin' → 구독 None이어도 통과
+            ("valid-sess", "active", "__ADMIN__", None, "admin", False, "YU", None),
+            (1, "admin@test.com", "admin", "YU", False, "active", None),  # me()
+        ]
+        resp = client.get("http://localhost/api/auth/me")
+        assert resp.status_code == 200
+        # me()는 g가 아닌 DB를 다시 읽지만, _authenticate가 admin 분기로 통과했음을 200으로 확인
+        assert resp.get_json()["data"]["role"] == "admin"
+
+
+def test_admin_session_token_mismatch_blocks(client, mock_db):
+    """#2(admin): Flask 세션 토큰과 DB session_token 불일치 → _get_admin_user None → 차단(401)."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+        # DB는 다른 토큰을 들고 있음(다른 곳에서 재로그인/로그아웃으로 회전됨)
+        mock_db["cursor"].fetchone.return_value = (1, "super_admin", "Admin", "active", "NEW-token")
+        with client.session_transaction() as sess:
+            sess['admin_user_id'] = 1
+            sess['admin_csrf_token'] = 'c'
+            sess['admin_session_token'] = 'OLD-token'   # 불일치
+        resp = client.post('/admin/api/slide', json={"id": "X"},
+                           headers={'X-CSRF-Token': 'c'})
+        assert resp.status_code == 401   # 로그인 필요(세션 무효)
+
+
+# ── #3 어드민 로그인 브루트포스 차단 (Gemini#1) ─────────────────────────
+def test_admin_login_locks_after_threshold(client, mock_db):
+    """#3: 누적 실패가 임계값(10)에 도달하면 admin_users.locked_at 설정 + 잠금 안내."""
+    from werkzeug.security import generate_password_hash
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+        pw_hash = generate_password_hash("correct-pw")
+        mock_db["cursor"].fetchone.side_effect = [
+            # admin_login SELECT: id, password_hash, role, name, status, locked_at
+            (1, pw_hash, "super_admin", "Admin", "active", None),
+            # _admin_check_and_increment_failed SELECT: failed_attempts, failed_window_start (9 → 10)
+            (9, datetime.now(timezone.utc)),
+        ]
+        resp = client.post('/admin/login',
+                           data={"email": "admin@test.com", "password": "WRONG"})
+        # 잠금 UPDATE(locked_at) 실행 확인
+        executed = " ".join(str(c.args[0]) for c in mock_db["cursor"].execute.call_args_list)
+        assert "locked_at" in executed
+        assert "보안상 계정이 잠겼습니다" in resp.get_data(as_text=True)
+
+
+def test_admin_login_auto_unlock_then_success(client, mock_db):
+    """#3: locked_at이 24h 이전이면 자동 해제 후 정상 로그인(세션 토큰 회전)."""
+    from werkzeug.security import generate_password_hash
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+        pw_hash = generate_password_hash("correct-pw")
+        old_lock = datetime.now(timezone.utc) - timedelta(hours=25)
+        mock_db["cursor"].fetchone.return_value = (
+            1, pw_hash, "super_admin", "Admin", "active", old_lock
+        )
+        resp = client.post('/admin/login',
+                           data={"email": "admin@test.com", "password": "correct-pw"})
+        assert resp.status_code == 302
+        assert resp.headers["Location"].endswith("/admin")
+        executed = " ".join(str(c.args[0]) for c in mock_db["cursor"].execute.call_args_list)
+        # 자동해제(locked_at = NULL) + 로그인 성공 시 session_token 회전
+        assert "locked_at = NULL" in executed
+        assert "session_token" in executed
+
+
+# ── #4 특별계정 QC 미완료 노출 차단 (Gemini#7) ──────────────────────────
+def test_special_qc_incomplete_blocked(client, mock_db):
+    """#4: is_special이라도 conversion_status가 미완료(qc_check)면 접근 차단(403)."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"), \
+         patch("server_render.get_slide_institution",
+               return_value=("SA", "HST", "deployed", "qc_check")), \
+         patch("server_render._institution_subject_access", return_value=True):
+        mock_get_db.return_value = mock_db["conn"]
+        _gate_setup(client, mock_db, subject_code="HST", is_special=True)
+        t = generate_tile_token("1", "YU", "SA-HST-001")
+        resp = client.get(f"http://localhost/dzi/SA-HST-001.dzi?t={t}")
+        assert resp.status_code == 403
+        assert resp.get_json()["error"] == "FORBIDDEN"
+
+
+def test_special_ready_no_mpp_allowed(client, mock_db):
+    """#4: is_special은 ready_no_mpp(변환 완료) 슬라이드는 전 과목·전 기관 열람 유지(§15-8)."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"), \
+         patch("server_render.get_slide_institution",
+               return_value=("SA", "PARA", "qc_pending", "ready_no_mpp")), \
+         patch("server_render._institution_subject_access", return_value=False):
+        mock_get_db.return_value = mock_db["conn"]
+        # 특별계정은 과목(HST 등록)·기관·배포상태(qc_pending) 우회 — ready 계열이면 허용
+        _gate_setup(client, mock_db, subject_code="HST", is_special=True)
+        t = generate_tile_token("1", "YU", "SA-PARA-001")
+        resp = client.get(f"http://localhost/dzi/SA-PARA-001.dzi?t={t}")
+        assert resp.status_code == 503   # 게이트 통과(미적재 로딩) = 접근 허용
+
+
+# ── #5 인증코드 CSPRNG (Codex#4) ────────────────────────────────────────
+def test_gen_code_uses_csprng():
+    """#5: _gen_code()는 secrets(CSPRNG) 기반이며 6자리 코드를 만든다."""
+    from auth import auth as auth_mod
+    with patch("auth.auth.secrets.randbelow", return_value=0) as mock_rand:
+        code = auth_mod._gen_code()
+        assert mock_rand.called          # random이 아닌 secrets.randbelow 사용
+        assert code == "100000"          # randbelow(900000)+100000
+    # 정상 호출도 항상 6자리
+    for _ in range(50):
+        c = auth_mod._gen_code()
+        assert len(c) == 6 and c.isdigit()
+
+
+# ── #6 이메일 1계정 정책 (Codex#3 / Gemini#5) ───────────────────────────
+def test_register_duplicate_email_across_subject_blocked(client, mock_db):
+    """#6: 이미 가입된 이메일은 다른 과목 명단으로 와도 새 계정/중복 pending을 만들지 않는다."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"), \
+         patch("auth.auth.send_verification_email") as mock_send:
+        mock_get_db.return_value = mock_db["conn"]
+        mock_db["cursor"].fetchone.side_effect = [
+            ("PARA",),   # roster: 이번엔 기생충학 명단으로 가입 시도
+            (1,),        # 전역 이메일 검사: 이미 계정 존재(이전 HST 가입)
+        ]
+        resp = client.post("/api/auth/register",
+                           json={"email": "dup@univ.ac.kr", "password": "pw123456",
+                                 "role": "student", "institution_id": "YU"})
+        assert resp.status_code == 409
+        assert resp.get_json()["error"] == "EMAIL_EXISTS"
+        # 새 계정 INSERT·인증코드 발송이 일어나지 않아야 한다
+        executed = " ".join(str(c.args[0]) for c in mock_db["cursor"].execute.call_args_list)
+        assert "INSERT INTO users" not in executed
+        assert not mock_send.called
+
+
+# ── #7 입력 검증 (Codex#5) ──────────────────────────────────────────────
+def test_institution_create_invalid_term_count_400(client, mock_db):
+    """#7: term_count가 정수 아님 → 500이 아니라 400."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+        mock_db["cursor"].fetchone.return_value = (1, "super_admin", "Admin", "active", "admin-sess-tok")
+        mock_db["cursor"].fetchall.return_value = [("HST",)]   # _subject_codes_set allowlist
+        _admin_session(client, 'admin-csrf')
+        resp = client.post("/admin/api/institutions",
+                           json={"id": "YU", "university": "연세대", "college": "의대",
+                                 "subscriptions": [
+                                     {"subject_code": "HST", "start_term": "2026-fall",
+                                      "plan": "standard", "term_count": "abc"}]},
+                           headers={"X-CSRF-Token": "admin-csrf"})
+        assert resp.status_code == 400
+        assert "term_count" in resp.get_json()["error"]
+
+
+def test_institution_create_invalid_plan_400(client, mock_db):
+    """#7: 알 수 없는 plan(allowlist 밖) → 400."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+        mock_db["cursor"].fetchone.return_value = (1, "super_admin", "Admin", "active", "admin-sess-tok")
+        mock_db["cursor"].fetchall.return_value = [("HST",)]
+        _admin_session(client, 'admin-csrf')
+        resp = client.post("/admin/api/institutions",
+                           json={"id": "YU", "university": "연세대", "college": "의대",
+                                 "subscriptions": [
+                                     {"subject_code": "HST", "start_term": "2026-fall",
+                                      "plan": "platinum", "term_count": 1}]},
+                           headers={"X-CSRF-Token": "admin-csrf"})
+        assert resp.status_code == 400
+        assert "플랜" in resp.get_json()["error"]
+
+
+def test_institution_create_unknown_subject_400(client, mock_db):
+    """#7: subject_code가 subject_codes allowlist 밖 → 400."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+        mock_db["cursor"].fetchone.return_value = (1, "super_admin", "Admin", "active", "admin-sess-tok")
+        mock_db["cursor"].fetchall.return_value = [("HST",)]
+        _admin_session(client, 'admin-csrf')
+        resp = client.post("/admin/api/institutions",
+                           json={"id": "YU", "university": "연세대", "college": "의대",
+                                 "subscriptions": [
+                                     {"subject_code": "ZZZ", "start_term": "2026-fall",
+                                      "plan": "standard", "term_count": 1}]},
+                           headers={"X-CSRF-Token": "admin-csrf"})
+        assert resp.status_code == 400
+        assert "과목코드" in resp.get_json()["error"]

@@ -12,7 +12,6 @@
 """
 import os
 import uuid
-import random
 import secrets
 import smtplib
 from email.mime.text import MIMEText
@@ -93,7 +92,8 @@ def send_verification_email(to_email: str, code: str):
 
 
 def _gen_code() -> str:
-    return str(random.randint(100000, 999999))
+    # CSPRNG(secrets) 사용 — 이메일 인증코드는 보안 토큰이므로 random(예측 가능) 금지(Codex#4).
+    return str(secrets.randbelow(900000) + 100000)
 
 
 def _now():
@@ -233,11 +233,13 @@ def register():
                 # admin roster 행은 센티넬 과목코드를 갖는다(NULL이면 데이터 정합성 보정).
                 subject_code = ADMIN_ROSTER_SUBJECT
 
-            # 2) 이미 가입된 이메일 (과목별 독립 레코드 단위, §6-2)
+            # 2) 이미 가입된 이메일 — 이메일당 users 1계정 정책(Codex#3·Gemini#5 확정).
+            #    과목 소속은 institution_rosters 행으로 표현하며, users.email은 전역 식별자다.
+            #    동일 이메일 재가입 시 새 계정/중복 pending을 만들지 않는다(verify/login은 email
+            #    단일 키로 모호함 없이 식별). 다른 과목을 추가로 받으려면 roster 행만 추가하면 된다.
             cur.execute(
-                """SELECT 1 FROM users
-                   WHERE institution_id = %s AND subject_code = %s AND lower(email) = %s""",
-                (institution_id, subject_code, email),
+                "SELECT 1 FROM users WHERE lower(email) = %s",
+                (email,),
             )
             if cur.fetchone() is not None:
                 conn.rollback()
