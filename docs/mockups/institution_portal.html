@@ -1,0 +1,672 @@
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font-sans);background:var(--color-background-tertiary);color:var(--color-text-primary)}
+.portal{display:flex;min-height:700px}
+
+/* ── 사이드바 ── */
+.sidebar{width:190px;flex-shrink:0;background:var(--color-background-primary);border-right:1px solid var(--color-border-tertiary);padding:20px 0;display:flex;flex-direction:column}
+.sidebar-logo{padding:0 16px 18px;border-bottom:1px solid var(--color-border-tertiary);margin-bottom:10px}
+.logo-top{font-size:8px;letter-spacing:0.18em;color:#1D9E75;font-weight:500}
+.logo-main{font-size:16px;font-weight:500;color:var(--color-text-primary)}
+.logo-sub{font-size:9px;color:var(--color-text-tertiary);margin-top:2px}
+.nav-section{font-size:9px;letter-spacing:0.1em;color:var(--color-text-tertiary);padding:12px 16px 5px;text-transform:uppercase}
+.nav-item{display:flex;align-items:center;gap:8px;padding:9px 16px;font-size:13px;color:var(--color-text-secondary);cursor:pointer;border-left:2px solid transparent;transition:all 0.15s}
+.nav-item:hover{background:var(--color-background-secondary);color:var(--color-text-primary)}
+.nav-item.active{background:var(--color-background-secondary);color:#0F6E56;border-left-color:#1D9E75;font-weight:500}
+.nav-item i{font-size:15px}
+.nav-bottom{margin-top:auto;border-top:1px solid var(--color-border-tertiary);padding-top:8px}
+
+/* ── 메인 ── */
+.main{flex:1;overflow:auto;padding:24px 28px}
+.page-title{font-size:18px;font-weight:500;margin-bottom:3px}
+.page-desc{font-size:12px;color:var(--color-text-tertiary);margin-bottom:20px}
+.tab-panel{display:none}.tab-panel.active{display:block}
+
+/* ── 공통 버튼 ── */
+.btn{display:inline-flex;align-items:center;gap:5px;padding:7px 14px;border-radius:7px;font-size:12px;font-weight:500;cursor:pointer;border:none;font-family:var(--font-sans);transition:all 0.15s;white-space:nowrap}
+.btn i{font-size:14px}
+.btn-primary{background:#1D9E75;color:#E1F5EE}.btn-primary:hover{background:#178f68}
+.btn-ghost{background:transparent;color:var(--color-text-secondary);border:1px solid var(--color-border-secondary)}.btn-ghost:hover{background:var(--color-background-secondary)}
+.btn-danger{background:#E24B4A;color:#fff}.btn-danger:hover{background:#c73c3b}
+.btn-sm{padding:5px 10px;font-size:11px}
+.btn-icon{padding:4px 6px;background:transparent;border:none;cursor:pointer;color:var(--color-text-tertiary);display:flex;align-items:center;border-radius:5px;transition:all 0.15s}
+.btn-icon:hover{background:var(--color-background-secondary)}
+.btn-icon i{font-size:15px;pointer-events:none}
+.del-btn{background:none;border:none;cursor:pointer;padding:5px 7px;border-radius:5px;color:var(--color-text-tertiary);display:flex;align-items:center;opacity:0.35;transition:opacity 0.15s,background 0.15s,color 0.15s;flex-shrink:0}
+.del-btn:hover{background:var(--color-background-danger);color:var(--color-text-danger);opacity:1}
+.del-btn i{font-size:15px;pointer-events:none}
+
+/* ── 배지 ── */
+.badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:500;white-space:nowrap}
+.badge-student{background:#E6F1FB;color:#0C447C}
+.badge-assistant{background:#FAEEDA;color:#633806}
+.badge-professor{background:#E1F5EE;color:#085041}
+.badge-active{background:#E1F5EE;color:#085041}
+.badge-pending{background:#F1EFE8;color:#5F5E5A}
+.badge-warn{background:#FAEEDA;color:#633806}
+
+/* ── 카드 ── */
+.section-card{background:var(--color-background-primary);border:1px solid var(--color-border-tertiary);border-radius:10px;overflow:hidden;margin-bottom:16px}
+.card-header{padding:13px 18px;border-bottom:1px solid var(--color-border-tertiary);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.card-title{font-size:13px;font-weight:500;display:flex;align-items:center;gap:6px}
+.card-title i{font-size:15px;color:var(--color-text-tertiary)}
+
+/* ── 통계 ── */
+.stats-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px}
+.stat-card{background:var(--color-background-primary);border:1px solid var(--color-border-tertiary);border-radius:10px;padding:14px 16px}
+.stat-label{font-size:11px;color:var(--color-text-tertiary);margin-bottom:6px}
+.stat-value{font-size:20px;font-weight:500;margin-bottom:8px}
+.stat-bar{height:6px;background:var(--color-background-tertiary);border-radius:3px;overflow:hidden}
+.stat-fill{height:100%;border-radius:3px;transition:width 0.4s,background 0.4s}
+.stat-sub{font-size:11px;color:var(--color-text-tertiary);margin-top:6px}
+
+/* ── 저장바 ── */
+.save-bar{padding:10px 18px;background:var(--color-background-warning);border-bottom:1px solid var(--color-border-warning);display:flex;align-items:center;justify-content:space-between;gap:8px}
+.save-bar.hidden{display:none}
+.save-msg{font-size:12px;color:var(--color-text-warning);display:flex;align-items:center;gap:5px}
+
+/* ── 업로드존 ── */
+.upload-zone{padding:16px 18px}
+.upload-inner{border:1.5px dashed var(--color-border-secondary);border-radius:8px;padding:14px 18px;display:flex;align-items:center;gap:12px;cursor:pointer;transition:border-color 0.15s}
+.upload-inner:hover{border-color:#1D9E75}
+.upload-icon{width:36px;height:36px;background:var(--color-background-secondary);border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.upload-icon i{font-size:18px;color:#1D9E75}
+.upload-text{font-size:12px;color:var(--color-text-secondary);line-height:1.6}
+.upload-text strong{color:var(--color-text-primary);font-weight:500}
+
+/* ── 필터행 ── */
+.filter-row{padding:10px 18px;border-bottom:1px solid var(--color-border-tertiary);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.search-wrap{position:relative;flex:1;max-width:240px}
+.search-wrap i{position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:13px;color:var(--color-text-tertiary)}
+.search-input{width:100%;padding:6px 10px 6px 28px;border:1px solid var(--color-border-secondary);border-radius:7px;font-size:12px;font-family:var(--font-sans);background:var(--color-background-primary);color:var(--color-text-primary);outline:none}
+.role-select{padding:6px 26px 6px 10px;border:1px solid var(--color-border-secondary);border-radius:7px;font-size:12px;font-family:var(--font-sans);background:var(--color-background-primary);color:var(--color-text-primary);outline:none;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 7px center}
+
+/* ── 테이블 ── */
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse}
+thead tr{background:var(--color-background-secondary)}
+th{text-align:left;padding:9px 14px;font-size:11px;color:var(--color-text-tertiary);font-weight:500;letter-spacing:0.04em;border-bottom:1px solid var(--color-border-tertiary);white-space:nowrap}
+td{padding:0;border-bottom:1px solid var(--color-border-tertiary);font-size:13px;vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--color-background-secondary)}
+tr.row-changed td{background:rgba(239,159,39,0.06)}
+.td-inner{padding:7px 14px;display:flex;align-items:center}
+.cell-input{width:100%;background:transparent;border:1px solid transparent;border-radius:5px;padding:5px 7px;font-size:13px;font-family:var(--font-sans);color:var(--color-text-primary);outline:none;transition:border-color 0.15s;min-width:0}
+.cell-input:hover{border-color:var(--color-border-secondary)}
+.cell-input:focus{border-color:#1D9E75;background:var(--color-background-primary)}
+select.cell-input{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 5px center;padding-right:20px}
+.row-num{font-size:11px;color:var(--color-text-tertiary);font-family:var(--font-mono);width:32px;flex-shrink:0}
+
+/* ── 기관관리자 슬롯 ── */
+.admin-item{display:flex;align-items:center;gap:10px;padding:11px 18px;border-bottom:1px solid var(--color-border-tertiary)}
+.admin-item:last-child{border-bottom:none}
+.admin-avatar{width:30px;height:30px;border-radius:50%;background:#E1F5EE;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:500;color:#0F6E56;flex-shrink:0}
+.admin-info{flex:1;min-width:0}
+.admin-name{font-size:13px;font-weight:500}
+.admin-email{font-size:11px;color:var(--color-text-tertiary)}
+.admin-slot{display:flex;align-items:center;gap:10px;padding:10px 18px;border-bottom:1px solid var(--color-border-tertiary);color:var(--color-text-tertiary);font-size:13px}
+.admin-slot:last-child{border-bottom:none}
+.admin-slot i{font-size:15px}
+
+/* ── 플랜 카드 ── */
+.plan-list{display:flex;flex-direction:column;gap:10px;margin-bottom:20px}
+.plan-card{background:var(--color-background-primary);border:1.5px solid var(--color-border-tertiary);border-radius:10px;padding:16px 20px;cursor:pointer;transition:all 0.15s;display:flex;align-items:center;gap:14px}
+.plan-card:hover,.plan-card.active{border-color:#1D9E75;background:var(--color-background-secondary)}
+.plan-card.active{box-shadow:0 0 0 3px rgba(29,158,117,0.08)}
+.plan-card:hover .plan-arrow,.plan-card.active .plan-arrow{color:#1D9E75}
+.plan-icon{width:40px;height:40px;border-radius:10px;background:#E1F5EE;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.plan-icon i{font-size:20px;color:#0F6E56}
+.plan-info{flex:1;min-width:0}
+.plan-name{font-size:14px;font-weight:500;margin-bottom:3px}
+.plan-meta{font-size:12px;color:var(--color-text-tertiary)}
+.plan-arrow{font-size:16px;color:var(--color-text-tertiary);transition:color 0.15s;flex-shrink:0}
+.expire-ok{color:#0F6E56;font-size:12px;font-weight:500}
+.expire-warn{color:#854F0B;font-size:12px;font-weight:500}
+
+/* ── 슬라이드 패널 ── */
+.slide-panel{background:var(--color-background-primary);border:1px solid var(--color-border-tertiary);border-radius:10px;overflow:hidden}
+.stain-badge{display:inline-flex;padding:1px 7px;border-radius:4px;font-size:10px;font-weight:500}
+.stain-he{background:#E1F5EE;color:#085041}
+.stain-pas{background:#E6F1FB;color:#0C447C}
+.stain-mt{background:#EEEDFE;color:#3C3489}
+.slide-row-link{display:flex;align-items:center;gap:12px;padding:9px 16px;border-bottom:1px solid var(--color-border-tertiary);cursor:pointer;transition:background 0.12s}
+.slide-row-link:last-child{border-bottom:none}
+.slide-row-link:hover{background:var(--color-background-secondary)}
+.slide-row-link:hover .open-hint{opacity:1}
+.open-hint{opacity:0;transition:opacity 0.15s;font-size:11px;color:#1D9E75;font-weight:500;display:flex;align-items:center;gap:3px;flex-shrink:0}
+.open-hint i{font-size:12px}
+
+/* ── 이용리포트 ── */
+.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+.kpi-card{background:var(--color-background-primary);border:1px solid var(--color-border-tertiary);border-radius:10px;padding:14px}
+.kpi-label{font-size:11px;color:var(--color-text-tertiary);margin-bottom:6px;display:flex;align-items:center;gap:5px}
+.kpi-label i{font-size:13px}
+.kpi-value{font-size:20px;font-weight:500;margin-bottom:4px}
+.kpi-sub{font-size:11px;color:var(--color-text-tertiary)}
+.kpi-delta{font-size:11px;font-weight:500;color:#0F6E56}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+.bar-chart-wrap{padding:14px 18px}
+.bar-row{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+.bar-label{font-size:11px;color:var(--color-text-tertiary);width:26px;text-align:right;flex-shrink:0;font-family:var(--font-mono)}
+.bar-track{flex:1;height:20px;background:var(--color-background-tertiary);border-radius:4px;overflow:hidden}
+.bar-fill{height:100%;border-radius:4px;display:flex;align-items:center;padding:0 6px}
+.bar-val{font-size:10px;color:#fff;font-weight:500;white-space:nowrap}
+.period-btns{display:flex;gap:5px;margin-bottom:14px}
+.period-btn{padding:4px 12px;border-radius:20px;font-size:12px;cursor:pointer;border:1px solid var(--color-border-secondary);background:var(--color-background-primary);color:var(--color-text-secondary);font-family:var(--font-sans);transition:all 0.12s}
+.period-btn.active{background:#1D9E75;color:#E1F5EE;border-color:#1D9E75}
+.rank-item{display:flex;align-items:center;gap:12px;padding:10px 18px;border-bottom:1px solid var(--color-border-tertiary);cursor:pointer;transition:background 0.12s;text-decoration:none;color:inherit}
+.rank-item:last-child{border-bottom:none}
+.rank-item:hover{background:var(--color-background-secondary)}
+.rank-item:hover .rank-name{color:#0F6E56}
+.rank-item:hover .rank-link{opacity:1}
+.rank-num{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;flex-shrink:0}
+.rank-1{background:#FAEEDA;color:#633806}
+.rank-2,.rank-3{background:#F1EFE8;color:#5F5E5A}
+.rank-other{background:var(--color-background-tertiary);color:var(--color-text-tertiary)}
+.rank-info{flex:1;min-width:0}
+.rank-name{font-size:13px;font-weight:500;transition:color 0.12s}
+.rank-id{font-size:11px;color:var(--color-text-tertiary);font-family:var(--font-mono)}
+.rank-bar-wrap{width:90px}
+.rank-bar-track{height:6px;background:var(--color-background-tertiary);border-radius:3px;overflow:hidden;margin-bottom:3px}
+.rank-bar-fill{height:100%;border-radius:3px;background:#1D9E75}
+.rank-count{font-size:11px;color:var(--color-text-tertiary);text-align:right}
+.rank-link{opacity:0;transition:opacity 0.15s;font-size:11px;color:#1D9E75;font-weight:500;flex-shrink:0;display:flex;align-items:center;gap:2px}
+.rank-link i{font-size:12px}
+.donut-wrap{padding:16px 18px;display:flex;align-items:center;gap:20px}
+.legend-item{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--color-text-secondary);margin-bottom:7px}
+.legend-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+
+/* ── 모달 ── */
+.modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;z-index:500}
+.modal-backdrop.hidden{display:none}
+.modal{background:var(--color-background-primary);border-radius:12px;padding:26px;width:360px;box-shadow:0 8px 32px rgba(0,0,0,0.18)}
+.modal-title{font-size:15px;font-weight:500;margin-bottom:8px}
+.modal-q{font-size:14px;color:var(--color-text-primary);margin-bottom:8px;line-height:1.5}
+.modal-q strong{font-weight:500}
+.modal-warn{font-size:13px;color:var(--color-text-primary);margin-bottom:4px}
+.modal-hint{font-size:12px;color:var(--color-text-tertiary)}
+.modal-footer{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
+
+.toast{position:fixed;bottom:20px;right:20px;background:var(--color-background-primary);border:1px solid var(--color-border-secondary);border-radius:8px;padding:10px 16px;font-size:13px;box-shadow:0 4px 16px rgba(0,0,0,0.12);z-index:999;transition:opacity 0.3s;opacity:0;pointer-events:none}
+.toast.show{opacity:1}
+</style>
+
+<!-- 삭제 모달 -->
+<div class="modal-backdrop hidden" id="del-modal" role="dialog" aria-modal="true">
+  <div class="modal">
+    <div class="modal-title">삭제 확인</div>
+    <div class="modal-q" id="modal-q"></div>
+    <div class="modal-warn" id="modal-warn"></div>
+    <div class="modal-hint" id="modal-hint"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">취소</button>
+      <button class="btn btn-danger" id="modal-confirm">예, 삭제합니다</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<div class="portal">
+  <!-- 사이드바 -->
+  <div class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-top">SLIDE</div>
+      <div class="logo-main">ATLAS</div>
+      <div class="logo-sub">기관 포털</div>
+    </div>
+    <div class="nav-section">관리</div>
+    <div class="nav-item active" id="nav-members" onclick="switchTab('members')"><i class="ti ti-users" aria-hidden="true"></i>명단 관리</div>
+    <div class="nav-item" id="nav-plans" onclick="switchTab('plans')"><i class="ti ti-credit-card" aria-hidden="true"></i>구독 플랜</div>
+    <div class="nav-item" id="nav-report" onclick="switchTab('report')"><i class="ti ti-chart-bar" aria-hidden="true"></i>이용 리포트</div>
+    <div class="nav-bottom">
+      <div class="nav-item" onclick="showToast('마이페이지로 이동')"><i class="ti ti-user" aria-hidden="true"></i>내 계정</div>
+      <div class="nav-item" onclick="showToast('로그아웃')"><i class="ti ti-logout" aria-hidden="true"></i>로그아웃</div>
+    </div>
+  </div>
+
+  <!-- 메인 -->
+  <div class="main">
+
+    <!-- ══ 명단 관리 ══ -->
+    <div class="tab-panel active" id="tab-members">
+      <div class="page-title">명단 관리</div>
+      <div class="page-desc">충남대학교 의과대학 · 캠퍼스 플랜</div>
+      <div class="stats-row">
+        <div class="stat-card">
+          <div class="stat-label">등록 인원 / 전체 TO</div>
+          <div class="stat-value" id="to-display">10 / 300명</div>
+          <div class="stat-bar"><div class="stat-fill" id="to-bar" style="width:3.3%;background:#1D9E75"></div></div>
+          <div class="stat-sub" id="to-sub">잔여 290명 · TO 초과 시 신규 인증 차단</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">지위별 현황</div>
+          <div style="display:flex;gap:5px;margin-top:4px;flex-wrap:wrap">
+            <span class="badge badge-student" id="cnt-s">학생 6명</span>
+            <span class="badge badge-assistant" id="cnt-a">조교 2명</span>
+            <span class="badge badge-professor" id="cnt-p">교수 2명</span>
+          </div>
+          <div class="stat-sub" style="margin-top:10px">인증 완료 <span id="cnt-ok">8명</span> · 대기 <span id="cnt-wait">2명</span></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">구독 만료일</div>
+          <div class="stat-value" style="font-size:16px">2027년 8월 31일</div>
+          <div class="stat-bar"><div class="stat-fill" style="width:45%;background:#1D9E75"></div></div>
+          <div class="stat-sub">D-456 · 만료 30일 전 갱신 안내 발송</div>
+        </div>
+      </div>
+
+      <!-- 명단 카드 -->
+      <div class="section-card">
+        <div class="card-header">
+          <span class="card-title"><i class="ti ti-users" aria-hidden="true"></i>구성원 명단</span>
+          <div style="display:flex;gap:7px">
+            <button class="btn btn-ghost btn-sm" onclick="downloadMemberList()"><i class="ti ti-table-export" aria-hidden="true"></i>명단 다운로드</button>
+            <button class="btn btn-ghost btn-sm" onclick="showToast('member_template.xlsx 다운로드')"><i class="ti ti-download" aria-hidden="true"></i>양식 다운로드</button>
+            <button class="btn btn-primary btn-sm" onclick="simulateUpload()"><i class="ti ti-upload" aria-hidden="true"></i>엑셀 업로드</button>
+          </div>
+        </div>
+        <div class="save-bar hidden" id="save-bar">
+          <span class="save-msg"><i class="ti ti-edit" aria-hidden="true"></i>저장되지 않은 변경사항이 있습니다</span>
+          <div style="display:flex;gap:7px">
+            <button class="btn btn-ghost btn-sm" onclick="cancelChanges()">되돌리기</button>
+            <button class="btn btn-primary btn-sm" onclick="saveChanges()"><i class="ti ti-check" aria-hidden="true"></i>변경사항 저장</button>
+          </div>
+        </div>
+        <div class="upload-zone">
+          <div class="upload-inner" onclick="simulateUpload()">
+            <div class="upload-icon"><i class="ti ti-file-spreadsheet" aria-hidden="true"></i></div>
+            <div>
+              <div class="upload-text"><strong>엑셀 파일을 업로드</strong>하거나 여기로 드래그하세요 <code style="font-size:11px;background:var(--color-background-secondary);padding:1px 6px;border-radius:3px">.xlsx .csv</code></div>
+              <div class="upload-text">컬럼 순서: 이름 | 이메일 | 지위 · 기존 명단에 추가됩니다</div>
+            </div>
+          </div>
+        </div>
+        <div class="filter-row">
+          <div class="search-wrap"><i class="ti ti-search" aria-hidden="true"></i><input class="search-input" type="text" placeholder="이름 또는 이메일 검색" oninput="filterTable(this.value)" aria-label="검색"></div>
+          <select class="role-select" onchange="filterByRole(this.value)" aria-label="지위 필터">
+            <option value="">전체 지위</option><option>학생</option><option>조교</option><option>교수</option>
+          </select>
+          <span style="font-size:12px;color:var(--color-text-tertiary);margin-left:auto" id="row-count">10명</span>
+          <button class="btn btn-ghost btn-sm" onclick="addRow()"><i class="ti ti-plus" aria-hidden="true"></i>개별 추가</button>
+        </div>
+        <div class="table-wrap">
+          <table aria-label="구성원 명단">
+            <thead><tr><th style="width:40px">#</th><th style="min-width:110px">이름</th><th style="min-width:180px">이메일</th><th style="width:120px">지위</th><th style="width:95px">인증 상태</th><th style="width:40px"></th></tr></thead>
+            <tbody id="member-tbody"></tbody>
+          </table>
+        </div>
+        <div class="save-bar hidden" id="save-bar-bottom">
+          <span class="save-msg"><i class="ti ti-edit" aria-hidden="true"></i>저장되지 않은 변경사항이 있습니다</span>
+          <div style="display:flex;gap:7px">
+            <button class="btn btn-ghost btn-sm" onclick="cancelChanges()">되돌리기</button>
+            <button class="btn btn-primary btn-sm" onclick="saveChanges()"><i class="ti ti-check" aria-hidden="true"></i>변경사항 저장</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 기관관리자 카드 -->
+      <div class="section-card">
+        <div class="card-header">
+          <span class="card-title"><i class="ti ti-shield" aria-hidden="true"></i>기관 관리자</span>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:11px;color:var(--color-text-tertiary)" id="admin-count-label">2 / 5명</span>
+            <button class="btn btn-primary btn-sm" id="add-admin-btn" onclick="addAdmin()"><i class="ti ti-plus" aria-hidden="true"></i>관리자 추가</button>
+          </div>
+        </div>
+        <div id="admin-list">
+          <div class="admin-item">
+            <div class="admin-avatar">김</div>
+            <div class="admin-info"><div class="admin-name">김철수</div><div class="admin-email">cskim@cnu.ac.kr</div></div>
+            <span class="badge badge-active" style="margin-right:8px">활성</span>
+            <button class="del-btn" aria-label="관리자 삭제" onclick="openAdminDelModal(this,'김철수')"><i class="ti ti-trash" aria-hidden="true"></i></button>
+          </div>
+          <div class="admin-item">
+            <div class="admin-avatar">이</div>
+            <div class="admin-info"><div class="admin-name">이영희</div><div class="admin-email">yhlee@cnu.ac.kr</div></div>
+            <span class="badge badge-active" style="margin-right:8px">활성</span>
+            <button class="del-btn" aria-label="관리자 삭제" onclick="openAdminDelModal(this,'이영희')"><i class="ti ti-trash" aria-hidden="true"></i></button>
+          </div>
+          <div class="admin-slot"><i class="ti ti-plus-circle" aria-hidden="true"></i><span>슬롯 3 — 비어 있음</span></div>
+          <div class="admin-slot"><i class="ti ti-plus-circle" aria-hidden="true"></i><span>슬롯 4 — 비어 있음</span></div>
+          <div class="admin-slot"><i class="ti ti-plus-circle" aria-hidden="true"></i><span>슬롯 5 — 비어 있음</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ 구독 플랜 ══ -->
+    <div class="tab-panel" id="tab-plans">
+      <div class="page-title">구독 플랜</div>
+      <div class="page-desc">충남대학교 의과대학 · 현재 구독 중인 플랜을 확인하세요</div>
+      <div class="plan-list" id="plan-list"></div>
+      <div class="slide-panel" id="slide-panel" style="display:none">
+        <div class="card-header">
+          <span class="card-title" id="slide-panel-title"><i class="ti ti-microscope" aria-hidden="true"></i>슬라이드 목록</span>
+          <div style="display:flex;gap:7px">
+            <button class="btn btn-ghost btn-sm" onclick="downloadSlideCSV()"><i class="ti ti-table-export" aria-hidden="true"></i>엑셀 다운로드</button>
+            <button class="btn btn-ghost btn-sm" onclick="downloadSlidePDF()"><i class="ti ti-file-type-pdf" aria-hidden="true"></i>PDF 다운로드</button>
+          </div>
+        </div>
+        <div class="filter-row">
+          <div class="search-wrap"><i class="ti ti-search" aria-hidden="true"></i><input class="search-input" type="text" placeholder="슬라이드명 검색" oninput="filterSlides(this.value)" aria-label="슬라이드 검색"></div>
+          <span style="font-size:12px;color:var(--color-text-tertiary);margin-left:auto" id="slide-count">0종</span>
+        </div>
+        <div id="slide-list-body"></div>
+      </div>
+    </div>
+
+    <!-- ══ 이용 리포트 ══ -->
+    <div class="tab-panel" id="tab-report">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:4px;flex-wrap:wrap;gap:10px">
+        <div>
+          <div class="page-title">이용 리포트</div>
+          <div class="page-desc">충남대학교 의과대학 · 구독료 정당화 도구 + 내부 보고자료</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="generatePDF()"><i class="ti ti-file-type-pdf" aria-hidden="true"></i>PDF 리포트 생성</button>
+      </div>
+      <div class="period-btns">
+        <button class="period-btn" onclick="setPeriod(this,'1개월')">최근 1개월</button>
+        <button class="period-btn active" onclick="setPeriod(this,'3개월')">최근 3개월</button>
+        <button class="period-btn" onclick="setPeriod(this,'6개월')">최근 6개월</button>
+        <button class="period-btn" onclick="setPeriod(this,'전체')">전체</button>
+      </div>
+      <div class="kpi-grid">
+        <div class="kpi-card"><div class="kpi-label"><i class="ti ti-users" aria-hidden="true"></i>등록 구성원</div><div class="kpi-value">185명</div><div class="kpi-sub">학생 181 · 조교 2 · 교수 2</div></div>
+        <div class="kpi-card"><div class="kpi-label"><i class="ti ti-eye" aria-hidden="true"></i>슬라이드 총 조회수</div><div class="kpi-value" id="kv-views">4,823회</div><div class="kpi-sub"><span class="kpi-delta">↑ 지난 기간 대비 +18%</span></div></div>
+        <div class="kpi-card"><div class="kpi-label"><i class="ti ti-robot" aria-hidden="true"></i>AI 튜터 호출</div><div class="kpi-value" id="kv-ai">1,247회</div><div class="kpi-sub"><span class="kpi-delta">↑ 지난 기간 대비 +31%</span></div></div>
+        <div class="kpi-card"><div class="kpi-label"><i class="ti ti-user-check" aria-hidden="true"></i>1인당 평균 조회수</div><div class="kpi-value" id="kv-avg">26.1회</div><div class="kpi-sub">활성 사용자 133명 기준</div></div>
+      </div>
+      <div class="two-col">
+        <div class="section-card">
+          <div class="card-header"><span class="card-title"><i class="ti ti-chart-bar" aria-hidden="true"></i>월별 슬라이드 조회수</span></div>
+          <div class="bar-chart-wrap" id="views-chart"></div>
+        </div>
+        <div class="section-card">
+          <div class="card-header"><span class="card-title"><i class="ti ti-users-group" aria-hidden="true"></i>구성원 활동 현황</span></div>
+          <div class="donut-wrap">
+            <svg width="90" height="90" viewBox="0 0 100 100" aria-label="활성 사용자 비율">
+              <circle cx="50" cy="50" r="38" fill="none" stroke="var(--color-background-tertiary)" stroke-width="14"/>
+              <circle cx="50" cy="50" r="38" fill="none" stroke="#1D9E75" stroke-width="14" stroke-dasharray="173 66" stroke-dashoffset="30" stroke-linecap="round"/>
+              <circle cx="50" cy="50" r="38" fill="none" stroke="#EF9F27" stroke-width="14" stroke-dasharray="30 209" stroke-dashoffset="-143" stroke-linecap="round"/>
+              <text x="50" y="46" text-anchor="middle" font-size="14" font-weight="500" fill="var(--color-text-primary)">72%</text>
+              <text x="50" y="59" text-anchor="middle" font-size="9" fill="var(--color-text-tertiary)">활성</text>
+            </svg>
+            <div>
+              <div class="legend-item"><div class="legend-dot" style="background:#1D9E75"></div>활성 133명 (72%)</div>
+              <div class="legend-item"><div class="legend-dot" style="background:#EF9F27"></div>비활성 14명 (8%)</div>
+              <div class="legend-item"><div class="legend-dot" style="background:var(--color-background-tertiary)"></div>미인증 38명 (20%)</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="section-card">
+        <div class="card-header"><span class="card-title"><i class="ti ti-trophy" aria-hidden="true"></i>인기 슬라이드 TOP 10</span><span style="font-size:11px;color:var(--color-text-tertiary)">클릭하면 슬라이드 열람</span></div>
+        <div id="rank-list"></div>
+      </div>
+      <div class="section-card" style="margin-top:14px">
+        <div class="card-header"><span class="card-title"><i class="ti ti-robot" aria-hidden="true"></i>AI 튜터 월별 호출</span></div>
+        <div class="bar-chart-wrap" id="ai-chart"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── 데이터 ──
+const ROLES=['학생','조교','교수']
+let members=[
+  {name:'김민준',email:'mjkim001@cnu.ac.kr',role:'학생',status:'인증 완료'},
+  {name:'이서연',email:'sylee002@cnu.ac.kr',role:'학생',status:'인증 완료'},
+  {name:'박지호',email:'jhpark003@cnu.ac.kr',role:'학생',status:'대기 중'},
+  {name:'최수아',email:'sachoi004@cnu.ac.kr',role:'조교',status:'인증 완료'},
+  {name:'정우진',email:'wjjeong005@cnu.ac.kr',role:'교수',status:'인증 완료'},
+  {name:'강하은',email:'hekang006@cnu.ac.kr',role:'학생',status:'인증 완료'},
+  {name:'윤도현',email:'dhyoon007@cnu.ac.kr',role:'학생',status:'대기 중'},
+  {name:'임지수',email:'jslim008@cnu.ac.kr',role:'조교',status:'인증 완료'},
+  {name:'한소희',email:'shhan009@cnu.ac.kr',role:'교수',status:'인증 완료'},
+  {name:'오민서',email:'msoh010@cnu.ac.kr',role:'학생',status:'인증 완료'},
+]
+let original=JSON.stringify(members)
+
+const PLANS=[
+  {id:'basic',name:'캠퍼스 플랜 — 조직학',desc:'조직학 전체 컬렉션',expire:'2027-08-31',slides:[
+    {id:'HS-HST-001',name:'소장 · Small Intestine',cat:'조직학',stain:'H&E'},
+    {id:'HS-HST-002',name:'대장 · Large Intestine',cat:'조직학',stain:'H&E'},
+    {id:'HS-HST-003',name:'간 · Liver',cat:'조직학',stain:'H&E'},
+    {id:'HS-HST-004',name:'신장 · Kidney',cat:'조직학',stain:'PAS'},
+    {id:'HS-HST-005',name:'폐 · Lung',cat:'조직학',stain:'H&E'},
+    {id:'HS-HST-006',name:'림프절 · Lymph Node',cat:'조직학',stain:'H&E'},
+    {id:'HS-HST-007',name:'비장 · Spleen',cat:'조직학',stain:'H&E'},
+    {id:'HS-HST-008',name:'심장 · Heart',cat:'조직학',stain:'Masson'},
+    {id:'HS-HST-009',name:'피부 · Skin',cat:'조직학',stain:'H&E'},
+    {id:'HS-HST-010',name:'척수 · Spinal Cord',cat:'조직학',stain:'H&E'},
+  ]},
+]
+const RANKS=[
+  {id:'HS-HST-001',name:'소장 · Small Intestine',views:487,cat:'조직학'},
+  {id:'HS-HST-006',name:'림프절 · Lymph Node',views:412,cat:'조직학'},
+  {id:'HS-HST-003',name:'간 · Liver',views:389,cat:'조직학'},
+  {id:'HS-HST-004',name:'신장 · Kidney',views:298,cat:'조직학'},
+  {id:'HS-HST-005',name:'폐 · Lung',views:276,cat:'조직학'},
+  {id:'HS-HST-008',name:'심장 · Heart',views:251,cat:'조직학'},
+  {id:'HS-HST-002',name:'대장 · Large Intestine',views:234,cat:'조직학'},
+  {id:'HS-HST-009',name:'피부 · Skin',views:198,cat:'조직학'},
+  {id:'HS-HST-007',name:'비장 · Spleen',views:176,cat:'조직학'},
+  {id:'HS-HST-010',name:'척수 · Spinal Cord',views:154,cat:'조직학'},
+]
+const PERIOD_DATA={
+  '1개월':{views:1842,ai:498,months:['10월'],vd:[1842],ad:[498]},
+  '3개월':{views:4823,ai:1247,months:['8월','9월','10월'],vd:[1204,1777,1842],ad:[312,437,498]},
+  '6개월':{views:9210,ai:2341,months:['5월','6월','7월','8월','9월','10월'],vd:[820,940,1102,1502,1777,1842],ad:[180,220,280,370,437,498]},
+  '전체':{views:11340,ai:2890,months:['3월','4월','5월','6월','7월','8월','9월','10월'],vd:[320,490,820,940,1102,1502,1777,1842],ad:[60,90,180,220,280,370,437,498]},
+}
+let currentPeriod='3개월'
+let activePlanId=null
+let currentSlides=[]
+let pendingDeleteIdx=null
+let pendingAdminBtn=null
+let adminCount=2
+
+// ── 탭 전환 ──
+function switchTab(t){
+  ['members','plans','report'].forEach(id=>{
+    document.getElementById('tab-'+id).classList.toggle('active',id===t)
+    document.getElementById('nav-'+id).classList.toggle('active',id===t)
+  })
+  if(t==='report') renderReport()
+  if(t==='plans') renderPlans()
+}
+
+// ── 명단 관리 ──
+function renderTable(data){
+  const tbody=document.getElementById('member-tbody')
+  tbody.innerHTML=''
+  data.forEach(m=>{
+    const idx=members.indexOf(m)
+    const orig=JSON.parse(original)[idx]
+    const changed=orig&&(m.name!==orig.name||m.email!==orig.email||m.role!==orig.role)
+    const tr=document.createElement('tr')
+    if(changed)tr.classList.add('row-changed')
+    const nameTd=document.createElement('td')
+    nameTd.innerHTML=`<div class="td-inner"><span class="row-num">${idx+1}</span><input class="cell-input" value="${esc(m.name)}" aria-label="이름" oninput="updateField(${idx},'name',this.value)"></div>`
+    const emailTd=document.createElement('td')
+    emailTd.innerHTML=`<div class="td-inner"><input class="cell-input" value="${esc(m.email)}" aria-label="이메일" oninput="updateField(${idx},'email',this.value)"></div>`
+    const roleTd=document.createElement('td')
+    roleTd.innerHTML=`<div class="td-inner"><select class="cell-input" aria-label="지위" onchange="updateField(${idx},'role',this.value)">${ROLES.map(r=>`<option${r===m.role?' selected':''}>${r}</option>`).join('')}</select></div>`
+    const statusTd=document.createElement('td')
+    statusTd.innerHTML=`<div class="td-inner"><span class="badge ${m.status==='인증 완료'?'badge-active':'badge-pending'}">${m.status}</span></div>`
+    const delTd=document.createElement('td')
+    delTd.innerHTML=`<div class="td-inner" style="justify-content:center;padding:7px 6px"><button class="del-btn" aria-label="${esc(m.name)} 삭제" onclick="openDelModal(${idx})"><i class="ti ti-trash" aria-hidden="true"></i></button></div>`
+    tr.appendChild(nameTd);tr.appendChild(emailTd);tr.appendChild(roleTd);tr.appendChild(statusTd);tr.appendChild(delTd)
+    tr.addEventListener('mouseenter',()=>tr.querySelector('.del-btn').style.opacity='1')
+    tr.addEventListener('mouseleave',()=>tr.querySelector('.del-btn').style.opacity='0.35')
+    tbody.appendChild(tr)
+  })
+  document.getElementById('row-count').textContent=data.length+'명'
+  updateStats()
+}
+function updateField(idx,field,val){members[idx][field]=val;markDirty();updateStats()}
+function markDirty(){document.getElementById('save-bar').classList.remove('hidden');document.getElementById('save-bar-bottom').classList.remove('hidden')}
+function saveChanges(){original=JSON.stringify(members);document.getElementById('save-bar').classList.add('hidden');document.getElementById('save-bar-bottom').classList.add('hidden');renderTable(members);showToast('변경사항이 저장됐습니다 ✓')}
+function cancelChanges(){members=JSON.parse(original);document.getElementById('save-bar').classList.add('hidden');document.getElementById('save-bar-bottom').classList.add('hidden');renderTable(members);showToast('변경사항을 되돌렸습니다')}
+function filterTable(q){renderTable(q?members.filter(m=>m.name.includes(q)||m.email.includes(q)):members)}
+function filterByRole(r){renderTable(r?members.filter(m=>m.role===r):members)}
+function addRow(){members.push({name:'',email:'',role:'학생',status:'대기 중'});markDirty();renderTable(members);const inp=document.querySelectorAll('#member-tbody tr:last-child input');if(inp[0])inp[0].focus()}
+function simulateUpload(){members.push({name:'신입생A',email:'new001@cnu.ac.kr',role:'학생',status:'대기 중'},{name:'신입생B',email:'new002@cnu.ac.kr',role:'학생',status:'대기 중'});markDirty();renderTable(members);showToast('2명이 추가됐습니다. 저장 후 시스템에 반영됩니다.')}
+function updateStats(){
+  const total=300,n=members.length,pct=n/total*100
+  document.getElementById('to-display').textContent=n+' / '+total+'명'
+  const bar=document.getElementById('to-bar')
+  bar.style.width=Math.min(pct,100)+'%'
+  bar.style.background=n>=total?'#E24B4A':pct>=90?'#EF9F27':'#1D9E75'
+  document.getElementById('to-sub').textContent=n>=total?'⚠ TO 초과 — 신규 인증 차단 중':'잔여 '+(total-n)+'명 · TO 초과 시 신규 인증 차단'
+  document.getElementById('cnt-s').textContent='학생 '+members.filter(m=>m.role==='학생').length+'명'
+  document.getElementById('cnt-a').textContent='조교 '+members.filter(m=>m.role==='조교').length+'명'
+  document.getElementById('cnt-p').textContent='교수 '+members.filter(m=>m.role==='교수').length+'명'
+  document.getElementById('cnt-ok').textContent=members.filter(m=>m.status==='인증 완료').length+'명'
+  document.getElementById('cnt-wait').textContent=members.filter(m=>m.status==='대기 중').length+'명'
+}
+function downloadMemberList(){
+  const now=new Date(),stamp=`${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`
+  const rows=members.map((m,i)=>[i+1,m.name,m.email,m.role,m.status])
+  const csv=[['번호','이름','이메일','지위','인증 상태'],...rows].map(r=>r.join(',')).join('\n')
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'}));a.download=`충남대_의과대학_명단_${stamp}.csv`;a.click();URL.revokeObjectURL(a.href)
+  showToast('명단 다운로드 완료')
+}
+
+// ── 삭제 모달 ──
+function openDelModal(idx){
+  pendingDeleteIdx=idx;pendingAdminBtn=null
+  const m=members[idx],rl=m.role==='교수'?'교수님':m.role
+  document.getElementById('modal-q').innerHTML=`<strong>${esc(m.name)} ${rl}</strong>을 명단에서 삭제하시겠습니까?`
+  document.getElementById('modal-warn').textContent='삭제하면 이 구성원의 슬라이드 접근 권한이 즉시 차단됩니다.'
+  document.getElementById('modal-hint').textContent='재등록이 필요한 경우 명단에 다시 추가하십시오.'
+  document.getElementById('modal-confirm').onclick=confirmDelete
+  document.getElementById('del-modal').classList.remove('hidden')
+  document.getElementById('modal-confirm').focus()
+}
+function openAdminDelModal(btn,name){
+  pendingAdminBtn=btn;pendingDeleteIdx=null
+  document.getElementById('modal-q').innerHTML=`<strong>${esc(name)} 관리자</strong>를 삭제하시겠습니까?`
+  document.getElementById('modal-warn').textContent='삭제하면 이 관리자의 포털 접근 권한이 즉시 차단됩니다.'
+  document.getElementById('modal-hint').textContent='재등록이 필요한 경우 관리자 추가에서 다시 등록하십시오.'
+  document.getElementById('modal-confirm').onclick=confirmAdminDelete
+  document.getElementById('del-modal').classList.remove('hidden')
+  document.getElementById('modal-confirm').focus()
+}
+function closeModal(){pendingDeleteIdx=null;pendingAdminBtn=null;document.getElementById('del-modal').classList.add('hidden')}
+function confirmDelete(){if(pendingDeleteIdx===null)return;const name=members[pendingDeleteIdx].name;members.splice(pendingDeleteIdx,1);closeModal();markDirty();renderTable(members);showToast(name+'님이 삭제됐습니다')}
+function confirmAdminDelete(){
+  if(!pendingAdminBtn)return
+  const item=pendingAdminBtn.closest('.admin-item'),name=item.querySelector('.admin-name').textContent
+  item.remove();adminCount--
+  document.getElementById('admin-count-label').textContent=adminCount+' / 5명'
+  const slot=document.createElement('div');slot.className='admin-slot';slot.innerHTML=`<i class="ti ti-plus-circle" aria-hidden="true"></i><span>슬롯 ${adminCount+1} — 비어 있음</span>`
+  document.getElementById('admin-list').appendChild(slot)
+  document.getElementById('add-admin-btn').disabled=false
+  closeModal();showToast(name+' 관리자가 삭제됐습니다')
+}
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal()})
+
+function addAdmin(){
+  if(adminCount>=5){showToast('기관 관리자는 최대 5명까지 등록 가능합니다');return}
+  const email=prompt('추가할 관리자 이메일을 입력하세요');if(!email)return
+  const name=email.split('@')[0];adminCount++
+  document.getElementById('admin-count-label').textContent=adminCount+' / 5명'
+  const list=document.getElementById('admin-list'),slots=list.querySelectorAll('.admin-slot')
+  if(slots[0]){
+    const item=document.createElement('div');item.className='admin-item'
+    item.innerHTML=`<div class="admin-avatar">${esc(name[0])}</div><div class="admin-info"><div class="admin-name">${esc(name)}</div><div class="admin-email">${esc(email)}</div></div><span class="badge badge-pending" style="margin-right:8px">초대 중</span><button class="del-btn" aria-label="관리자 삭제" onclick="openAdminDelModal(this,'${esc(name)}')"><i class="ti ti-trash" aria-hidden="true"></i></button>`
+    const db=item.querySelector('.del-btn');db.addEventListener('mouseenter',function(){this.style.opacity='1'});db.addEventListener('mouseleave',function(){this.style.opacity='0.35'})
+    list.insertBefore(item,slots[0]);slots[0].remove()
+  }
+  if(adminCount>=5)document.getElementById('add-admin-btn').disabled=true
+}
+
+// ── 구독 플랜 ──
+function dday(expire){return Math.ceil((new Date(expire)-new Date())/86400000)}
+function renderPlans(){
+  document.getElementById('plan-list').innerHTML=PLANS.map(p=>{
+    const d=dday(p.expire),cls=d<0?'expire-danger':d<=30?'expire-warn':'expire-ok'
+    const label=d<0?'만료됨':`D-${d} · ${p.expire.replace(/-/g,'.')}`
+    return`<div class="plan-card${activePlanId===p.id?' active':''}" onclick="selectPlan('${p.id}')">
+      <div class="plan-icon"><i class="ti ti-microscope" aria-hidden="true"></i></div>
+      <div class="plan-info"><div class="plan-name">${p.name}</div><div class="plan-meta">${p.desc} · 슬라이드 ${p.slides.length}종</div></div>
+      <span class="badge ${d<0?'badge-warn':d<=30?'badge-warn':'badge-active'}" style="margin-right:8px">${d<0?'만료':'구독 중'}</span>
+      <span class="${cls}">${label}</span>
+      <i class="ti ti-chevron-right plan-arrow" aria-hidden="true"></i>
+    </div>`}).join('')
+}
+function selectPlan(id){
+  activePlanId=id
+  renderPlans()
+  const plan=PLANS.find(p=>p.id===id)
+  currentSlides=plan.slides
+  document.getElementById('slide-panel-title').innerHTML=`<i class="ti ti-microscope" aria-hidden="true"></i>${plan.name} · 슬라이드 목록`
+  document.getElementById('slide-panel').style.display='block'
+  renderSlideList(currentSlides)
+}
+function renderSlideList(data){
+  document.getElementById('slide-count').textContent=data.length+'종'
+  document.getElementById('slide-list-body').innerHTML=data.map((s,i)=>{
+    const sc=s.stain==='H&E'?'stain-he':s.stain==='PAS'?'stain-pas':'stain-mt'
+    return`<div class="slide-row-link" onclick="showToast('뷰어 이동: /viewer/${s.id}')">
+      <span style="font-size:11px;color:var(--color-text-tertiary);font-family:var(--font-mono);width:32px;flex-shrink:0">${i+1}</span>
+      <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:500">${s.name}</div><div style="font-size:11px;color:var(--color-text-tertiary);font-family:var(--font-mono)">${s.id}</div></div>
+      <span style="font-size:12px;color:var(--color-text-tertiary);margin-right:8px">${s.cat}</span>
+      <span class="stain-badge ${sc}">${s.stain}</span>
+      <span class="open-hint"><i class="ti ti-external-link" aria-hidden="true"></i>열람</span>
+    </div>`}).join('')
+}
+function filterSlides(q){renderSlideList(q?currentSlides.filter(s=>s.name.toLowerCase().includes(q.toLowerCase())||s.id.toLowerCase().includes(q.toLowerCase())):currentSlides)}
+function downloadSlideCSV(){
+  if(!activePlanId){showToast('플랜을 먼저 선택하세요');return}
+  const plan=PLANS.find(p=>p.id===activePlanId)
+  const csv=[['번호','슬라이드 ID','슬라이드명','카테고리','염색법'],...currentSlides.map((s,i)=>[i+1,s.id,s.name,s.cat,s.stain])].map(r=>r.join(',')).join('\n')
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'}));a.download=`충남대_${plan.name}_슬라이드목록.csv`;a.click();showToast('엑셀 다운로드 완료')
+}
+function downloadSlidePDF(){showToast('PDF 다운로드 — 브라우저 인쇄 미리보기로 생성됩니다')}
+
+// ── 이용 리포트 ──
+function setPeriod(btn,period){
+  currentPeriod=period
+  document.querySelectorAll('.period-btn').forEach(b=>b.classList.remove('active'))
+  btn.classList.add('active')
+  renderReport()
+}
+function renderReport(){
+  const d=PERIOD_DATA[currentPeriod]
+  document.getElementById('kv-views').textContent=d.views.toLocaleString()+'회'
+  document.getElementById('kv-ai').textContent=d.ai.toLocaleString()+'회'
+  document.getElementById('kv-avg').textContent=(d.views/133).toFixed(1)+'회'
+  renderBarChart('views-chart',d.months,d.vd,'#1D9E75')
+  renderBarChart('ai-chart',d.months,d.ad,'#534AB7')
+  renderRanks()
+}
+function renderBarChart(id,labels,values,color){
+  const max=Math.max(...values)
+  document.getElementById(id).innerHTML=labels.map((l,i)=>`
+    <div class="bar-row"><span class="bar-label">${l}</span>
+    <div class="bar-track"><div class="bar-fill" style="width:${max>0?Math.round(values[i]/max*100):0}%;background:${color}">
+    <span class="bar-val">${values[i].toLocaleString()}</span></div></div></div>`).join('')
+}
+function renderRanks(){
+  const max=RANKS[0].views
+  document.getElementById('rank-list').innerHTML=RANKS.map((s,i)=>{
+    const cls=i===0?'rank-1':i===1?'rank-2':i===2?'rank-3':'rank-other'
+    return`<div class="rank-item" onclick="showToast('뷰어 이동: /viewer/${s.id}')">
+      <div class="rank-num ${cls}">${i+1}</div>
+      <div class="rank-info"><div class="rank-name">${s.name}</div><div class="rank-id">${s.id} · ${s.cat}</div></div>
+      <div class="rank-bar-wrap"><div class="rank-bar-track"><div class="rank-bar-fill" style="width:${Math.round(s.views/max*100)}%"></div></div><div class="rank-count">${s.views.toLocaleString()}회</div></div>
+      <span class="rank-link"><i class="ti ti-external-link" aria-hidden="true"></i>열람</span>
+    </div>`}).join('')
+}
+function generatePDF(){showToast('PDF 리포트 생성 — 브라우저 인쇄 미리보기')}
+
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+let toastTimer
+function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),2600)}
+
+// 초기 렌더
+renderTable(members)
+</script>
