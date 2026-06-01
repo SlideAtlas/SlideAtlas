@@ -3,7 +3,7 @@ from fastapi.responses import Response
 import openslide_bin
 import openslide
 from openslide import deepzoom
-import boto3, io, os, re
+import boto3, io, os, re, time, hmac, hashlib
 from PIL import Image
 
 app = FastAPI(title="SlideAtlas TileServer")
@@ -14,7 +14,50 @@ CACHE = {}
 os.makedirs(SLIDES_DIR, exist_ok=True)
 os.makedirs(SLIDES_DIR2, exist_ok=True)
 
+# ── [블로커1] 타일서버 자체 인가 (HMAC 타일토큰 직접 검증) ──
+# Flask 의 generate_tile_token 과 동일 시크릿(JWT_SECRET_KEY)·동일 페이로드
+#   (user_id:institution_id:slide_id:exp) 로 HMAC-SHA256 서명을 검증한다.
+# 포트 8000 에 직접 GET 하더라도 유효 토큰 없이는 타일을 내주지 않는다(Flask 게이트 우회 차단).
+# 시크릿은 환경변수에서만 읽고, 미설정 시 fail-closed(모든 요청 거부).
+_SLIDE_RE = re.compile(r'^SA-[A-Z]+-\d+$')
+
+
+def _tile_secret():
+    s = os.environ.get("JWT_SECRET_KEY")
+    if not s:
+        # fail-closed: 시크릿 미설정이면 어떤 토큰도 검증 불가 → 전면 거부.
+        raise HTTPException(status_code=503, detail="tileserver secret not configured")
+    return s
+
+
+def _verify_tile_token(token: str, user_id: str, institution_id: str, slide_id: str) -> bool:
+    try:
+        exp_str, sig = token.split(":", 1)
+        exp = int(exp_str)
+        if exp < int(time.time()):
+            return False
+        msg = f"{user_id}:{institution_id}:{slide_id}:{exp}"
+        expected = hmac.new(_tile_secret().encode(), msg.encode(), hashlib.sha256).hexdigest()
+        return hmac.compare_digest(sig, expected)
+    except HTTPException:
+        raise
+    except Exception:
+        return False
+
+
+def require_token(slide_id: str, t, u, i):
+    """slide_id 형식 + HMAC 타일토큰 검증. 토큰에 바인딩된 slide_id 와 경로 slide_id 가
+    일치할 때만(서명이 경로 slide_id 로 재계산되므로 불일치 시 서명 실패) 통과."""
+    if not slide_id or not _SLIDE_RE.match(slide_id):
+        raise HTTPException(status_code=400, detail="invalid slide_id")
+    if not t or not _verify_tile_token(t, u or "", i or "", slide_id):
+        raise HTTPException(status_code=401, detail="tile token invalid")
+
+
 def get_slide(slide_id):
+    # 방어적 입력 검증(트래버설·이상 slide_id 차단) — 모든 진입점이 거치는 단일 지점.
+    if not slide_id or not _SLIDE_RE.match(slide_id):
+        raise HTTPException(status_code=400, detail="invalid slide_id")
     if slide_id in CACHE:
         return CACHE[slide_id]
 
@@ -79,7 +122,8 @@ def health():
     return {"status": "ok"}
 
 @app.get("/info/{slide_id}")
-def info(slide_id: str):
+def info(slide_id: str, t: str = "", u: str = "", i: str = ""):
+    require_token(slide_id, t, u, i)
     c = get_slide(slide_id)
     slide = c["slide"]
     dz = c["dz"]
@@ -94,7 +138,8 @@ def info(slide_id: str):
     }
 
 @app.get("/dzi/{slide_id}.dzi")
-def dzi(slide_id: str):
+def dzi(slide_id: str, t: str = "", u: str = "", i: str = ""):
+    require_token(slide_id, t, u, i)
     c = get_slide(slide_id)
     dz = c["dz"]
     w, h = dz.level_dimensions[-1]
@@ -106,11 +151,13 @@ def dzi(slide_id: str):
     return Response(xml, media_type="application/xml")
 
 @app.api_route("/dzi/{path:path}", methods=["GET"])
-def tile_catch_all(path: str):
-    m = re.match(r'^(.+)_files/(\d+)/(\d+)_(\d+)\.(jpeg|jpg)$', path)
+def tile_catch_all(path: str, t: str = "", u: str = "", i: str = ""):
+    # slide_id 그룹을 SA-형식으로 한정 → '..' 등 트래버설이 group(1)에 섞이지 못한다.
+    m = re.match(r'^(SA-[A-Z]+-\d+)_files/(\d+)/(\d+)_(\d+)\.(jpeg|jpg)$', path)
     if not m:
-        raise HTTPException(status_code=404, detail=f"Invalid path: {path}")
+        raise HTTPException(status_code=404, detail="Invalid path")
     slide_id, level, col, row = m.group(1), int(m.group(2)), int(m.group(3)), int(m.group(4))
+    require_token(slide_id, t, u, i)
     try:
         c = get_slide(slide_id)
         t = c["dz"].get_tile(level, (col, row))

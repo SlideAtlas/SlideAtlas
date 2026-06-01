@@ -152,20 +152,33 @@ def _reset_failed_attempts(cur, user_id: int):
 
 
 def _check_auto_unlock(cur, user_id: int, status: str, locked_at) -> str:
-    """locked_at 으로부터 LOCK_WINDOW_HRS 경과 시 자동 해제. 현재 유효 status 반환."""
+    """locked_at 으로부터 LOCK_WINDOW_HRS 경과 시 자동 해제. 현재 유효 status 반환.
+
+    [블로커4] 잠금 해제는 '잠금 직전 상태로 복원'만 한다 — pending_verification→active 승급을
+    절대 만들지 않는다. 미검증 계정에 active를 부여하는 유일한 경로는 verify_email(구독·좌석·
+    접근창 검사 통과)뿐이어야 한다(§6-2·§6-3·§8).
+      · 검증 이력(last_login IS NOT NULL = verify_email/login에서만 채워짐)이 있으면 → active 복원.
+      · 미검증(last_login IS NULL)이면 → pending_verification 으로 복원(보수적 기본값).
+    last_login 은 users 테이블에서 verify_email 성공·login 성공 시에만 채워지므로(둘 다 active 전제)
+    'NULL = 한 번도 active였던 적 없음'이 성립한다. 직전 상태를 알 수 없으면 pending_verification.
+    """
     if status != "locked" or locked_at is None:
         return status
     now = _now()
     locked_at = _aware(locked_at)
     if (now - locked_at).total_seconds() > LOCK_WINDOW_HRS * 3600:
+        cur.execute("SELECT last_login FROM users WHERE id = %s", (user_id,))
+        r = cur.fetchone()
+        verified_before = bool(r and r[0] is not None)
+        restored = "active" if verified_before else "pending_verification"
         cur.execute(
             """UPDATE users
-               SET status = 'active', locked_at = NULL,
+               SET status = %s, locked_at = NULL,
                    failed_attempts = 0, failed_window_start = NULL
                WHERE id = %s""",
-            (user_id,),
+            (restored, user_id),
         )
-        return "active"
+        return restored
     return "locked"
 
 

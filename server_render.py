@@ -3,6 +3,7 @@ load_dotenv()
 
 import os
 import sys
+import re
 import threading
 import json
 from functools import wraps
@@ -436,24 +437,72 @@ def init_slide(slide_id):
             return False
 
 # ── EC2 타일서버 프록시 ──
+# [블로커2] 경로 트래버설 차단: subpath 를 raw 로 업스트림에 넘기지 않는다.
+#   허용 패턴(아래 4종)으로만 파싱하고, 검증된 컴포넌트(slide_id/level/col/row/ext)로
+#   업스트림 URL을 **재구성**한다. 게이트 검사한 slide_id == 업스트림 slide_id 를 보장.
+#   slide_id 정규식 ^SA-[A-Z]+-\d+$ / level·col·row 정수 / ext 화이트리스트(.dzi/.jpeg/.jpg).
+_EC2_SLIDE_RE = r'SA-[A-Z]+-\d+'
+_EC2_DZI_RE   = re.compile(r'^dzi/(' + _EC2_SLIDE_RE + r')\.dzi$')
+_EC2_TILE_RE  = re.compile(r'^dzi/(' + _EC2_SLIDE_RE + r')_files/(\d+)/(\d+)_(\d+)\.(jpeg|jpg)$')
+_EC2_THUMB_RE = re.compile(r'^thumbnail/(' + _EC2_SLIDE_RE + r')$')
+_EC2_INFO_RE  = re.compile(r'^info/(' + _EC2_SLIDE_RE + r')$')
+
+
+def _ec2_parse_subpath(subpath):
+    """허용 패턴만 파싱해 (slide_id, 재구성된 upstream subpath) 반환. 불허 시 (None, None).
+
+    subpath 에 '..' / '%' 가 있으면 무조건 거부(트래버설·인코딩 우회 차단).
+    """
+    if '..' in subpath or '%' in subpath:
+        return None, None
+    m = _EC2_DZI_RE.match(subpath)
+    if m:
+        sid = m.group(1)
+        return sid, f"dzi/{sid}.dzi"
+    m = _EC2_TILE_RE.match(subpath)
+    if m:
+        sid, level, col, row, ext = m.groups()
+        return sid, f"dzi/{sid}_files/{int(level)}/{int(col)}_{int(row)}.{ext}"
+    m = _EC2_THUMB_RE.match(subpath)
+    if m:
+        sid = m.group(1)
+        return sid, f"thumbnail/{sid}"
+    m = _EC2_INFO_RE.match(subpath)
+    if m:
+        sid = m.group(1)
+        return sid, f"info/{sid}"
+    return None, None
+
+
 @app.route('/ec2tile/<path:subpath>')
 @login_required
 def ec2_proxy(subpath):
-    # slide_id 추출: "dzi/SA-HST-001.dzi" → "SA-HST-001"
-    parts = subpath.split('/')
-    raw = parts[1] if len(parts) > 1 else parts[0]
-    slide_id = raw.replace('.dzi', '').split('_files')[0]
-    # 기관·is_public 격리 (§12-4 ①⑤)
+    from flask import g as _g
+    # [블로커2] 허용 패턴 파싱 + slide_id/컴포넌트 검증 → upstream 재구성용 안전 경로 확보
+    slide_id, safe_subpath = _ec2_parse_subpath(subpath)
+    if slide_id is None:
+        return _tile_err("BAD_REQUEST", "잘못된 타일 경로입니다", 400)
+    # 과목 구독 단일 게이트 (§8)
     allowed, aerr = _slide_access_allowed(slide_id)
     if not allowed:
         return aerr
-    # 타일 토큰 검증 (TTL 5분)
+    # 타일 토큰 검증 (TTL 5분, g.user_id·g.institution_id·slide_id 대조)
     err = _verify_tile_request(slide_id)
     if err:
         return err
 
     import urllib.request
-    url = f"{EC2_TILESERVER}/{subpath}"
+    import urllib.parse
+    import urllib.error
+    # [블로커1] defense-in-depth: 타일서버도 토큰을 직접 검증할 수 있도록 t·u·i 전달.
+    #   u·i 는 클라이언트 입력이 아니라 인증된 g 값(토큰 페이로드와 동일)을 사용한다.
+    token = request.args.get("t", "")
+    qs = urllib.parse.urlencode({
+        "t": token,
+        "u": str(getattr(_g, 'user_id', '')),
+        "i": getattr(_g, 'institution_id', '') or "",
+    })
+    url = f"{EC2_TILESERVER}/{safe_subpath}?{qs}"
     try:
         with urllib.request.urlopen(url, timeout=120) as resp:
             data = resp.read()
@@ -461,6 +510,10 @@ def ec2_proxy(subpath):
             r = Response(data, mimetype=ct)
             r.headers['Cache-Control'] = 'no-store, no-cache'
             return r
+    except urllib.error.HTTPError as e:
+        # 타일서버가 토큰 거부(401/403) 등 → 상태코드 전달(불투명 502로 뭉개지 않음)
+        print(f"EC2 proxy upstream {e.code}: {url}")
+        return Response("tile upstream error", status=e.code if e.code in (401, 403, 404) else 502)
     except Exception as e:
         print(f"EC2 proxy error {url}: {e}")
         return Response(str(e), status=502)
@@ -925,7 +978,7 @@ def _term_label(term: str) -> str:
 
 
 @app.route('/admin/api/dashboard', methods=['GET'])
-@admin_required
+@super_admin_required
 def api_dashboard():
     from datetime import date, timedelta
     today = date.today()

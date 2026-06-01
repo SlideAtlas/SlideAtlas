@@ -1522,3 +1522,168 @@ def test_admin_secret_key_required_at_startup():
         else:
             os.environ["ADMIN_SECRET_KEY"] = "test-admin-secret-for-pytest"
         importlib.reload(_sr)
+
+
+# ════════════════════════════════════════════════════════════════════════
+# 외부검증 출시블로커 회귀 테스트 (audit-blockers-2026-06)
+# ════════════════════════════════════════════════════════════════════════
+
+# ── 블로커4: 잠금 해제가 pending_verification → active 승급을 만들지 않는다 ──
+def test_auto_unlock_pending_account_stays_blocked(client, mock_db):
+    """[블로커4] 미검증(last_login NULL) 계정이 24h 후 자동해제돼도 active로 승급되지 않는다.
+    올바른 비밀번호로 로그인해도 verify_email(구독·좌석·접근창)을 우회해 active가 되면 안 됨."""
+    from werkzeug.security import generate_password_hash
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+
+        locked_at = datetime.now(timezone.utc) - timedelta(hours=25)  # 24h 경과 → 자동해제 대상
+        mock_db["cursor"].fetchone.side_effect = [
+            # 로그인 SELECT: status='locked'
+            (1, "YU", "student", False,
+             generate_password_hash("password"), "locked", locked_at, None,
+             datetime.now(timezone.utc).date() + timedelta(days=365)),
+            # _check_auto_unlock 의 SELECT last_login → NULL (한 번도 검증된 적 없음)
+            (None,),
+        ]
+
+        resp = client.post("/api/auth/login",
+                           json={"email": "test@example.com", "password": "password"})
+
+        # active 로 승급 금지 → 비활성 계정으로 차단(ACCOUNT_INACTIVE), 로그인 성공(200) 금지.
+        assert resp.status_code == 403
+        assert resp.get_json()["error"] == "ACCOUNT_INACTIVE"
+        # 복원 UPDATE 의 status 파라미터가 'active' 가 아니라 'pending_verification' 인지 확인.
+        update_calls = [c for c in mock_db["cursor"].execute.call_args_list
+                        if "SET status = %s" in str(c.args[0]) and "locked_at = NULL" in str(c.args[0])]
+        assert update_calls, "자동해제 UPDATE 가 실행되지 않음"
+        assert update_calls[0].args[1][0] == "pending_verification"  # active 승급 금지
+
+
+def test_auto_unlock_verified_account_restores_active(client, mock_db):
+    """[블로커4] 검증 이력(last_login NOT NULL) 계정은 24h 후 자동해제 시 active 로 복원되어 로그인 성공."""
+    from werkzeug.security import generate_password_hash
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+
+        locked_at = datetime.now(timezone.utc) - timedelta(hours=25)
+        mock_db["cursor"].fetchone.side_effect = [
+            (1, "YU", "student", False,
+             generate_password_hash("password"), "locked", locked_at, None,
+             datetime.now(timezone.utc).date() + timedelta(days=365)),
+            # last_login 존재 → 과거 active 였음 → active 복원
+            (datetime.now(timezone.utc) - timedelta(days=10),),
+        ]
+
+        resp = client.post("/api/auth/login",
+                           json={"email": "test@example.com", "password": "password"})
+
+        assert resp.status_code == 200
+        assert resp.get_json()["success"] is True
+
+
+# ── 블로커3: 대시보드 API 는 super_admin 전용(staff 403) ──
+def test_dashboard_api_staff_forbidden(client, mock_db):
+    """[블로커3] staff 가 /admin/api/dashboard 직접 호출 → 403 (재무 데이터 노출 차단)."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+        # _get_admin_user: (id, role, name, status) — staff 권한
+        mock_db["cursor"].fetchone.return_value = (2, "staff", "Staff", "active")
+        _admin_session(client, 'admin-csrf')
+
+        resp = client.get("/admin/api/dashboard")
+        assert resp.status_code == 403
+
+
+# ── 블로커2: ec2_proxy 경로 트래버설/비화이트리스트 차단 + 안전 재구성 ──
+def test_ec2_parse_subpath_valid_patterns():
+    """[블로커2] 허용 패턴은 검증된 컴포넌트로 재구성되고 slide_id 가 정확히 추출된다."""
+    from server_render import _ec2_parse_subpath
+    assert _ec2_parse_subpath("dzi/SA-HST-001.dzi") == ("SA-HST-001", "dzi/SA-HST-001.dzi")
+    sid, sp = _ec2_parse_subpath("dzi/SA-HST-001_files/12/3_4.jpeg")
+    assert sid == "SA-HST-001" and sp == "dzi/SA-HST-001_files/12/3_4.jpeg"
+    assert _ec2_parse_subpath("thumbnail/SA-PARA-009") == ("SA-PARA-009", "thumbnail/SA-PARA-009")
+    assert _ec2_parse_subpath("info/SA-HST-001") == ("SA-HST-001", "info/SA-HST-001")
+
+
+def test_ec2_parse_subpath_rejects_traversal_and_garbage():
+    """[블로커2] '..'/'%'/추가 슬래시/비화이트리스트 확장자/잘못된 slide_id 는 전부 거부(None)."""
+    from server_render import _ec2_parse_subpath
+    bad = [
+        "dzi/SA-HST-001_files/../../SA-PATH-001_files/0/0_0.jpeg",  # 트래버설
+        "dzi/SA-HST-001_files/..%2f..%2fSA-PATH-001.dzi",          # 인코딩 우회
+        "dzi/SA-HST-001_files/0/0_0.png",                          # 비화이트리스트 ext
+        "dzi/SA-HST-001/extra/0_0.jpeg",                           # 추가 슬래시
+        "dzi/EVIL-x-1.dzi",                                        # slide_id 형식 위반(소문자)
+        "dzi/../etc/passwd",                                       # 절대경로 트래버설
+        "secret/SA-HST-001",                                       # 미허용 prefix
+        "dzi/SA-HST-001.dzi.bak",                                  # 꼬리 오염
+    ]
+    for s in bad:
+        assert _ec2_parse_subpath(s) == (None, None), f"거부 실패: {s}"
+
+
+def test_ec2_proxy_rejects_bad_path_with_400(client, mock_db):
+    """[블로커2] 인증 통과 후에도 비화이트리스트 경로는 업스트림 전달 전 400 거부."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+        payload = {"sub": "1", "institution_id": "YU", "role": "student",
+                   "session_token": "valid-session-123", "is_special": False}
+        client.set_cookie(COOKIE_NAME, encode_token(payload))
+        # _authenticate 통과용 (session_token, status, subject_code, special_expires_at, subscription_end)
+        mock_db["cursor"].fetchone.return_value = (
+            "valid-session-123", "active", "HST", None,
+            datetime.now(timezone.utc).date() + timedelta(days=365))
+        # 비화이트리스트 ext → 파서 거부(400). '..' 는 URL 정규화 영향이 있어 ext 위반으로 검증.
+        resp = client.get("http://localhost/ec2tile/dzi/SA-HST-001_files/0/0_0.png")
+        assert resp.status_code == 400
+
+
+# ── 블로커1: 타일서버가 직접 검증하는 HMAC 토큰이 Flask 발급분과 동일 시크릿·페이로드로 호환 ──
+def _tileserver_verify(token, user_id, institution_id, slide_id):
+    """tileserver/main.py._verify_tile_token 과 동일한 검증 로직(시크릿·페이로드 호환성 계약).
+    main.py 는 fastapi/openslide 의존으로 로컬 import 불가하므로 동일 알고리즘을 재현해 계약을 고정한다."""
+    import hmac as _h, hashlib as _hh, time as _t
+    secret = os.environ["JWT_SECRET_KEY"]
+    try:
+        exp_str, sig = token.split(":", 1)
+        exp = int(exp_str)
+        if exp < int(_t.time()):
+            return False
+        msg = f"{user_id}:{institution_id}:{slide_id}:{exp}"
+        expected = _h.new(secret.encode(), msg.encode(), _hh.sha256).hexdigest()
+        return _h.compare_digest(sig, expected)
+    except Exception:
+        return False
+
+
+def test_tileserver_token_contract_valid():
+    """[블로커1] Flask generate_tile_token 발급 토큰이 타일서버 검증 로직을 통과(동일 시크릿·페이로드)."""
+    tok = generate_tile_token("1", "YU", "SA-HST-001")
+    assert _tileserver_verify(tok, "1", "YU", "SA-HST-001") is True
+
+
+def test_tileserver_token_contract_slide_binding():
+    """[블로커1] 토큰은 slide_id 에 바인딩 — 다른 슬라이드 경로엔 통하지 않는다(트래버설 방어)."""
+    tok = generate_tile_token("1", "YU", "SA-HST-001")
+    assert _tileserver_verify(tok, "1", "YU", "SA-PATH-001") is False
+    # 사용자/기관 바인딩도 검증
+    assert _tileserver_verify(tok, "2", "YU", "SA-HST-001") is False
+    assert _tileserver_verify(tok, "1", "CNU", "SA-HST-001") is False
+
+
+def test_tileserver_token_contract_tampered_and_expired():
+    """[블로커1] 서명 변조·만료 토큰은 거부."""
+    import hmac as _h, hashlib as _hh
+    tok = generate_tile_token("1", "YU", "SA-HST-001")
+    exp_str, sig = tok.split(":", 1)
+    tampered = f"{exp_str}:{'0'*len(sig)}"
+    assert _tileserver_verify(tampered, "1", "YU", "SA-HST-001") is False
+    # 만료 토큰: 과거 exp 로 직접 서명
+    past = int(datetime.now(timezone.utc).timestamp()) - 10
+    msg = f"1:YU:SA-HST-001:{past}"
+    s = _h.new(os.environ["JWT_SECRET_KEY"].encode(), msg.encode(), _hh.sha256).hexdigest()
+    assert _tileserver_verify(f"{past}:{s}", "1", "YU", "SA-HST-001") is False
