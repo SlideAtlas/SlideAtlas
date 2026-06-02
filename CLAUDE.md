@@ -485,6 +485,10 @@ CREATE TABLE email_verifications (
 
 ## 9. 기관 관리자 포털 (/portal)
 
+**기관 관리자(admin) 계정 모델 (v3.2 명문화)**
+- **저장**: 기관 관리자는 별도 테이블이 아니라 `institution_rosters`에 **센티넬 과목코드 `subject_code='__ADMIN__'`(`ADMIN_ROSTER_SUBJECT`), `role='admin'`** 행으로 저장된다. 같은 이메일이 관리자 행(`__ADMIN__`)과 과목 학생 행(`HST` 등)으로 충돌 없이 공존(겸직 가능). `role`(시스템 권한, 포털 접근)과 `position`(교수/조교 등, 표시용)은 별개.
+- **로그인·식별**: 관리자도 **학생과 동일한 JWT 인증**(`/api/auth/register`·`/verify-email`·`/login`)을 그대로 탄다. 별도 로그인 경로 없음. 인증 후 `users.role='admin'`으로 식별되며, 관리자 등록(role='admin')은 과목·구독·좌석 게이트를 면제받아 가입·인증이 통과한다(슬라이드 접근은 별도 단일 게이트가 과목 좌석으로 판정, §8). **단 `_authenticate`의 구독 만료 면제는 현재 `__ADMIN__` roster 행 존재와 결합**(`_has_admin_roster`) — roster 회수 시 면제·포털 접근 모두 사라진다(§8, Codex#2).
+- **등록 플로우 (닫힘)**: ① 계약 후 super_admin이 어드민에서 기관 추가/수정 시 `admin_contacts`(이름·지위·이메일·전화, 최대 5명) 입력 → ② `_upsert_admin_roster`가 `institution_rosters`에 `__ADMIN__`·`role='admin'` 행 등록(같은 트랜잭션) + 커밋 후 **포털 초대 메일 발송**(`_send_portal_invite_email`, 헤더 주입 방어) → ③ 관리자가 **학생과 동일하게 회원가입 → 이메일 인증** → ④ `/portal` 진입(`page_login_required` + `_is_institution_admin`이 `__ADMIN__` roster 행 존재로 판정, `role` 단독 우회 없음 — §8 Codex#1). 기관 수정 시 관리자 제거 = `__ADMIN__` 행만 DELETE(포털 권한만 회수, users 계정·과목 행 불가침).
 - 계약 후 super_admin이 기관 관리자 이메일 등록.
 - **학생 명단: (이름 + 이메일 + 과목) 축으로 xlsx/csv 업로드** → `institution_rosters`에 (institution_id, subject_code, email)로 등록. 과목별 좌석 카운터로 독립 관리. 한 학생이 여러 과목 명단에 들어갈 수 있다.
 - 개별 학생 추가/삭제, **과목별 라이선스 현황(과목당 사용 N / max_seats N)**. 삭제 시 즉시 접근 차단 + 해당 과목 좌석 반환.
