@@ -330,6 +330,65 @@ def get_slide_institution(slide_id):
         release_db_conn(conn)
 
 
+# ── 이용 로그 (이용 리포트 데이터 소스, best-effort) ─────────────────────────
+#   §8 v3.2: 고빈도 타일 스트리밍 경로엔 절대 INSERT하지 않는다. 뷰어 '진입' 1회,
+#   AI 챗 '호출' 1회만 기록한다(타일 1장마다 DB쓰기 금지 — RDS 고갈/DoS 방지).
+#   로깅 실패가 본 기능(뷰어/챗) 응답을 막지 않도록 모든 예외를 삼킨다(best-effort).
+#   access_logs.subject_code/institution_id는 멱등 마이그레이션으로 보장(db/p05_logging_schema.sql).
+def _log_slide_view(user_id, slide_id, institution_id, subject_code):
+    """뷰어 진입 1회 열람 로그. subject_code는 콘텐츠 축(슬라이드 과목)으로 기록(§15-7 과목별 집계)."""
+    if not _PSYCOPG2_AVAILABLE:
+        return
+    try:
+        uid = int(user_id)
+    except (TypeError, ValueError):
+        return
+    conn = get_db_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO access_logs (user_id, slide_id, institution_id, subject_code)
+                   VALUES (%s, %s, %s, %s)""",
+                (uid, slide_id, institution_id, subject_code),
+            )
+        conn.commit()
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        print(f"[access_log] 기록 실패(slide={slide_id}): {e}")
+    finally:
+        release_db_conn(conn)
+
+
+def _log_chat(user_id, institution_id, slide_id, tab, subject_code):
+    """AI 튜터 호출 1회 로그. tab='qa'|'quiz'. subject_code는 슬라이드 과목 축."""
+    if not _PSYCOPG2_AVAILABLE:
+        return
+    try:
+        uid = int(user_id)
+    except (TypeError, ValueError):
+        uid = None
+    conn = get_db_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO chat_logs (user_id, institution_id, slide_id, tab, subject_code)
+                   VALUES (%s, %s, %s, %s, %s)""",
+                (uid, institution_id, slide_id, tab, subject_code),
+            )
+        conn.commit()
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        print(f"[chat_log] 기록 실패(slide={slide_id}): {e}")
+    finally:
+        release_db_conn(conn)
+
+
 def _institution_subject_access(institution_id, subject_code):
     """기관이 해당 과목 콘텐츠 접근권을 보유하는가? (단일 게이트 (3))
 
@@ -624,6 +683,13 @@ def viewer(slide_id):
     if not allowed:
         return redirect('/slides')
 
+    # 진입 1회 열람 로그(이용 리포트용, best-effort). 과목 축은 슬라이드 콘텐츠 과목으로 기록.
+    #   타일 경로가 아닌 '진입' 시점에만 기록한다(§8 v3.2 — 고빈도 경로 DB쓰기 금지).
+    _log_slide_view(
+        getattr(g, 'user_id', None), slide_id,
+        getattr(g, 'institution_id', None), slide_info.get('subject_code'),
+    )
+
     use_ec2 = slide_info.get('tileserver') == 'ec2'
 
     if slide_id not in SLIDE_CACHE:
@@ -794,6 +860,11 @@ def api_chat():
         return jsonify({'reply': '서버에 API 키가 설정되지 않았습니다.'}), 500
     data = request.get_json()
     user_msg = data.get('message', '')
+    # 이용 리포트용 컨텍스트(클라이언트 제공). slide_id로 과목(콘텐츠 축)을 서버에서 재조회한다.
+    chat_slide_id = (data.get('slide_id') or '').strip() or None
+    chat_tab = (data.get('tab') or '').strip() or None
+    if chat_tab not in ('qa', 'quiz'):
+        chat_tab = None
     # 탈옥 방어: 클라이언트 system 파라미터 무시, 서버 측 가드레일만 사용 (§12-4 ③)
     system_prompt = (
         '당신은 SlideAtlas의 병리학·조직학 AI 튜터입니다. '
@@ -803,6 +874,17 @@ def api_chat():
     )
     if not user_msg:
         return jsonify({'reply': '메시지가 없습니다.'}), 400
+
+    # AI 튜터 호출 1회 로그(best-effort). 과목 축은 슬라이드 콘텐츠 과목으로 기록.
+    if chat_slide_id:
+        _sinfo = get_slide_institution(chat_slide_id)
+        _chat_subject = _sinfo[1] if _sinfo else None
+    else:
+        _chat_subject = None
+    _log_chat(
+        getattr(g, 'user_id', None), getattr(g, 'institution_id', None),
+        chat_slide_id, chat_tab, _chat_subject,
+    )
 
     if 'JSON' in system_prompt or '형식으로만 응답' in system_prompt:
         payload = json_mod.dumps({
@@ -2458,13 +2540,17 @@ def api_reports_kpi():
 
         with conn.cursor() as cur:
             # 활성 사용자 수 + 최대 좌석
+            # [§18 D9] 과목별 산출 — active_users는 (기관 × 과목) 좌석 카운터다(§15-7).
+            #   subject_code 필터를 추가해 좌석 소진율 = 활성(과목)/max_seats(과목)이 되게 한다.
+            #   기관 롤업은 과목별 산출값의 합(과목 카드별 KPI)으로 자연 구성된다(과목축 미혼합).
             cur.execute("""
                 SELECT COUNT(u.id)
                 FROM users u
                 WHERE u.institution_id = %s
+                  AND u.subject_code = %s
                   AND COALESCE(u.status, 'active') = 'active'
                   AND COALESCE(u.is_special, FALSE) = FALSE
-            """, (inst_id,))
+            """, (inst_id, subject_code))
             active_users = cur.fetchone()[0] or 0
 
             cur.execute("""

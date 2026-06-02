@@ -775,7 +775,7 @@ function sendChat() {
   msgs.scrollTop = msgs.scrollHeight;
   var SYS = "You are SlideAtlas AI tutor. Current slide: " + SLIDE_TITLE + " (" + SLIDE_TITLE_EN + "), " + SLIDE_STAIN + " stain, " + SLIDE_SYSTEM + ". Current magnification: "+magT+". Answer in Korean, as a histology/pathology education expert. Keep answers to 3-5 sentences.";
   var bubble=null, fullText='';
-  fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:msg,system:SYS})})
+  fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:msg,system:SYS,slide_id:SLIDE_ID,tab:"qa"})})
   .then(function(r){
     var reader=r.body.getReader(), decoder=new TextDecoder(), buffer='';
     function read(){
@@ -823,7 +823,7 @@ function renderMd(s){
 // ── 퀴즈 ──
 function startQuiz() {
   if(QUIZ.length===0){
-    fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message: SLIDE_TITLE + " (" + SLIDE_TITLE_EN + ") " + SLIDE_STAIN + " 슬라이드에 대한 조직학/병리학 퀴즈 3문제를 JSON 형식으로만 생성해주세요. 형식: [{\"q\":\"질문\",\"opts\":[\"A\",\"B\",\"C\",\"D\"],\"ans\":0,\"exp\":\"해설\"}]",system:"당신은 의과대학 조직학/병리학 교수입니다. 요청한 JSON 형식으로만 응답하세요. 다른 텍스트는 절대 포함하지 마세요."})})
+    fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message: SLIDE_TITLE + " (" + SLIDE_TITLE_EN + ") " + SLIDE_STAIN + " 슬라이드에 대한 조직학/병리학 퀴즈 3문제를 JSON 형식으로만 생성해주세요. 형식: [{\"q\":\"질문\",\"opts\":[\"A\",\"B\",\"C\",\"D\"],\"ans\":0,\"exp\":\"해설\"}]",system:"당신은 의과대학 조직학/병리학 교수입니다. 요청한 JSON 형식으로만 응답하세요. 다른 텍스트는 절대 포함하지 마세요.",slide_id:SLIDE_ID,tab:"quiz"})})
     .then(function(r){return r.json();})
     .then(function(data){
       try{var txt=data.reply.replace(/```json|```/g,'').trim(); QUIZ=JSON.parse(txt);}
