@@ -213,10 +213,11 @@ def _authenticate():
         #     special_expires_at NULL(무기한)은 통과 — 비권장이나 허용. 경과 시 차단.
         if special_expires_at is not None and special_expires_at < today:
             return ("SUBSCRIPTION_EXPIRED", "특별계정 사용 기간이 만료되었습니다. 과 사무실에 문의하세요")
-    elif db_role == "admin":
+    elif db_role == "admin" and _has_admin_roster(user_id):
         # 기관 관리자(포털 전용): 과목 구독에 묶이지 않으므로 매 요청 구독 만료 게이트 면제.
-        #   콘텐츠 노출은 넓히지 않는다 — 슬라이드/타일은 _slide_access_allowed가 과목 좌석으로
-        #   별도 판정하며(§8), admin의 subject_code='__ADMIN__'는 어떤 슬라이드 과목과도 불일치한다.
+        #   [Codex#2] 단, 면제는 '현재 __ADMIN__ roster 행 존재'와 결합한다 — roster 회수(권한 박탈)
+        #   시 면제도 사라져 아래 else로 떨어지고(매칭 구독 없음 → SUBSCRIPTION_EXPIRED) API 사용까지 막힌다.
+        #   콘텐츠 노출은 넓히지 않는다 — 슬라이드/타일은 발급 게이트가 과목 좌석으로 별도 판정(§8).
         pass
     else:
         # §8 명문: "매칭 구독이 없거나 만료면 SUBSCRIPTION_EXPIRED."
@@ -231,6 +232,67 @@ def _authenticate():
     g.role = db_role
     g.is_special = db_is_special
     return None
+
+
+def _has_admin_roster(user_id):
+    """user의 현재 __ADMIN__ 관리자 roster 행 존재 여부 (구독 면제 결합용, Codex#2).
+
+    admin은 드물므로 admin 분기에서만 호출(고빈도 학생 경로에는 추가 쿼리 없음).
+    """
+    if not _PSYCOPG2_AVAILABLE:
+        return False
+    get_db_conn, release_db_conn = _get_db()
+    conn = get_db_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT 1 FROM institution_rosters r
+                   JOIN users u ON lower(u.email) = lower(r.email)
+                  WHERE u.id = %s AND r.institution_id = u.institution_id
+                    AND r.subject_code = %s AND r.role = 'admin'
+                  LIMIT 1""",
+                (user_id, ADMIN_ROSTER_SUBJECT),
+            )
+            return cur.fetchone() is not None
+    finally:
+        release_db_conn(conn)
+
+
+def _tile_token_unauthorized():
+    """타일 전용 401 — 프론트 인터셉터가 로그인 세션 에러로 오판해 리다이렉트하지 않도록
+    TILE_TOKEN_INVALID 코드를 쓴다(뷰어 JS가 토큰 재발급으로 분기)."""
+    resp = jsonify({
+        "success": False, "error": "TILE_TOKEN_INVALID",
+        "message": "타일 접근 토큰이 만료되었습니다. 뷰어를 새로고침하세요.",
+    })
+    resp.status_code = 401
+    return _no_store(resp)
+
+
+def tile_token_required(f):
+    """고빈도 타일 스트리밍 전용 경량 인증 (Gemini#1 — RDS 고갈/DoS 회피).
+
+    DB를 전혀 조회하지 않는다. 서명된 JWT를 복호화해 신원(user_id·institution_id)만 확보하고,
+    실제 인가는 호출부의 HMAC tile_token(_verify_tile_request, TTL 5분)으로 한다.
+    무거운 구독·기관·세션 DB 검사는 토큰 '발급' 경로(/viewer, /api/tile-token)에만 두며,
+    권한 회수는 토큰 TTL(≤5분) 후 재발급 게이트(DB 권한 검사)에서 반영된다.
+    """
+    @functools.wraps(f)
+    def wrapper(*args, **kwargs):
+        token = request.cookies.get(COOKIE_NAME)
+        if not token:
+            return _tile_token_unauthorized()
+        try:
+            payload = decode_token(token)
+        except jwt.InvalidTokenError:
+            return _tile_token_unauthorized()
+        if not payload.get("session_token"):
+            return _tile_token_unauthorized()
+        # 신원만 적재(DB 조회 없음) — HMAC tile_token 재계산·워터마킹에 사용.
+        g.user_id = payload.get("sub")
+        g.institution_id = payload.get("institution_id")
+        return f(*args, **kwargs)
+    return wrapper
 
 
 def _csrf_ok():

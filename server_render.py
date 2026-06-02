@@ -64,7 +64,7 @@ app.secret_key = _admin_secret
 from auth.auth import auth_bp
 app.register_blueprint(auth_bp)
 from auth.decorators import (
-    login_required, page_login_required,
+    login_required, page_login_required, tile_token_required,
     generate_tile_token, verify_tile_token,
     ADMIN_ROSTER_SUBJECT,
 )
@@ -171,7 +171,8 @@ def _get_admin_user():
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT id, role, name, status, session_token FROM admin_users WHERE id = %s",
+                    "SELECT id, role, name, status, session_token, locked_at"
+                    " FROM admin_users WHERE id = %s",
                     (admin_user_id,),
                 )
                 row = cur.fetchone()
@@ -179,6 +180,14 @@ def _get_admin_user():
             release_db_conn(conn)
         if row is None or row[3] != 'active':
             return None
+        # [Codex#1/Gemini#3] 잠금 중(24h 내)이면 기존 세션도 차단한다(매 요청 locked_at 검사).
+        locked_at = row[5]
+        if locked_at is not None:
+            from datetime import datetime, timezone
+            if locked_at.tzinfo is None:
+                locked_at = locked_at.replace(tzinfo=timezone.utc)
+            if (datetime.now(timezone.utc) - locked_at).total_seconds() <= ADMIN_LOCK_WINDOW_HRS * 3600:
+                return None
         import secrets as _sec
         db_token = row[4]
         if not db_token or not _sec.compare_digest(str(db_token), str(sess_token)):
@@ -215,8 +224,10 @@ def _admin_check_and_increment_failed(cur, admin_id):
             (new_count, admin_id),
         )
     if new_count >= ADMIN_LOCK_THRESHOLD:
+        # [Codex#1/Gemini#3] 잠금 시 session_token도 회전(NULL)해 기존 어드민 세션을 즉시 무효화한다.
+        #   (이렇게 안 하면 잠가도 이미 로그인된 세션은 계속 살아 있음.)
         cur.execute(
-            "UPDATE admin_users SET locked_at = %s WHERE id = %s",
+            "UPDATE admin_users SET locked_at = %s, session_token = NULL WHERE id = %s",
             (now, admin_id),
         )
         return True
@@ -519,17 +530,14 @@ def init_slide(slide_id):
 
 # ── EC2 타일서버 프록시 ──
 @app.route('/ec2tile/<path:subpath>')
-@login_required
+@tile_token_required
 def ec2_proxy(subpath):
+    # [Gemini#1] 고빈도 타일 경로 — DB 권한 조회 없이 HMAC tile_token만 검증(발급 시점에 _slide_access_allowed 통과).
     # slide_id 추출: "dzi/SA-HST-001.dzi" → "SA-HST-001"
     parts = subpath.split('/')
     raw = parts[1] if len(parts) > 1 else parts[0]
     slide_id = raw.replace('.dzi', '').split('_files')[0]
-    # 기관·is_public 격리 (§12-4 ①⑤)
-    allowed, aerr = _slide_access_allowed(slide_id)
-    if not allowed:
-        return aerr
-    # 타일 토큰 검증 (TTL 5분)
+    # 타일 토큰 검증 (TTL 5분, HMAC). 신원은 tile_token_required가 JWT 복호화로 g에 적재.
     err = _verify_tile_request(slide_id)
     if err:
         return err
@@ -862,11 +870,9 @@ def api_chat():
     )
 
 @app.route('/dzi/<slide_id>.dzi')
-@login_required
+@tile_token_required
 def dzi_descriptor(slide_id):
-    allowed, aerr = _slide_access_allowed(slide_id)
-    if not allowed:
-        return aerr
+    # [Gemini#1] 고빈도 타일 경로 — HMAC tile_token만 검증(DB 조회 없음).
     err = _verify_tile_request(slide_id)
     if err:
         return err
@@ -888,11 +894,9 @@ def dzi_descriptor(slide_id):
 
 @app.route('/dzi/<slide_id>_files/<int:level>/<int:col>_<int:row>.jpeg')
 @app.route('/dzi/<slide_id>_files/<int:level>/<int:col>_<int:row>.jpg')
-@login_required
+@tile_token_required
 def dzi_tile(slide_id, level, col, row):
-    allowed, aerr = _slide_access_allowed(slide_id)
-    if not allowed:
-        return aerr
+    # [Gemini#1] 최고빈도 타일 경로 — HMAC tile_token만 검증(DB 조회 없음).
     err = _verify_tile_request(slide_id)
     if err:
         return err
@@ -923,11 +927,9 @@ def dzi_tile(slide_id, level, col, row):
         return r
 
 @app.route('/thumbnail/<slide_id>')
-@login_required
+@tile_token_required
 def thumbnail(slide_id):
-    allowed, aerr = _slide_access_allowed(slide_id)
-    if not allowed:
-        return aerr
+    # [Gemini#1] 고빈도 타일 경로 — HMAC tile_token만 검증(DB 조회 없음).
     err = _verify_tile_request(slide_id)
     if err:
         return err
@@ -1683,6 +1685,8 @@ VALID_PLANS = set(PLAN_SEATS) | {'custom'}
 MAX_TERM_COUNT = 20        # 학기 수 상한 (10년)
 MAX_SEATS_LIMIT = 100000   # 좌석 수 상한
 MAX_FEE_LIMIT = 10 ** 12   # 구독료 상한(원)
+import re as _re_validate
+START_TERM_RE = _re_validate.compile(r'^\d{4}-(spring|fall)$')   # 학기 식별자 형식(Codex#3)
 
 
 def _parse_int_field(raw, name, *, default=None, minimum=0, maximum=None, allow_none=False):
@@ -1709,6 +1713,15 @@ def _parse_int_field(raw, name, *, default=None, minimum=0, maximum=None, allow_
     return value, None
 
 
+def _validate_array_of_dicts(value, name):
+    """value가 list이고 모든 원소가 dict인지 검증. 정상이면 None, 아니면 에러 메시지(Codex#4)."""
+    if not isinstance(value, list):
+        return f'{name}은(는) 배열이어야 합니다'
+    if not all(isinstance(x, dict) for x in value):
+        return f'{name}의 각 항목은 객체여야 합니다'
+    return None
+
+
 def _subject_codes_set():
     """subject_codes 테이블의 코드 집합 (allowlist, 하드코딩 금지 §6-1)."""
     conn = get_db_conn()
@@ -1724,13 +1737,16 @@ def _validate_subscription_payload(raw, valid_subjects):
     """구독 1건 입력 검증·정규화. 성공 시 (fields_dict, None), 실패 시 (None, error_message).
 
     fields: subject_code, plan, max_seats, term_count, fee, start_term, payment_method.
-    plan·subject_code allowlist, term_count·max_seats·fee 타입·범위 검증(Codex#5).
+    plan·subject_code allowlist, start_term 형식, term_count·max_seats·fee 타입·범위 검증(Codex#3·#5).
     """
+    if not isinstance(raw, dict):
+        return None, '구독 항목 형식이 올바르지 않습니다'   # [Codex#4] 원소 타입 검증
     start_term = (raw.get('start_term') or '').strip()
     subject_code = (raw.get('subject_code') or '').strip().upper()
     plan = (raw.get('plan') or '').strip().lower()
-    if not start_term:
-        return None, 'start_term은 필수입니다'
+    if not START_TERM_RE.match(start_term):
+        # [Codex#3] 'YYYY-spring' | 'YYYY-fall'만 허용 — _sem_dates 계산이 깨지지 않게 사전 차단.
+        return None, "start_term 형식이 올바르지 않습니다('YYYY-spring' 또는 'YYYY-fall')"
     if subject_code not in valid_subjects:
         return None, f'알 수 없는 과목코드입니다: {subject_code or "(빈값)"}'
     if plan not in VALID_PLANS:
@@ -1930,13 +1946,20 @@ def api_institution_create():
     college = (data.get('college') or '').strip()
     name_en = (data.get('name_en') or '').strip() or None
     domain = (data.get('domain') or '').strip() or None
-    contacts = data.get('admin_contacts') or []
-    subs_data = data.get('subscriptions') or []
+    contacts = data.get('admin_contacts') if data.get('admin_contacts') is not None else []
+    subs_data = data.get('subscriptions') if data.get('subscriptions') is not None else []
 
     if not inst_id or not university or not college:
         return jsonify({'ok': False, 'error': '기관코드·학교명·단과대는 필수입니다'}), 400
     if not inst_id.replace('-', '').replace('_', '').isalnum():
         return jsonify({'ok': False, 'error': '기관코드는 영문·숫자·하이픈만 허용됩니다'}), 400
+    # [Codex#4] 배열 타입 검증: admin_contacts·subscriptions가 list이고 각 원소가 dict인지 확인.
+    cerr = _validate_array_of_dicts(contacts, 'admin_contacts')
+    if cerr:
+        return jsonify({'ok': False, 'error': cerr}), 400
+    serr = _validate_array_of_dicts(subs_data, 'subscriptions')
+    if serr:
+        return jsonify({'ok': False, 'error': serr}), 400
     if len(contacts) > 5:
         return jsonify({'ok': False, 'error': '관리자는 최대 5명입니다'}), 400
 
@@ -2082,7 +2105,11 @@ def api_institution_update(inst_id):
     name_ko = f'{university} {college}'
     name_en = (data.get('name_en') or '').strip() or None
     domain = (data.get('domain') or '').strip() or None
-    contacts = data.get('admin_contacts') or []
+    contacts = data.get('admin_contacts') if data.get('admin_contacts') is not None else []
+    # [Codex#4] 배열 타입 검증
+    cerr = _validate_array_of_dicts(contacts, 'admin_contacts')
+    if cerr:
+        return jsonify({'ok': False, 'error': cerr}), 400
     if len(contacts) > 5:
         return jsonify({'ok': False, 'error': '관리자는 최대 5명입니다'}), 400
 
