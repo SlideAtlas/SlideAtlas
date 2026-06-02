@@ -1,38 +1,105 @@
-
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SlideAtlas · 기관 포털 (목업 v3.1)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
+/* Tabler Icons 3.11.0 — 사용 글리프 25개만 서브셋 인라인 (CDN 의존 없음, 오프라인 동작) */
+@font-face{font-family:"tabler-icons";font-style:normal;font-weight:400;src:url("data:font/woff2;base64,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") format("woff2")}
+.ti{font-family:"tabler-icons"!important;speak:none;font-style:normal;font-weight:400;font-variant:normal;text-transform:none;line-height:1;display:inline-block;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+.ti-chart-bar:before{content:"\ea59"}
+.ti-check:before{content:"\ea5e"}
+.ti-chevron-right:before{content:"\ea61"}
+.ti-credit-card:before{content:"\ea84"}
+.ti-download:before{content:"\ea96"}
+.ti-edit:before{content:"\ea98"}
+.ti-external-link:before{content:"\ea99"}
+.ti-eye:before{content:"\ea9a"}
+.ti-file-spreadsheet:before{content:"\f03e"}
+.ti-file-type-pdf:before{content:"\fb10"}
+.ti-logout:before{content:"\eba8"}
+.ti-microscope:before{content:"\ef64"}
+.ti-plus:before{content:"\eb0b"}
+.ti-plus-circle:before{content:"\ea69"}
+.ti-robot:before{content:"\f00b"}
+.ti-search:before{content:"\eb1c"}
+.ti-shield:before{content:"\eb24"}
+.ti-table-export:before{content:"\eef8"}
+.ti-trash:before{content:"\eb41"}
+.ti-trophy:before{content:"\eb45"}
+.ti-upload:before{content:"\eb47"}
+.ti-user:before{content:"\eb4d"}
+.ti-user-check:before{content:"\eb49"}
+.ti-users:before{content:"\ebf2"}
+.ti-users-group:before{content:"\fa21"}
+</style>
+<style>
+:root{
+  /* ── 타이포 ── */
+  --font-sans:'Noto Sans KR',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --font-display:'Montserrat','Noto Sans KR',sans-serif;
+  --font-mono:ui-monospace,'SF Mono','Cascadia Code',Consolas,monospace;
+
+  /* ── 브랜드 (수퍼관리자 디자인 시스템과 동일) ── */
+  --navy:#0F1F3D;            /* 주 배경·텍스트·기본 버튼 */
+  --navy-soft:#1B2E4F;       /* 네이비 버튼 hover */
+  --navy-tint:#E7ECF5;       /* 네이비 계열 옅은 배경 */
+  --sky:#5BB8D4;             /* 강조·active·게이지·링크 */
+  --sky-deep:#2C7E99;        /* 흰 배경 위 텍스트/아이콘용 (대비 확보) */
+  --sky-tint:#EAF6FA;        /* 옅은 스카이 배경 */
+  --beige:#FAF8F5;           /* 페이지 배경 */
+
+  /* ── 표면 (아티팩트 테마 변수명 → 브랜드 값으로 자체 정의) ── */
+  --color-background-primary:#FFFFFF;
+  --color-background-secondary:#F4F1EC;
+  --color-background-tertiary:#FAF8F5;
+  /* ── 텍스트 ── */
+  --color-text-primary:#0F1F3D;
+  --color-text-secondary:#3D4A63;
+  --color-text-tertiary:#8A91A0;
+  /* ── 경계선 ── */
+  --color-border-secondary:#D6DAE2;
+  --color-border-tertiary:#EAE7E1;
+  /* ── 상태 ── */
+  --color-background-warning:#FDF4E3;
+  --color-border-warning:#F0DCB0;
+  --color-text-warning:#8A5A0B;
+  --color-background-danger:#FBEAEA;
+  --color-text-danger:#C0392B;
+}
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:var(--font-sans);background:var(--color-background-tertiary);color:var(--color-text-primary)}
+body{font-family:var(--font-sans);background:var(--beige);color:var(--color-text-primary)}
 .portal{display:flex;min-height:700px}
 
-/* ── 사이드바 ── */
-.sidebar{width:190px;flex-shrink:0;background:var(--color-background-primary);border-right:1px solid var(--color-border-tertiary);padding:20px 0;display:flex;flex-direction:column}
-.sidebar-logo{padding:0 16px 18px;border-bottom:1px solid var(--color-border-tertiary);margin-bottom:10px}
-.logo-top{font-size:8px;letter-spacing:0.18em;color:#1D9E75;font-weight:500}
-.logo-main{font-size:16px;font-weight:500;color:var(--color-text-primary)}
-.logo-sub{font-size:9px;color:var(--color-text-tertiary);margin-top:2px}
-.nav-section{font-size:9px;letter-spacing:0.1em;color:var(--color-text-tertiary);padding:12px 16px 5px;text-transform:uppercase}
-.nav-item{display:flex;align-items:center;gap:8px;padding:9px 16px;font-size:13px;color:var(--color-text-secondary);cursor:pointer;border-left:2px solid transparent;transition:all 0.15s}
-.nav-item:hover{background:var(--color-background-secondary);color:var(--color-text-primary)}
-.nav-item.active{background:var(--color-background-secondary);color:#0F6E56;border-left-color:#1D9E75;font-weight:500}
-.nav-item i{font-size:15px}
-.nav-bottom{margin-top:auto;border-top:1px solid var(--color-border-tertiary);padding-top:8px}
+/* ── 사이드바 (네이비, 어드민 셸과 통일) ── */
+.sidebar{width:200px;flex-shrink:0;background:var(--navy);padding:20px 0;display:flex;flex-direction:column}
+.sidebar-logo{padding:0 18px 18px;border-bottom:1px solid rgba(255,255,255,0.10);margin-bottom:10px}
+.logo-img{display:block;width:100%;max-width:124px;height:auto;margin-bottom:8px}
+.logo-sub{font-size:10px;color:rgba(255,255,255,0.55);letter-spacing:0.04em}
+.nav-section{font-size:9px;letter-spacing:0.12em;color:rgba(255,255,255,0.40);padding:12px 18px 5px;text-transform:uppercase}
+.nav-item{display:flex;align-items:center;gap:9px;padding:9px 18px;font-size:13px;color:rgba(255,255,255,0.75);cursor:pointer;border-left:2px solid transparent;transition:all 0.15s}
+.nav-item:hover{background:rgba(255,255,255,0.06);color:#fff}
+.nav-item.active{background:rgba(91,184,212,0.14);color:#fff;border-left-color:var(--sky);font-weight:500}
+.nav-item i{font-size:16px}
+.nav-bottom{margin-top:auto;border-top:1px solid rgba(255,255,255,0.10);padding-top:8px}
 
 /* ── 메인 ── */
 .main{flex:1;overflow:auto;padding:24px 28px}
-.page-title{font-size:18px;font-weight:500;margin-bottom:3px}
+.page-title{font-size:18px;font-weight:700;margin-bottom:3px}
 .page-desc{font-size:12px;color:var(--color-text-tertiary);margin-bottom:20px}
 .tab-panel{display:none}.tab-panel.active{display:block}
 
 /* ── 공통 버튼 ── */
 .btn{display:inline-flex;align-items:center;gap:5px;padding:7px 14px;border-radius:7px;font-size:12px;font-weight:500;cursor:pointer;border:none;font-family:var(--font-sans);transition:all 0.15s;white-space:nowrap}
 .btn i{font-size:14px}
-.btn-primary{background:#1D9E75;color:#E1F5EE}.btn-primary:hover{background:#178f68}
+.btn-primary{background:var(--navy);color:#fff}.btn-primary:hover{background:var(--navy-soft)}
 .btn-ghost{background:transparent;color:var(--color-text-secondary);border:1px solid var(--color-border-secondary)}.btn-ghost:hover{background:var(--color-background-secondary)}
-.btn-danger{background:#E24B4A;color:#fff}.btn-danger:hover{background:#c73c3b}
+.btn-danger{background:var(--color-text-danger);color:#fff}.btn-danger:hover{background:#a83227}
 .btn-sm{padding:5px 10px;font-size:11px}
-.btn-icon{padding:4px 6px;background:transparent;border:none;cursor:pointer;color:var(--color-text-tertiary);display:flex;align-items:center;border-radius:5px;transition:all 0.15s}
-.btn-icon:hover{background:var(--color-background-secondary)}
-.btn-icon i{font-size:15px;pointer-events:none}
 .del-btn{background:none;border:none;cursor:pointer;padding:5px 7px;border-radius:5px;color:var(--color-text-tertiary);display:flex;align-items:center;opacity:0.35;transition:opacity 0.15s,background 0.15s,color 0.15s;flex-shrink:0}
 .del-btn:hover{background:var(--color-background-danger);color:var(--color-text-danger);opacity:1}
 .del-btn i{font-size:15px;pointer-events:none}
@@ -41,25 +108,31 @@ body{font-family:var(--font-sans);background:var(--color-background-tertiary);co
 .badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:500;white-space:nowrap}
 .badge-student{background:#E6F1FB;color:#0C447C}
 .badge-assistant{background:#FAEEDA;color:#633806}
-.badge-professor{background:#E1F5EE;color:#085041}
-.badge-active{background:#E1F5EE;color:#085041}
+.badge-professor{background:var(--navy-tint);color:var(--navy)}
+.badge-subject{background:var(--sky-tint);color:var(--sky-deep)}
+.badge-active{background:var(--sky-tint);color:var(--sky-deep)}
 .badge-pending{background:#F1EFE8;color:#5F5E5A}
 .badge-warn{background:#FAEEDA;color:#633806}
 
 /* ── 카드 ── */
 .section-card{background:var(--color-background-primary);border:1px solid var(--color-border-tertiary);border-radius:10px;overflow:hidden;margin-bottom:16px}
 .card-header{padding:13px 18px;border-bottom:1px solid var(--color-border-tertiary);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
-.card-title{font-size:13px;font-weight:500;display:flex;align-items:center;gap:6px}
-.card-title i{font-size:15px;color:var(--color-text-tertiary)}
+.card-title{font-size:13px;font-weight:700;display:flex;align-items:center;gap:6px}
+.card-title i{font-size:15px;color:var(--sky-deep)}
 
 /* ── 통계 ── */
-.stats-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px}
+.stats-row{display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:12px;margin-bottom:16px}
 .stat-card{background:var(--color-background-primary);border:1px solid var(--color-border-tertiary);border-radius:10px;padding:14px 16px}
-.stat-label{font-size:11px;color:var(--color-text-tertiary);margin-bottom:6px}
-.stat-value{font-size:20px;font-weight:500;margin-bottom:8px}
+.stat-label{font-size:11px;color:var(--color-text-tertiary);margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:6px}
+.stat-value{font-size:20px;font-weight:700;margin-bottom:8px}
 .stat-bar{height:6px;background:var(--color-background-tertiary);border-radius:3px;overflow:hidden}
 .stat-fill{height:100%;border-radius:3px;transition:width 0.4s,background 0.4s}
 .stat-sub{font-size:11px;color:var(--color-text-tertiary);margin-top:6px}
+.seat-row{margin-bottom:12px}
+.seat-row:last-child{margin-bottom:0}
+.seat-head{display:flex;align-items:center;justify-content:space-between;font-size:12px;margin-bottom:5px}
+.seat-head .seat-name{font-weight:500}
+.seat-head .seat-count{font-family:var(--font-mono);color:var(--color-text-secondary)}
 
 /* ── 저장바 ── */
 .save-bar{padding:10px 18px;background:var(--color-background-warning);border-bottom:1px solid var(--color-border-warning);display:flex;align-items:center;justify-content:space-between;gap:8px}
@@ -69,18 +142,20 @@ body{font-family:var(--font-sans);background:var(--color-background-tertiary);co
 /* ── 업로드존 ── */
 .upload-zone{padding:16px 18px}
 .upload-inner{border:1.5px dashed var(--color-border-secondary);border-radius:8px;padding:14px 18px;display:flex;align-items:center;gap:12px;cursor:pointer;transition:border-color 0.15s}
-.upload-inner:hover{border-color:#1D9E75}
-.upload-icon{width:36px;height:36px;background:var(--color-background-secondary);border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.upload-icon i{font-size:18px;color:#1D9E75}
+.upload-inner:hover{border-color:var(--sky)}
+.upload-icon{width:36px;height:36px;background:var(--sky-tint);border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.upload-icon i{font-size:18px;color:var(--sky-deep)}
 .upload-text{font-size:12px;color:var(--color-text-secondary);line-height:1.6}
-.upload-text strong{color:var(--color-text-primary);font-weight:500}
+.upload-text strong{color:var(--color-text-primary);font-weight:700}
 
 /* ── 필터행 ── */
 .filter-row{padding:10px 18px;border-bottom:1px solid var(--color-border-tertiary);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .search-wrap{position:relative;flex:1;max-width:240px}
 .search-wrap i{position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:13px;color:var(--color-text-tertiary)}
 .search-input{width:100%;padding:6px 10px 6px 28px;border:1px solid var(--color-border-secondary);border-radius:7px;font-size:12px;font-family:var(--font-sans);background:var(--color-background-primary);color:var(--color-text-primary);outline:none}
-.role-select{padding:6px 26px 6px 10px;border:1px solid var(--color-border-secondary);border-radius:7px;font-size:12px;font-family:var(--font-sans);background:var(--color-background-primary);color:var(--color-text-primary);outline:none;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 7px center}
+.search-input:focus{border-color:var(--sky)}
+.role-select{padding:6px 26px 6px 10px;border:1px solid var(--color-border-secondary);border-radius:7px;font-size:12px;font-family:var(--font-sans);background:var(--color-background-primary);color:var(--color-text-primary);outline:none;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238A91A0' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 7px center}
+.role-select:focus{border-color:var(--sky)}
 
 /* ── 테이블 ── */
 .table-wrap{overflow-x:auto}
@@ -90,18 +165,18 @@ th{text-align:left;padding:9px 14px;font-size:11px;color:var(--color-text-tertia
 td{padding:0;border-bottom:1px solid var(--color-border-tertiary);font-size:13px;vertical-align:middle}
 tr:last-child td{border-bottom:none}
 tr:hover td{background:var(--color-background-secondary)}
-tr.row-changed td{background:rgba(239,159,39,0.06)}
+tr.row-changed td{background:rgba(91,184,212,0.07)}
 .td-inner{padding:7px 14px;display:flex;align-items:center}
 .cell-input{width:100%;background:transparent;border:1px solid transparent;border-radius:5px;padding:5px 7px;font-size:13px;font-family:var(--font-sans);color:var(--color-text-primary);outline:none;transition:border-color 0.15s;min-width:0}
 .cell-input:hover{border-color:var(--color-border-secondary)}
-.cell-input:focus{border-color:#1D9E75;background:var(--color-background-primary)}
-select.cell-input{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 5px center;padding-right:20px}
+.cell-input:focus{border-color:var(--sky);background:var(--color-background-primary)}
+select.cell-input{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%238A91A0' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 5px center;padding-right:20px}
 .row-num{font-size:11px;color:var(--color-text-tertiary);font-family:var(--font-mono);width:32px;flex-shrink:0}
 
 /* ── 기관관리자 슬롯 ── */
 .admin-item{display:flex;align-items:center;gap:10px;padding:11px 18px;border-bottom:1px solid var(--color-border-tertiary)}
 .admin-item:last-child{border-bottom:none}
-.admin-avatar{width:30px;height:30px;border-radius:50%;background:#E1F5EE;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:500;color:#0F6E56;flex-shrink:0}
+.admin-avatar{width:30px;height:30px;border-radius:50%;background:var(--sky-tint);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--sky-deep);flex-shrink:0}
 .admin-info{flex:1;min-width:0}
 .admin-name{font-size:13px;font-weight:500}
 .admin-email{font-size:11px;color:var(--color-text-tertiary)}
@@ -109,42 +184,45 @@ select.cell-input{cursor:pointer;appearance:none;background-image:url("data:imag
 .admin-slot:last-child{border-bottom:none}
 .admin-slot i{font-size:15px}
 
-/* ── 플랜 카드 ── */
+/* ── 플랜(과목 구독) 카드 ── */
 .plan-list{display:flex;flex-direction:column;gap:10px;margin-bottom:20px}
 .plan-card{background:var(--color-background-primary);border:1.5px solid var(--color-border-tertiary);border-radius:10px;padding:16px 20px;cursor:pointer;transition:all 0.15s;display:flex;align-items:center;gap:14px}
-.plan-card:hover,.plan-card.active{border-color:#1D9E75;background:var(--color-background-secondary)}
-.plan-card.active{box-shadow:0 0 0 3px rgba(29,158,117,0.08)}
-.plan-card:hover .plan-arrow,.plan-card.active .plan-arrow{color:#1D9E75}
-.plan-icon{width:40px;height:40px;border-radius:10px;background:#E1F5EE;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.plan-icon i{font-size:20px;color:#0F6E56}
+.plan-card:hover,.plan-card.active{border-color:var(--sky);background:var(--sky-tint)}
+.plan-card.active{box-shadow:0 0 0 3px rgba(91,184,212,0.15)}
+.plan-card:hover .plan-arrow,.plan-card.active .plan-arrow{color:var(--sky-deep)}
+.plan-icon{width:40px;height:40px;border-radius:10px;background:var(--sky-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.plan-icon i{font-size:20px;color:var(--sky-deep)}
+.plan-card.active .plan-icon{background:#fff}
 .plan-info{flex:1;min-width:0}
-.plan-name{font-size:14px;font-weight:500;margin-bottom:3px}
+.plan-name{font-size:14px;font-weight:700;margin-bottom:3px}
 .plan-meta{font-size:12px;color:var(--color-text-tertiary)}
 .plan-arrow{font-size:16px;color:var(--color-text-tertiary);transition:color 0.15s;flex-shrink:0}
-.expire-ok{color:#0F6E56;font-size:12px;font-weight:500}
-.expire-warn{color:#854F0B;font-size:12px;font-weight:500}
+.expire-ok{color:var(--sky-deep);font-size:12px;font-weight:500}
+.expire-warn{color:var(--color-text-warning);font-size:12px;font-weight:500}
 
 /* ── 슬라이드 패널 ── */
 .slide-panel{background:var(--color-background-primary);border:1px solid var(--color-border-tertiary);border-radius:10px;overflow:hidden}
 .stain-badge{display:inline-flex;padding:1px 7px;border-radius:4px;font-size:10px;font-weight:500}
-.stain-he{background:#E1F5EE;color:#085041}
+.stain-he{background:var(--sky-tint);color:var(--sky-deep)}
 .stain-pas{background:#E6F1FB;color:#0C447C}
-.stain-mt{background:#EEEDFE;color:#3C3489}
+.stain-mt{background:#ECEEF2;color:#4A5568}
 .slide-row-link{display:flex;align-items:center;gap:12px;padding:9px 16px;border-bottom:1px solid var(--color-border-tertiary);cursor:pointer;transition:background 0.12s}
 .slide-row-link:last-child{border-bottom:none}
 .slide-row-link:hover{background:var(--color-background-secondary)}
 .slide-row-link:hover .open-hint{opacity:1}
-.open-hint{opacity:0;transition:opacity 0.15s;font-size:11px;color:#1D9E75;font-weight:500;display:flex;align-items:center;gap:3px;flex-shrink:0}
+.open-hint{opacity:0;transition:opacity 0.15s;font-size:11px;color:var(--sky-deep);font-weight:500;display:flex;align-items:center;gap:3px;flex-shrink:0}
 .open-hint i{font-size:12px}
 
 /* ── 이용리포트 ── */
+.report-context{display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.report-context .ctx-note{font-size:11px;color:var(--color-text-tertiary)}
 .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
 .kpi-card{background:var(--color-background-primary);border:1px solid var(--color-border-tertiary);border-radius:10px;padding:14px}
 .kpi-label{font-size:11px;color:var(--color-text-tertiary);margin-bottom:6px;display:flex;align-items:center;gap:5px}
 .kpi-label i{font-size:13px}
-.kpi-value{font-size:20px;font-weight:500;margin-bottom:4px}
+.kpi-value{font-size:20px;font-weight:700;margin-bottom:4px}
 .kpi-sub{font-size:11px;color:var(--color-text-tertiary)}
-.kpi-delta{font-size:11px;font-weight:500;color:#0F6E56}
+.kpi-delta{font-size:11px;font-weight:500;color:var(--sky-deep)}
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
 .bar-chart-wrap{padding:14px 18px}
 .bar-row{display:flex;align-items:center;gap:10px;margin-bottom:6px}
@@ -154,13 +232,13 @@ select.cell-input{cursor:pointer;appearance:none;background-image:url("data:imag
 .bar-val{font-size:10px;color:#fff;font-weight:500;white-space:nowrap}
 .period-btns{display:flex;gap:5px;margin-bottom:14px}
 .period-btn{padding:4px 12px;border-radius:20px;font-size:12px;cursor:pointer;border:1px solid var(--color-border-secondary);background:var(--color-background-primary);color:var(--color-text-secondary);font-family:var(--font-sans);transition:all 0.12s}
-.period-btn.active{background:#1D9E75;color:#E1F5EE;border-color:#1D9E75}
+.period-btn.active{background:var(--sky);color:var(--navy);border-color:var(--sky);font-weight:700}
 .rank-item{display:flex;align-items:center;gap:12px;padding:10px 18px;border-bottom:1px solid var(--color-border-tertiary);cursor:pointer;transition:background 0.12s;text-decoration:none;color:inherit}
 .rank-item:last-child{border-bottom:none}
 .rank-item:hover{background:var(--color-background-secondary)}
-.rank-item:hover .rank-name{color:#0F6E56}
+.rank-item:hover .rank-name{color:var(--sky-deep)}
 .rank-item:hover .rank-link{opacity:1}
-.rank-num{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;flex-shrink:0}
+.rank-num{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0}
 .rank-1{background:#FAEEDA;color:#633806}
 .rank-2,.rank-3{background:#F1EFE8;color:#5F5E5A}
 .rank-other{background:var(--color-background-tertiary);color:var(--color-text-tertiary)}
@@ -169,28 +247,35 @@ select.cell-input{cursor:pointer;appearance:none;background-image:url("data:imag
 .rank-id{font-size:11px;color:var(--color-text-tertiary);font-family:var(--font-mono)}
 .rank-bar-wrap{width:90px}
 .rank-bar-track{height:6px;background:var(--color-background-tertiary);border-radius:3px;overflow:hidden;margin-bottom:3px}
-.rank-bar-fill{height:100%;border-radius:3px;background:#1D9E75}
+.rank-bar-fill{height:100%;border-radius:3px;background:var(--sky)}
 .rank-count{font-size:11px;color:var(--color-text-tertiary);text-align:right}
-.rank-link{opacity:0;transition:opacity 0.15s;font-size:11px;color:#1D9E75;font-weight:500;flex-shrink:0;display:flex;align-items:center;gap:2px}
+.rank-link{opacity:0;transition:opacity 0.15s;font-size:11px;color:var(--sky-deep);font-weight:500;flex-shrink:0;display:flex;align-items:center;gap:2px}
 .rank-link i{font-size:12px}
 .donut-wrap{padding:16px 18px;display:flex;align-items:center;gap:20px}
 .legend-item{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--color-text-secondary);margin-bottom:7px}
 .legend-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
 
 /* ── 모달 ── */
-.modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;z-index:500}
+.modal-backdrop{position:fixed;inset:0;background:rgba(15,31,61,0.45);display:flex;align-items:center;justify-content:center;z-index:500}
 .modal-backdrop.hidden{display:none}
 .modal{background:var(--color-background-primary);border-radius:12px;padding:26px;width:360px;box-shadow:0 8px 32px rgba(0,0,0,0.18)}
-.modal-title{font-size:15px;font-weight:500;margin-bottom:8px}
+.modal-title{font-size:15px;font-weight:700;margin-bottom:8px}
 .modal-q{font-size:14px;color:var(--color-text-primary);margin-bottom:8px;line-height:1.5}
-.modal-q strong{font-weight:500}
+.modal-q strong{font-weight:700}
 .modal-warn{font-size:13px;color:var(--color-text-primary);margin-bottom:4px}
 .modal-hint{font-size:12px;color:var(--color-text-tertiary)}
 .modal-footer{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
 
-.toast{position:fixed;bottom:20px;right:20px;background:var(--color-background-primary);border:1px solid var(--color-border-secondary);border-radius:8px;padding:10px 16px;font-size:13px;box-shadow:0 4px 16px rgba(0,0,0,0.12);z-index:999;transition:opacity 0.3s;opacity:0;pointer-events:none}
+.toast{position:fixed;bottom:20px;right:20px;background:var(--navy);border:1px solid var(--navy-soft);color:#fff;border-radius:8px;padding:10px 16px;font-size:13px;box-shadow:0 4px 16px rgba(0,0,0,0.18);z-index:999;transition:opacity 0.3s;opacity:0;pointer-events:none}
 .toast.show{opacity:1}
+
+@media(max-width:720px){
+  .stats-row,.kpi-grid,.two-col{grid-template-columns:1fr}
+  .sidebar{width:64px}.logo-img,.logo-sub,.nav-section,.nav-item span{display:none}
+}
 </style>
+</head>
+<body>
 
 <!-- 삭제 모달 -->
 <div class="modal-backdrop hidden" id="del-modal" role="dialog" aria-modal="true">
@@ -211,17 +296,16 @@ select.cell-input{cursor:pointer;appearance:none;background-image:url("data:imag
   <!-- 사이드바 -->
   <div class="sidebar">
     <div class="sidebar-logo">
-      <div class="logo-top">SLIDE</div>
-      <div class="logo-main">ATLAS</div>
+      <img class="logo-img" src="/static/SlideAtlas BI_Navy_Ver small.png" alt="SlideAtlas">
       <div class="logo-sub">기관 포털</div>
     </div>
     <div class="nav-section">관리</div>
-    <div class="nav-item active" id="nav-members" onclick="switchTab('members')"><i class="ti ti-users" aria-hidden="true"></i>명단 관리</div>
-    <div class="nav-item" id="nav-plans" onclick="switchTab('plans')"><i class="ti ti-credit-card" aria-hidden="true"></i>구독 플랜</div>
-    <div class="nav-item" id="nav-report" onclick="switchTab('report')"><i class="ti ti-chart-bar" aria-hidden="true"></i>이용 리포트</div>
+    <div class="nav-item active" id="nav-members" onclick="switchTab('members')"><i class="ti ti-users" aria-hidden="true"></i><span>명단 관리</span></div>
+    <div class="nav-item" id="nav-plans" onclick="switchTab('plans')"><i class="ti ti-credit-card" aria-hidden="true"></i><span>구독 플랜</span></div>
+    <div class="nav-item" id="nav-report" onclick="switchTab('report')"><i class="ti ti-chart-bar" aria-hidden="true"></i><span>이용 리포트</span></div>
     <div class="nav-bottom">
-      <div class="nav-item" onclick="showToast('마이페이지로 이동')"><i class="ti ti-user" aria-hidden="true"></i>내 계정</div>
-      <div class="nav-item" onclick="showToast('로그아웃')"><i class="ti ti-logout" aria-hidden="true"></i>로그아웃</div>
+      <div class="nav-item" onclick="showToast('마이페이지로 이동')"><i class="ti ti-user" aria-hidden="true"></i><span>내 계정</span></div>
+      <div class="nav-item" onclick="showToast('로그아웃')"><i class="ti ti-logout" aria-hidden="true"></i><span>로그아웃</span></div>
     </div>
   </div>
 
@@ -231,13 +315,11 @@ select.cell-input{cursor:pointer;appearance:none;background-image:url("data:imag
     <!-- ══ 명단 관리 ══ -->
     <div class="tab-panel active" id="tab-members">
       <div class="page-title">명단 관리</div>
-      <div class="page-desc">충남대학교 의과대학 · 캠퍼스 플랜</div>
+      <div class="page-desc">충남대학교 의과대학 · 명단은 과목별로 등록되며, 좌석(정원)도 과목 단위로 독립 관리됩니다</div>
       <div class="stats-row">
         <div class="stat-card">
-          <div class="stat-label">등록 인원 / 전체 TO</div>
-          <div class="stat-value" id="to-display">10 / 300명</div>
-          <div class="stat-bar"><div class="stat-fill" id="to-bar" style="width:3.3%;background:#1D9E75"></div></div>
-          <div class="stat-sub" id="to-sub">잔여 290명 · TO 초과 시 신규 인증 차단</div>
+          <div class="stat-label"><span>과목별 좌석 현황</span><span style="font-size:10px">사용 / 정원</span></div>
+          <div id="seat-gauges"></div>
         </div>
         <div class="stat-card">
           <div class="stat-label">지위별 현황</div>
@@ -251,7 +333,7 @@ select.cell-input{cursor:pointer;appearance:none;background-image:url("data:imag
         <div class="stat-card">
           <div class="stat-label">구독 만료일</div>
           <div class="stat-value" style="font-size:16px">2027년 8월 31일</div>
-          <div class="stat-bar"><div class="stat-fill" style="width:45%;background:#1D9E75"></div></div>
+          <div class="stat-bar"><div class="stat-fill" style="width:45%;background:var(--sky)"></div></div>
           <div class="stat-sub">D-456 · 만료 30일 전 갱신 안내 발송</div>
         </div>
       </div>
@@ -259,7 +341,7 @@ select.cell-input{cursor:pointer;appearance:none;background-image:url("data:imag
       <!-- 명단 카드 -->
       <div class="section-card">
         <div class="card-header">
-          <span class="card-title"><i class="ti ti-users" aria-hidden="true"></i>구성원 명단</span>
+          <span class="card-title"><i class="ti ti-users" aria-hidden="true"></i>이용자 명단</span>
           <div style="display:flex;gap:7px">
             <button class="btn btn-ghost btn-sm" onclick="downloadMemberList()"><i class="ti ti-table-export" aria-hidden="true"></i>명단 다운로드</button>
             <button class="btn btn-ghost btn-sm" onclick="showToast('member_template.xlsx 다운로드')"><i class="ti ti-download" aria-hidden="true"></i>양식 다운로드</button>
@@ -278,21 +360,24 @@ select.cell-input{cursor:pointer;appearance:none;background-image:url("data:imag
             <div class="upload-icon"><i class="ti ti-file-spreadsheet" aria-hidden="true"></i></div>
             <div>
               <div class="upload-text"><strong>엑셀 파일을 업로드</strong>하거나 여기로 드래그하세요 <code style="font-size:11px;background:var(--color-background-secondary);padding:1px 6px;border-radius:3px">.xlsx .csv</code></div>
-              <div class="upload-text">컬럼 순서: 이름 | 이메일 | 지위 · 기존 명단에 추가됩니다</div>
+              <div class="upload-text">컬럼 순서: 이름 | 지위 | 과목 | 이메일 · 기존 명단에 추가됩니다 (지위: 학생 / 조교 / 교수)</div>
             </div>
           </div>
         </div>
         <div class="filter-row">
           <div class="search-wrap"><i class="ti ti-search" aria-hidden="true"></i><input class="search-input" type="text" placeholder="이름 또는 이메일 검색" oninput="filterTable(this.value)" aria-label="검색"></div>
-          <select class="role-select" onchange="filterByRole(this.value)" aria-label="지위 필터">
+          <select class="role-select" id="subject-filter" onchange="applyFilters()" aria-label="과목 필터">
+            <option value="">전체 과목</option>
+          </select>
+          <select class="role-select" id="position-filter" onchange="applyFilters()" aria-label="지위 필터">
             <option value="">전체 지위</option><option>학생</option><option>조교</option><option>교수</option>
           </select>
           <span style="font-size:12px;color:var(--color-text-tertiary);margin-left:auto" id="row-count">10명</span>
           <button class="btn btn-ghost btn-sm" onclick="addRow()"><i class="ti ti-plus" aria-hidden="true"></i>개별 추가</button>
         </div>
         <div class="table-wrap">
-          <table aria-label="구성원 명단">
-            <thead><tr><th style="width:40px">#</th><th style="min-width:110px">이름</th><th style="min-width:180px">이메일</th><th style="width:120px">지위</th><th style="width:95px">인증 상태</th><th style="width:40px"></th></tr></thead>
+          <table aria-label="이용자 명단">
+            <thead><tr><th style="width:40px">#</th><th style="min-width:100px">이름</th><th style="width:100px">지위</th><th style="width:110px">과목</th><th style="min-width:170px">이메일</th><th style="width:90px">인증 상태</th><th style="width:40px"></th></tr></thead>
             <tbody id="member-tbody"></tbody>
           </table>
         </div>
@@ -337,7 +422,7 @@ select.cell-input{cursor:pointer;appearance:none;background-image:url("data:imag
     <!-- ══ 구독 플랜 ══ -->
     <div class="tab-panel" id="tab-plans">
       <div class="page-title">구독 플랜</div>
-      <div class="page-desc">충남대학교 의과대학 · 현재 구독 중인 플랜을 확인하세요</div>
+      <div class="page-desc">충남대학교 의과대학 · 구독은 (기관 × 과목) 단위입니다. 과목별로 좌석·학기·만료가 독립합니다</div>
       <div class="plan-list" id="plan-list"></div>
       <div class="slide-panel" id="slide-panel" style="display:none">
         <div class="card-header">
@@ -364,6 +449,12 @@ select.cell-input{cursor:pointer;appearance:none;background-image:url("data:imag
         </div>
         <button class="btn btn-ghost btn-sm" onclick="generatePDF()"><i class="ti ti-file-type-pdf" aria-hidden="true"></i>PDF 리포트 생성</button>
       </div>
+      <div class="report-context">
+        <select class="role-select" id="report-subject" onchange="renderReport()" aria-label="과목 선택">
+          <option value="all">전체 과목 (기관 합산)</option>
+        </select>
+        <span class="ctx-note">집계는 과목별로 산출한 뒤 기관 단위로 합산합니다 (현재 구독 과목: 조직학)</span>
+      </div>
       <div class="period-btns">
         <button class="period-btn" onclick="setPeriod(this,'1개월')">최근 1개월</button>
         <button class="period-btn active" onclick="setPeriod(this,'3개월')">최근 3개월</button>
@@ -371,7 +462,7 @@ select.cell-input{cursor:pointer;appearance:none;background-image:url("data:imag
         <button class="period-btn" onclick="setPeriod(this,'전체')">전체</button>
       </div>
       <div class="kpi-grid">
-        <div class="kpi-card"><div class="kpi-label"><i class="ti ti-users" aria-hidden="true"></i>등록 구성원</div><div class="kpi-value">185명</div><div class="kpi-sub">학생 181 · 조교 2 · 교수 2</div></div>
+        <div class="kpi-card"><div class="kpi-label"><i class="ti ti-users" aria-hidden="true"></i>등록 이용자</div><div class="kpi-value">185명</div><div class="kpi-sub">학생 181 · 조교 2 · 교수 2</div></div>
         <div class="kpi-card"><div class="kpi-label"><i class="ti ti-eye" aria-hidden="true"></i>슬라이드 총 조회수</div><div class="kpi-value" id="kv-views">4,823회</div><div class="kpi-sub"><span class="kpi-delta">↑ 지난 기간 대비 +18%</span></div></div>
         <div class="kpi-card"><div class="kpi-label"><i class="ti ti-robot" aria-hidden="true"></i>AI 튜터 호출</div><div class="kpi-value" id="kv-ai">1,247회</div><div class="kpi-sub"><span class="kpi-delta">↑ 지난 기간 대비 +31%</span></div></div>
         <div class="kpi-card"><div class="kpi-label"><i class="ti ti-user-check" aria-hidden="true"></i>1인당 평균 조회수</div><div class="kpi-value" id="kv-avg">26.1회</div><div class="kpi-sub">활성 사용자 133명 기준</div></div>
@@ -386,13 +477,13 @@ select.cell-input{cursor:pointer;appearance:none;background-image:url("data:imag
           <div class="donut-wrap">
             <svg width="90" height="90" viewBox="0 0 100 100" aria-label="활성 사용자 비율">
               <circle cx="50" cy="50" r="38" fill="none" stroke="var(--color-background-tertiary)" stroke-width="14"/>
-              <circle cx="50" cy="50" r="38" fill="none" stroke="#1D9E75" stroke-width="14" stroke-dasharray="173 66" stroke-dashoffset="30" stroke-linecap="round"/>
+              <circle cx="50" cy="50" r="38" fill="none" stroke="var(--sky)" stroke-width="14" stroke-dasharray="173 66" stroke-dashoffset="30" stroke-linecap="round"/>
               <circle cx="50" cy="50" r="38" fill="none" stroke="#EF9F27" stroke-width="14" stroke-dasharray="30 209" stroke-dashoffset="-143" stroke-linecap="round"/>
-              <text x="50" y="46" text-anchor="middle" font-size="14" font-weight="500" fill="var(--color-text-primary)">72%</text>
+              <text x="50" y="46" text-anchor="middle" font-size="14" font-weight="700" fill="var(--color-text-primary)">72%</text>
               <text x="50" y="59" text-anchor="middle" font-size="9" fill="var(--color-text-tertiary)">활성</text>
             </svg>
             <div>
-              <div class="legend-item"><div class="legend-dot" style="background:#1D9E75"></div>활성 133명 (72%)</div>
+              <div class="legend-item"><div class="legend-dot" style="background:var(--sky)"></div>활성 133명 (72%)</div>
               <div class="legend-item"><div class="legend-dot" style="background:#EF9F27"></div>비활성 14명 (8%)</div>
               <div class="legend-item"><div class="legend-dot" style="background:var(--color-background-tertiary)"></div>미인증 38명 (20%)</div>
             </div>
@@ -412,47 +503,56 @@ select.cell-input{cursor:pointer;appearance:none;background-image:url("data:imag
 </div>
 
 <script>
-// ── 데이터 ──
-const ROLES=['학생','조교','교수']
+// ── 마스터 데이터 ──
+const POSITIONS=['학생','조교','교수']
+// 이 기관(충남대 의과대학)이 구독 중인 과목 목록. v1.0은 조직학 1개지만 구조는 N개를 지원.
+// 좌석(max)·플랜은 (기관 × 과목)별로 독립 (CLAUDE.md §0, §16).
+const SUBJECTS=[
+  {code:'HST',name:'조직학',plan:'캠퍼스 플랜',max:300,expire:'2027-08-31'},
+  // 예) 추후 기생충학 추가 시: {code:'PARA',name:'기생충학',plan:'디파트먼트 플랜',max:50,expire:'...'},
+]
+const SUBJECT_NAMES=SUBJECTS.map(s=>s.name)
+
 let members=[
-  {name:'김민준',email:'mjkim001@cnu.ac.kr',role:'학생',status:'인증 완료'},
-  {name:'이서연',email:'sylee002@cnu.ac.kr',role:'학생',status:'인증 완료'},
-  {name:'박지호',email:'jhpark003@cnu.ac.kr',role:'학생',status:'대기 중'},
-  {name:'최수아',email:'sachoi004@cnu.ac.kr',role:'조교',status:'인증 완료'},
-  {name:'정우진',email:'wjjeong005@cnu.ac.kr',role:'교수',status:'인증 완료'},
-  {name:'강하은',email:'hekang006@cnu.ac.kr',role:'학생',status:'인증 완료'},
-  {name:'윤도현',email:'dhyoon007@cnu.ac.kr',role:'학생',status:'대기 중'},
-  {name:'임지수',email:'jslim008@cnu.ac.kr',role:'조교',status:'인증 완료'},
-  {name:'한소희',email:'shhan009@cnu.ac.kr',role:'교수',status:'인증 완료'},
-  {name:'오민서',email:'msoh010@cnu.ac.kr',role:'학생',status:'인증 완료'},
+  {name:'김민준',email:'mjkim001@cnu.ac.kr',subject:'조직학',position:'학생',status:'인증 완료'},
+  {name:'이서연',email:'sylee002@cnu.ac.kr',subject:'조직학',position:'학생',status:'인증 완료'},
+  {name:'박지호',email:'jhpark003@cnu.ac.kr',subject:'조직학',position:'학생',status:'대기 중'},
+  {name:'최수아',email:'sachoi004@cnu.ac.kr',subject:'조직학',position:'조교',status:'인증 완료'},
+  {name:'정우진',email:'wjjeong005@cnu.ac.kr',subject:'조직학',position:'교수',status:'인증 완료'},
+  {name:'강하은',email:'hekang006@cnu.ac.kr',subject:'조직학',position:'학생',status:'인증 완료'},
+  {name:'윤도현',email:'dhyoon007@cnu.ac.kr',subject:'조직학',position:'학생',status:'대기 중'},
+  {name:'임지수',email:'jslim008@cnu.ac.kr',subject:'조직학',position:'조교',status:'인증 완료'},
+  {name:'한소희',email:'shhan009@cnu.ac.kr',subject:'조직학',position:'교수',status:'인증 완료'},
+  {name:'오민서',email:'msoh010@cnu.ac.kr',subject:'조직학',position:'학생',status:'인증 완료'},
 ]
 let original=JSON.stringify(members)
 
+// 과목 구독(=구독 플랜 탭의 카드). 슬라이드 ID는 SA 단일 채번 (CLAUDE.md §6-1).
 const PLANS=[
-  {id:'basic',name:'캠퍼스 플랜 — 조직학',desc:'조직학 전체 컬렉션',expire:'2027-08-31',slides:[
-    {id:'HS-HST-001',name:'소장 · Small Intestine',cat:'조직학',stain:'H&E'},
-    {id:'HS-HST-002',name:'대장 · Large Intestine',cat:'조직학',stain:'H&E'},
-    {id:'HS-HST-003',name:'간 · Liver',cat:'조직학',stain:'H&E'},
-    {id:'HS-HST-004',name:'신장 · Kidney',cat:'조직학',stain:'PAS'},
-    {id:'HS-HST-005',name:'폐 · Lung',cat:'조직학',stain:'H&E'},
-    {id:'HS-HST-006',name:'림프절 · Lymph Node',cat:'조직학',stain:'H&E'},
-    {id:'HS-HST-007',name:'비장 · Spleen',cat:'조직학',stain:'H&E'},
-    {id:'HS-HST-008',name:'심장 · Heart',cat:'조직학',stain:'Masson'},
-    {id:'HS-HST-009',name:'피부 · Skin',cat:'조직학',stain:'H&E'},
-    {id:'HS-HST-010',name:'척수 · Spinal Cord',cat:'조직학',stain:'H&E'},
+  {id:'hst',subject:'조직학',code:'HST',plan:'캠퍼스 플랜',seats:300,term:'2026 가을 + 2027 봄 (연납)',accessOpen:'2026-08-01',expire:'2027-08-31',slides:[
+    {id:'SA-HST-001',name:'소장 · Small Intestine',cat:'조직학',stain:'H&E'},
+    {id:'SA-HST-002',name:'대장 · Large Intestine',cat:'조직학',stain:'H&E'},
+    {id:'SA-HST-003',name:'간 · Liver',cat:'조직학',stain:'H&E'},
+    {id:'SA-HST-004',name:'신장 · Kidney',cat:'조직학',stain:'PAS'},
+    {id:'SA-HST-005',name:'폐 · Lung',cat:'조직학',stain:'H&E'},
+    {id:'SA-HST-006',name:'림프절 · Lymph Node',cat:'조직학',stain:'H&E'},
+    {id:'SA-HST-007',name:'비장 · Spleen',cat:'조직학',stain:'H&E'},
+    {id:'SA-HST-008',name:'심장 · Heart',cat:'조직학',stain:'Masson'},
+    {id:'SA-HST-009',name:'피부 · Skin',cat:'조직학',stain:'H&E'},
+    {id:'SA-HST-010',name:'척수 · Spinal Cord',cat:'조직학',stain:'H&E'},
   ]},
 ]
 const RANKS=[
-  {id:'HS-HST-001',name:'소장 · Small Intestine',views:487,cat:'조직학'},
-  {id:'HS-HST-006',name:'림프절 · Lymph Node',views:412,cat:'조직학'},
-  {id:'HS-HST-003',name:'간 · Liver',views:389,cat:'조직학'},
-  {id:'HS-HST-004',name:'신장 · Kidney',views:298,cat:'조직학'},
-  {id:'HS-HST-005',name:'폐 · Lung',views:276,cat:'조직학'},
-  {id:'HS-HST-008',name:'심장 · Heart',views:251,cat:'조직학'},
-  {id:'HS-HST-002',name:'대장 · Large Intestine',views:234,cat:'조직학'},
-  {id:'HS-HST-009',name:'피부 · Skin',views:198,cat:'조직학'},
-  {id:'HS-HST-007',name:'비장 · Spleen',views:176,cat:'조직학'},
-  {id:'HS-HST-010',name:'척수 · Spinal Cord',views:154,cat:'조직학'},
+  {id:'SA-HST-001',name:'소장 · Small Intestine',views:487,cat:'조직학'},
+  {id:'SA-HST-006',name:'림프절 · Lymph Node',views:412,cat:'조직학'},
+  {id:'SA-HST-003',name:'간 · Liver',views:389,cat:'조직학'},
+  {id:'SA-HST-004',name:'신장 · Kidney',views:298,cat:'조직학'},
+  {id:'SA-HST-005',name:'폐 · Lung',views:276,cat:'조직학'},
+  {id:'SA-HST-008',name:'심장 · Heart',views:251,cat:'조직학'},
+  {id:'SA-HST-002',name:'대장 · Large Intestine',views:234,cat:'조직학'},
+  {id:'SA-HST-009',name:'피부 · Skin',views:198,cat:'조직학'},
+  {id:'SA-HST-007',name:'비장 · Spleen',views:176,cat:'조직학'},
+  {id:'SA-HST-010',name:'척수 · Spinal Cord',views:154,cat:'조직학'},
 ]
 const PERIOD_DATA={
   '1개월':{views:1842,ai:498,months:['10월'],vd:[1842],ad:[498]},
@@ -466,6 +566,14 @@ let currentSlides=[]
 let pendingDeleteIdx=null
 let pendingAdminBtn=null
 let adminCount=2
+
+// ── 필터 옵션 채우기 ──
+function initFilters(){
+  const sf=document.getElementById('subject-filter')
+  SUBJECT_NAMES.forEach(n=>{const o=document.createElement('option');o.value=n;o.textContent=n;sf.appendChild(o)})
+  const rs=document.getElementById('report-subject')
+  SUBJECT_NAMES.forEach(n=>{const o=document.createElement('option');o.value=n;o.textContent=n;rs.appendChild(o)})
+}
 
 // ── 탭 전환 ──
 function switchTab(t){
@@ -484,20 +592,22 @@ function renderTable(data){
   data.forEach(m=>{
     const idx=members.indexOf(m)
     const orig=JSON.parse(original)[idx]
-    const changed=orig&&(m.name!==orig.name||m.email!==orig.email||m.role!==orig.role)
+    const changed=orig&&(m.name!==orig.name||m.email!==orig.email||m.position!==orig.position||m.subject!==orig.subject)
     const tr=document.createElement('tr')
     if(changed)tr.classList.add('row-changed')
     const nameTd=document.createElement('td')
     nameTd.innerHTML=`<div class="td-inner"><span class="row-num">${idx+1}</span><input class="cell-input" value="${esc(m.name)}" aria-label="이름" oninput="updateField(${idx},'name',this.value)"></div>`
     const emailTd=document.createElement('td')
     emailTd.innerHTML=`<div class="td-inner"><input class="cell-input" value="${esc(m.email)}" aria-label="이메일" oninput="updateField(${idx},'email',this.value)"></div>`
+    const subjectTd=document.createElement('td')
+    subjectTd.innerHTML=`<div class="td-inner"><select class="cell-input" aria-label="과목" onchange="updateField(${idx},'subject',this.value)">${SUBJECT_NAMES.map(s=>`<option${s===m.subject?' selected':''}>${esc(s)}</option>`).join('')}</select></div>`
     const roleTd=document.createElement('td')
-    roleTd.innerHTML=`<div class="td-inner"><select class="cell-input" aria-label="지위" onchange="updateField(${idx},'role',this.value)">${ROLES.map(r=>`<option${r===m.role?' selected':''}>${r}</option>`).join('')}</select></div>`
+    roleTd.innerHTML=`<div class="td-inner"><select class="cell-input" aria-label="지위" onchange="updateField(${idx},'position',this.value)">${POSITIONS.map(r=>`<option${r===m.position?' selected':''}>${r}</option>`).join('')}</select></div>`
     const statusTd=document.createElement('td')
     statusTd.innerHTML=`<div class="td-inner"><span class="badge ${m.status==='인증 완료'?'badge-active':'badge-pending'}">${m.status}</span></div>`
     const delTd=document.createElement('td')
     delTd.innerHTML=`<div class="td-inner" style="justify-content:center;padding:7px 6px"><button class="del-btn" aria-label="${esc(m.name)} 삭제" onclick="openDelModal(${idx})"><i class="ti ti-trash" aria-hidden="true"></i></button></div>`
-    tr.appendChild(nameTd);tr.appendChild(emailTd);tr.appendChild(roleTd);tr.appendChild(statusTd);tr.appendChild(delTd)
+    tr.appendChild(nameTd);tr.appendChild(roleTd);tr.appendChild(subjectTd);tr.appendChild(emailTd);tr.appendChild(statusTd);tr.appendChild(delTd)
     tr.addEventListener('mouseenter',()=>tr.querySelector('.del-btn').style.opacity='1')
     tr.addEventListener('mouseleave',()=>tr.querySelector('.del-btn').style.opacity='0.35')
     tbody.appendChild(tr)
@@ -509,27 +619,46 @@ function updateField(idx,field,val){members[idx][field]=val;markDirty();updateSt
 function markDirty(){document.getElementById('save-bar').classList.remove('hidden');document.getElementById('save-bar-bottom').classList.remove('hidden')}
 function saveChanges(){original=JSON.stringify(members);document.getElementById('save-bar').classList.add('hidden');document.getElementById('save-bar-bottom').classList.add('hidden');renderTable(members);showToast('변경사항이 저장됐습니다 ✓')}
 function cancelChanges(){members=JSON.parse(original);document.getElementById('save-bar').classList.add('hidden');document.getElementById('save-bar-bottom').classList.add('hidden');renderTable(members);showToast('변경사항을 되돌렸습니다')}
-function filterTable(q){renderTable(q?members.filter(m=>m.name.includes(q)||m.email.includes(q)):members)}
-function filterByRole(r){renderTable(r?members.filter(m=>m.role===r):members)}
-function addRow(){members.push({name:'',email:'',role:'학생',status:'대기 중'});markDirty();renderTable(members);const inp=document.querySelectorAll('#member-tbody tr:last-child input');if(inp[0])inp[0].focus()}
-function simulateUpload(){members.push({name:'신입생A',email:'new001@cnu.ac.kr',role:'학생',status:'대기 중'},{name:'신입생B',email:'new002@cnu.ac.kr',role:'학생',status:'대기 중'});markDirty();renderTable(members);showToast('2명이 추가됐습니다. 저장 후 시스템에 반영됩니다.')}
+function applyFilters(){
+  const q=document.querySelector('.search-input').value
+  const subj=document.getElementById('subject-filter').value
+  const role=document.getElementById('position-filter').value
+  let data=members
+  if(q)data=data.filter(m=>m.name.includes(q)||m.email.includes(q))
+  if(subj)data=data.filter(m=>m.subject===subj)
+  if(role)data=data.filter(m=>m.position===role)
+  renderTable(data)
+}
+function filterTable(){applyFilters()}
+function addRow(){const def=SUBJECT_NAMES[0]||'조직학';members.push({name:'',email:'',subject:def,position:'학생',status:'대기 중'});markDirty();renderTable(members);const inp=document.querySelectorAll('#member-tbody tr:last-child input');if(inp[0])inp[0].focus()}
+function simulateUpload(){const def=SUBJECT_NAMES[0]||'조직학';members.push({name:'신입생A',email:'new001@cnu.ac.kr',subject:def,position:'학생',status:'대기 중'},{name:'신입생B',email:'new002@cnu.ac.kr',subject:def,position:'학생',status:'대기 중'});markDirty();renderTable(members);showToast('2명이 추가됐습니다. 저장 후 시스템에 반영됩니다.')}
+
+function renderSeatGauges(){
+  const wrap=document.getElementById('seat-gauges')
+  wrap.innerHTML=SUBJECTS.map(s=>{
+    const used=members.filter(m=>m.subject===s.name).length
+    const pct=s.max>0?used/s.max*100:0
+    const color=used>=s.max?'var(--color-text-danger)':pct>=90?'#EF9F27':'var(--sky)'
+    const sub=used>=s.max?'⚠ 좌석 초과 — 해당 과목 신규 인증 차단 중':`잔여 ${s.max-used}석 · 좌석 초과 시 해당 과목 신규 인증 차단`
+    return`<div class="seat-row">
+      <div class="seat-head"><span class="seat-name">${s.name} · ${s.plan}</span><span class="seat-count">${used} / ${s.max}석</span></div>
+      <div class="stat-bar"><div class="stat-fill" style="width:${Math.min(pct,100)}%;background:${color}"></div></div>
+      <div class="stat-sub">${sub}</div>
+    </div>`
+  }).join('')
+}
 function updateStats(){
-  const total=300,n=members.length,pct=n/total*100
-  document.getElementById('to-display').textContent=n+' / '+total+'명'
-  const bar=document.getElementById('to-bar')
-  bar.style.width=Math.min(pct,100)+'%'
-  bar.style.background=n>=total?'#E24B4A':pct>=90?'#EF9F27':'#1D9E75'
-  document.getElementById('to-sub').textContent=n>=total?'⚠ TO 초과 — 신규 인증 차단 중':'잔여 '+(total-n)+'명 · TO 초과 시 신규 인증 차단'
-  document.getElementById('cnt-s').textContent='학생 '+members.filter(m=>m.role==='학생').length+'명'
-  document.getElementById('cnt-a').textContent='조교 '+members.filter(m=>m.role==='조교').length+'명'
-  document.getElementById('cnt-p').textContent='교수 '+members.filter(m=>m.role==='교수').length+'명'
+  renderSeatGauges()
+  document.getElementById('cnt-s').textContent='학생 '+members.filter(m=>m.position==='학생').length+'명'
+  document.getElementById('cnt-a').textContent='조교 '+members.filter(m=>m.position==='조교').length+'명'
+  document.getElementById('cnt-p').textContent='교수 '+members.filter(m=>m.position==='교수').length+'명'
   document.getElementById('cnt-ok').textContent=members.filter(m=>m.status==='인증 완료').length+'명'
   document.getElementById('cnt-wait').textContent=members.filter(m=>m.status==='대기 중').length+'명'
 }
 function downloadMemberList(){
   const now=new Date(),stamp=`${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`
-  const rows=members.map((m,i)=>[i+1,m.name,m.email,m.role,m.status])
-  const csv=[['번호','이름','이메일','지위','인증 상태'],...rows].map(r=>r.join(',')).join('\n')
+  const rows=members.map((m,i)=>[i+1,m.name,m.position,m.subject,m.email,m.status])
+  const csv=[['번호','이름','지위','과목','이메일','인증 상태'],...rows].map(r=>r.join(',')).join('\n')
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'}));a.download=`충남대_의과대학_명단_${stamp}.csv`;a.click();URL.revokeObjectURL(a.href)
   showToast('명단 다운로드 완료')
 }
@@ -537,9 +666,9 @@ function downloadMemberList(){
 // ── 삭제 모달 ──
 function openDelModal(idx){
   pendingDeleteIdx=idx;pendingAdminBtn=null
-  const m=members[idx],rl=m.role==='교수'?'교수님':m.role
-  document.getElementById('modal-q').innerHTML=`<strong>${esc(m.name)} ${rl}</strong>을 명단에서 삭제하시겠습니까?`
-  document.getElementById('modal-warn').textContent='삭제하면 이 구성원의 슬라이드 접근 권한이 즉시 차단됩니다.'
+  const m=members[idx],rl=m.position==='교수'?'교수님':m.position
+  document.getElementById('modal-q').innerHTML=`<strong>${esc(m.name)} ${rl}</strong>을(를) <strong>${esc(m.subject)}</strong> 명단에서 삭제하시겠습니까?`
+  document.getElementById('modal-warn').textContent='삭제하면 해당 과목 슬라이드 접근이 즉시 차단되고, 그 과목 좌석 1석이 반환됩니다.'
   document.getElementById('modal-hint').textContent='재등록이 필요한 경우 명단에 다시 추가하십시오.'
   document.getElementById('modal-confirm').onclick=confirmDelete
   document.getElementById('del-modal').classList.remove('hidden')
@@ -583,16 +712,16 @@ function addAdmin(){
   if(adminCount>=5)document.getElementById('add-admin-btn').disabled=true
 }
 
-// ── 구독 플랜 ──
+// ── 구독 플랜 (과목별) ──
 function dday(expire){return Math.ceil((new Date(expire)-new Date())/86400000)}
 function renderPlans(){
   document.getElementById('plan-list').innerHTML=PLANS.map(p=>{
-    const d=dday(p.expire),cls=d<0?'expire-danger':d<=30?'expire-warn':'expire-ok'
+    const d=dday(p.expire),cls=d<0?'expire-warn':d<=30?'expire-warn':'expire-ok'
     const label=d<0?'만료됨':`D-${d} · ${p.expire.replace(/-/g,'.')}`
     return`<div class="plan-card${activePlanId===p.id?' active':''}" onclick="selectPlan('${p.id}')">
       <div class="plan-icon"><i class="ti ti-microscope" aria-hidden="true"></i></div>
-      <div class="plan-info"><div class="plan-name">${p.name}</div><div class="plan-meta">${p.desc} · 슬라이드 ${p.slides.length}종</div></div>
-      <span class="badge ${d<0?'badge-warn':d<=30?'badge-warn':'badge-active'}" style="margin-right:8px">${d<0?'만료':'구독 중'}</span>
+      <div class="plan-info"><div class="plan-name">${p.subject} · ${p.plan}</div><div class="plan-meta">좌석 ${p.seats}석 · ${p.term} · 슬라이드 ${p.slides.length}종</div></div>
+      <span class="badge ${d<0?'badge-warn':'badge-active'}" style="margin-right:8px">${d<0?'만료':'구독 중'}</span>
       <span class="${cls}">${label}</span>
       <i class="ti ti-chevron-right plan-arrow" aria-hidden="true"></i>
     </div>`}).join('')
@@ -602,7 +731,7 @@ function selectPlan(id){
   renderPlans()
   const plan=PLANS.find(p=>p.id===id)
   currentSlides=plan.slides
-  document.getElementById('slide-panel-title').innerHTML=`<i class="ti ti-microscope" aria-hidden="true"></i>${plan.name} · 슬라이드 목록`
+  document.getElementById('slide-panel-title').innerHTML=`<i class="ti ti-microscope" aria-hidden="true"></i>${plan.subject} · 슬라이드 목록`
   document.getElementById('slide-panel').style.display='block'
   renderSlideList(currentSlides)
 }
@@ -620,10 +749,10 @@ function renderSlideList(data){
 }
 function filterSlides(q){renderSlideList(q?currentSlides.filter(s=>s.name.toLowerCase().includes(q.toLowerCase())||s.id.toLowerCase().includes(q.toLowerCase())):currentSlides)}
 function downloadSlideCSV(){
-  if(!activePlanId){showToast('플랜을 먼저 선택하세요');return}
+  if(!activePlanId){showToast('과목을 먼저 선택하세요');return}
   const plan=PLANS.find(p=>p.id===activePlanId)
-  const csv=[['번호','슬라이드 ID','슬라이드명','카테고리','염색법'],...currentSlides.map((s,i)=>[i+1,s.id,s.name,s.cat,s.stain])].map(r=>r.join(',')).join('\n')
-  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'}));a.download=`충남대_${plan.name}_슬라이드목록.csv`;a.click();showToast('엑셀 다운로드 완료')
+  const csv=[['번호','슬라이드 ID','슬라이드명','과목','염색법'],...currentSlides.map((s,i)=>[i+1,s.id,s.name,s.cat,s.stain])].map(r=>r.join(',')).join('\n')
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'}));a.download=`충남대_${plan.subject}_슬라이드목록.csv`;a.click();showToast('엑셀 다운로드 완료')
 }
 function downloadSlidePDF(){showToast('PDF 다운로드 — 브라우저 인쇄 미리보기로 생성됩니다')}
 
@@ -639,8 +768,8 @@ function renderReport(){
   document.getElementById('kv-views').textContent=d.views.toLocaleString()+'회'
   document.getElementById('kv-ai').textContent=d.ai.toLocaleString()+'회'
   document.getElementById('kv-avg').textContent=(d.views/133).toFixed(1)+'회'
-  renderBarChart('views-chart',d.months,d.vd,'#1D9E75')
-  renderBarChart('ai-chart',d.months,d.ad,'#534AB7')
+  renderBarChart('views-chart',d.months,d.vd,'#5BB8D4')
+  renderBarChart('ai-chart',d.months,d.ad,'#0F1F3D')
   renderRanks()
 }
 function renderBarChart(id,labels,values,color){
@@ -667,6 +796,9 @@ function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').repl
 let toastTimer
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),2600)}
 
-// 초기 렌더
+// ── 초기 렌더 ──
+initFilters()
 renderTable(members)
 </script>
+</body>
+</html>
