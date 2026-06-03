@@ -86,7 +86,7 @@ def test_register_roster_mismatch(client, mock_db):
                           json={
                               "email": "unknown@test.com",
                               "password": "pass123",
-                              "role": "student",
+                              "role": "viewer",
                               "institution_id": "YU"
                           })
         
@@ -107,7 +107,7 @@ def test_register_email_exists(client, mock_db):
                           json={
                               "email": "existing@test.com",
                               "password": "pass123",
-                              "role": "student",
+                              "role": "viewer",
                               "institution_id": "YU"
                           })
         
@@ -133,7 +133,7 @@ def test_register_capacity_exceeded(client, mock_db):
                           json={
                               "email": "new@test.com",
                               "password": "pass123",
-                              "role": "student",
+                              "role": "viewer",
                               "institution_id": "YU"
                           })
         
@@ -161,7 +161,7 @@ def test_register_success(client, mock_db):
                           json={
                               "email": "new@test.com",
                               "password": "secure123",
-                              "role": "student",
+                              "role": "viewer",
                               "institution_id": "YU"
                           })
         
@@ -185,7 +185,7 @@ def test_register_no_active_subscription_rejected(client, mock_db):
         ]
         resp = client.post("/api/auth/register",
                           json={"email": "new@test.com", "password": "pass123",
-                                "role": "student", "institution_id": "YU"})
+                                "role": "viewer", "institution_id": "YU"})
         assert resp.status_code == 403
         assert resp.get_json()["error"] == "SUBSCRIPTION_INACTIVE"
 
@@ -196,7 +196,7 @@ def test_verify_email_no_active_subscription_rejected(client, mock_db):
          patch("server_render.release_db_conn"):
         mock_get_db.return_value = mock_db["conn"]
         mock_db["cursor"].fetchone.side_effect = [
-            (1, "YU", "student", False, "HST"),   # user
+            (1, "YU", "viewer", False, "HST"),   # user
             (1, "123456", datetime.now(timezone.utc) + timedelta(minutes=5), False, 0),  # ev
             None,   # 접근창 내 active 구독 없음 → 거부
         ]
@@ -213,7 +213,7 @@ def test_verify_email_code_expired(client, mock_db):
         mock_get_db.return_value = mock_db["conn"]
         
         mock_db["cursor"].fetchone.side_effect = [
-            (1, "YU", "student", False, "HST"),
+            (1, "YU", "viewer", False, "HST"),
             (
                 1, "123456",
                 datetime.now(timezone.utc) - timedelta(minutes=20),
@@ -239,7 +239,7 @@ def test_verify_email_too_many_attempts(client, mock_db):
         mock_get_db.return_value = mock_db["conn"]
         
         mock_db["cursor"].fetchone.side_effect = [
-            (1, "YU", "student", False, "HST"),
+            (1, "YU", "viewer", False, "HST"),
             (
                 1, "123456",
                 datetime.now(timezone.utc) + timedelta(minutes=5),
@@ -265,7 +265,7 @@ def test_verify_email_code_mismatch(client, mock_db):
         mock_get_db.return_value = mock_db["conn"]
         
         mock_db["cursor"].fetchone.side_effect = [
-            (1, "YU", "student", False, "HST"),
+            (1, "YU", "viewer", False, "HST"),
             (
                 1, "123456",
                 datetime.now(timezone.utc) + timedelta(minutes=5),
@@ -294,7 +294,7 @@ def test_verify_email_code_mismatch_last_attempt(client, mock_db):
         mock_get_db.return_value = mock_db["conn"]
         
         mock_db["cursor"].fetchone.side_effect = [
-            (1, "YU", "student", False, "HST"),
+            (1, "YU", "viewer", False, "HST"),
             (
                 1, "123456",
                 datetime.now(timezone.utc) + timedelta(minutes=5),
@@ -321,7 +321,7 @@ def test_verify_email_capacity_exceeded_at_verify(client, mock_db):
         mock_get_db.return_value = mock_db["conn"]
         
         mock_db["cursor"].fetchone.side_effect = [
-            (1, "YU", "student", False, "HST"),
+            (1, "YU", "viewer", False, "HST"),
             (
                 1, "123456",
                 datetime.now(timezone.utc) + timedelta(minutes=5),
@@ -349,7 +349,7 @@ def test_verify_email_success(client, mock_db):
         mock_get_db.return_value = mock_db["conn"]
         
         mock_db["cursor"].fetchone.side_effect = [
-            (1, "YU", "student", False, "HST"),
+            (1, "YU", "viewer", False, "HST"),
             (
                 1, "123456",
                 datetime.now(timezone.utc) + timedelta(minutes=5),
@@ -404,7 +404,7 @@ def test_login_invalid_credentials_wrong_password(client, mock_db):
         # Login query: id, institution_id, role, is_special, pw_hash, status, locked_at, subscription_end
         # Then _check_and_increment_failed queries: failed_attempts, failed_window_start
         mock_db["cursor"].fetchone.side_effect = [
-            (1, "YU", "student", False, correct_hash, "active", None, None,
+            (1, "YU", "viewer", False, correct_hash, "active", None, None,
              datetime.now(timezone.utc) + timedelta(days=365)),
             (0, None),  # _check_and_increment_failed
         ]
@@ -429,7 +429,7 @@ def test_login_email_not_verified(client, mock_db):
         from werkzeug.security import generate_password_hash
         
         mock_db["cursor"].fetchone.return_value = (
-            1, "YU", "student", False,
+            1, "YU", "viewer", False,
             generate_password_hash("password"),
             "pending_verification",
             None,  # locked_at
@@ -457,7 +457,7 @@ def test_login_subscription_expired_regular_user(client, mock_db):
         from werkzeug.security import generate_password_hash
         
         mock_db["cursor"].fetchone.return_value = (
-            1, "YU", "student", False,
+            1, "YU", "viewer", False,
             generate_password_hash("password"),
             "active",
             None,  # locked_at
@@ -485,7 +485,7 @@ def test_login_subscription_expired_but_is_special(client, mock_db):
         from werkzeug.security import generate_password_hash
         
         mock_db["cursor"].fetchone.return_value = (
-            1, "YU", "student", True,
+            1, "YU", "viewer", True,
             generate_password_hash("password"),
             "active",
             None,  # locked_at
@@ -513,7 +513,7 @@ def test_login_success(client, mock_db):
         from werkzeug.security import generate_password_hash
         
         mock_db["cursor"].fetchone.return_value = (
-            1, "YU", "student", False,
+            1, "YU", "viewer", False,
             generate_password_hash("password"),
             "active",
             None,  # locked_at
@@ -593,7 +593,7 @@ def test_login_required_session_token_mismatch(client, mock_db):
         payload = {
             "sub": "1",
             "institution_id": "YU",
-            "role": "student",
+            "role": "viewer",
             "session_token": "old-session-token",
             "is_special": False,
         }
@@ -602,7 +602,7 @@ def test_login_required_session_token_mismatch(client, mock_db):
 
         mock_db["cursor"].fetchone.return_value = (
             # session_token, status, subject_code, special_expires_at, role, is_special, institution_id, subscription_end
-            "new-session-token", "active", "HST", None, "student", False, "YU", None
+            "new-session-token", "active", "HST", None, "viewer", False, "YU", None
         )
 
         resp = client.get("http://localhost/api/auth/me")
@@ -621,7 +621,7 @@ def test_login_required_pending_verification(client, mock_db):
         payload = {
             "sub": "1",
             "institution_id": "YU",
-            "role": "student",
+            "role": "viewer",
             "session_token": "valid-session-123",
             "is_special": False,
         }
@@ -629,7 +629,7 @@ def test_login_required_pending_verification(client, mock_db):
         client.set_cookie(COOKIE_NAME, token)
         
         mock_db["cursor"].fetchone.return_value = (
-            "valid-session-123", "pending_verification", "HST", None, "student", False, "YU", None
+            "valid-session-123", "pending_verification", "HST", None, "viewer", False, "YU", None
         )
 
         resp = client.get("/api/auth/me")
@@ -646,7 +646,7 @@ def test_login_required_success(client, mock_db):
         payload = {
             "sub": "1",
             "institution_id": "YU",
-            "role": "student",
+            "role": "viewer",
             "session_token": "valid-session-123",
             "is_special": False,
         }
@@ -655,9 +655,9 @@ def test_login_required_success(client, mock_db):
 
         mock_db["cursor"].fetchone.side_effect = [
             # fail-closed(§8): 매칭 구독 없으면(None) SUBSCRIPTION_EXPIRED → 유효 구독일 제공
-            ("valid-session-123", "active", "HST", None, "student", False, "YU",
+            ("valid-session-123", "active", "HST", None, "viewer", False, "YU",
              datetime.now(timezone.utc).date() + timedelta(days=365)),   # _authenticate: +role,is_special,institution_id
-            (1, "test@example.com", "student", "YU", False, "active", None)  # me()
+            (1, "test@example.com", "viewer", "YU", False, "active", None)  # me()
         ]
 
         # Werkzeug 3.x: set_cookie requires full URL for domain matching
@@ -680,7 +680,7 @@ def test_response_headers_cache_control(client, mock_db):
                           json={
                               "email": "test@example.com",
                               "password": "pass",
-                              "role": "student",
+                              "role": "viewer",
                               "institution_id": "YU"
                           })
         assert "Cache-Control" in resp.headers
@@ -705,7 +705,7 @@ def test_logout_success(client, mock_db):
         payload = {
             "sub": "1",
             "institution_id": "YU",
-            "role": "student",
+            "role": "viewer",
             "session_token": "valid-session-123",
             "is_special": False,
         }
@@ -716,7 +716,7 @@ def test_logout_success(client, mock_db):
 
         mock_db["cursor"].fetchone.return_value = (
             # fail-closed(§8): 유효 구독일 제공해 _authenticate 통과 → logout 도달
-            "valid-session-123", "active", "HST", None, "student", False, "YU",
+            "valid-session-123", "active", "HST", None, "viewer", False, "YU",
             datetime.now(timezone.utc).date() + timedelta(days=365)   # +role,is_special,institution_id
         )
 
@@ -744,7 +744,7 @@ def test_login_account_locked(client, mock_db):
 
         locked_at = datetime.now(timezone.utc) - timedelta(hours=1)  # 잠근지 1시간
         mock_db["cursor"].fetchone.return_value = (
-            1, "YU", "student", False,
+            1, "YU", "viewer", False,
             generate_password_hash("password"),
             "locked",
             locked_at,  # locked_at 1시간 전 (24h 미경과)
@@ -769,7 +769,7 @@ def test_login_account_auto_unlock(client, mock_db):
 
         locked_at = datetime.now(timezone.utc) - timedelta(hours=25)  # 25시간 전 잠금
         mock_db["cursor"].fetchone.return_value = (
-            1, "YU", "student", False,
+            1, "YU", "viewer", False,
             generate_password_hash("password"),
             "locked",
             locked_at,
@@ -797,7 +797,7 @@ def test_login_wrong_password_locks_account(client, mock_db):
 
         # Login query + _check_and_increment_failed: already at 9, new attempt = 10 → lock
         mock_db["cursor"].fetchone.side_effect = [
-            (1, "YU", "student", False, correct_hash, "active", None, None,
+            (1, "YU", "viewer", False, correct_hash, "active", None, None,
              datetime.now(timezone.utc).date() + timedelta(days=365)),
             (9, window_start),   # failed_attempts=9, window still active → new=10 → locked
         ]
@@ -818,7 +818,7 @@ def test_verify_email_code_mismatch_triggers_lock(client, mock_db):
 
         window_start = datetime.now(timezone.utc) - timedelta(hours=1)
         mock_db["cursor"].fetchone.side_effect = [
-            (1, "YU", "student", False, "HST"),
+            (1, "YU", "viewer", False, "HST"),
             (1, "123456", datetime.now(timezone.utc) + timedelta(minutes=5), False, 2),
             (9, window_start),   # 9 previous fails → 10th → locked
         ]
@@ -938,7 +938,7 @@ def test_csrf_missing_header_returns_403(client, mock_db):
          patch("server_render.release_db_conn"):
         mock_get_db.return_value = mock_db["conn"]
 
-        payload = {"sub": "1", "institution_id": "YU", "role": "student",
+        payload = {"sub": "1", "institution_id": "YU", "role": "viewer",
                    "session_token": "sess123", "is_special": False}
         token = encode_token(payload)
         client.set_cookie(COOKIE_NAME, token)
@@ -946,7 +946,7 @@ def test_csrf_missing_header_returns_403(client, mock_db):
 
         # fail-closed(§8): 유효 구독일 제공해 _authenticate 통과 → CSRF 검사 도달
         mock_db["cursor"].fetchone.return_value = (
-            "sess123", "active", "HST", None, "student", False, "YU",
+            "sess123", "active", "HST", None, "viewer", False, "YU",
             datetime.now(timezone.utc).date() + timedelta(days=365))
 
         # No X-CSRF-Token header → 403
@@ -963,7 +963,7 @@ def test_csrf_mismatched_token_returns_403(client, mock_db):
          patch("server_render.release_db_conn"):
         mock_get_db.return_value = mock_db["conn"]
 
-        payload = {"sub": "1", "institution_id": "YU", "role": "student",
+        payload = {"sub": "1", "institution_id": "YU", "role": "viewer",
                    "session_token": "sess123", "is_special": False}
         token = encode_token(payload)
         client.set_cookie(COOKIE_NAME, token)
@@ -971,7 +971,7 @@ def test_csrf_mismatched_token_returns_403(client, mock_db):
 
         # fail-closed(§8): 유효 구독일 제공해 _authenticate 통과 → CSRF 검사 도달
         mock_db["cursor"].fetchone.return_value = (
-            "sess123", "active", "HST", None, "student", False, "YU",
+            "sess123", "active", "HST", None, "viewer", False, "YU",
             datetime.now(timezone.utc).date() + timedelta(days=365))
 
         resp = client.post(
@@ -1070,7 +1070,7 @@ def test_session_revoked_on_db_mismatch(client, mock_db):
         payload = {
             "sub": "1",
             "institution_id": "YU",
-            "role": "student",
+            "role": "viewer",
             "session_token": "old-token-from-jwt",
             "is_special": False,
         }
@@ -1080,7 +1080,7 @@ def test_session_revoked_on_db_mismatch(client, mock_db):
 
         # DB에는 다른 session_token (다른 기기에서 로그인)
         mock_db["cursor"].fetchone.return_value = (
-            "different-token-in-db", "active", "HST", None, "student", False, "YU", None
+            "different-token-in-db", "active", "HST", None, "viewer", False, "YU", None
         )
 
         resp = client.get("http://localhost/api/auth/me")
@@ -1101,7 +1101,7 @@ def test_subscription_expired_returns_401(client, mock_db):
         payload = {
             "sub": "1",
             "institution_id": "YU",
-            "role": "student",
+            "role": "viewer",
             "session_token": "valid-sess",
             "is_special": False,
         }
@@ -1110,7 +1110,7 @@ def test_subscription_expired_returns_401(client, mock_db):
 
         expired_date = date.today() - timedelta(days=1)
         mock_db["cursor"].fetchone.return_value = (
-            "valid-sess", "active", "HST", None, "student", False, "YU", expired_date
+            "valid-sess", "active", "HST", None, "viewer", False, "YU", expired_date
         )
 
         resp = client.get("http://localhost/api/auth/me")
@@ -1131,13 +1131,13 @@ def test_before_access_open_date_blocks(client, mock_db):
         mock_get_db.return_value = mock_db["conn"]
 
         payload = {
-            "sub": "1", "institution_id": "YU", "role": "student",
+            "sub": "1", "institution_id": "YU", "role": "viewer",
             "session_token": "valid-sess", "is_special": False,
         }
         client.set_cookie(COOKIE_NAME, encode_token(payload))
         # 접근창 밖 → subquery NULL: (session, status, subject, special_expires_at, role, is_special, institution_id, subscription_end=None)
         mock_db["cursor"].fetchone.return_value = (
-            "valid-sess", "active", "HST", None, "student", False, "YU", None
+            "valid-sess", "active", "HST", None, "viewer", False, "YU", None
         )
 
         resp = client.get("http://localhost/api/auth/me")
@@ -1154,7 +1154,7 @@ def test_login_before_access_open_date_blocks(client, mock_db):
         mock_get_db.return_value = mock_db["conn"]
         # 접근창 밖 → subquery NULL(subscription_end=None)
         mock_db["cursor"].fetchone.return_value = (
-            1, "YU", "student", False,
+            1, "YU", "viewer", False,
             generate_password_hash("password"),
             "active", None,
             None,   # special_expires_at
@@ -1176,7 +1176,7 @@ def test_special_expires_at_past_blocks(client, mock_db):
         mock_get_db.return_value = mock_db["conn"]
 
         payload = {
-            "sub": "1", "institution_id": "YU", "role": "student",
+            "sub": "1", "institution_id": "YU", "role": "viewer",
             "session_token": "valid-sess", "is_special": True,
         }
         client.set_cookie(COOKIE_NAME, encode_token(payload))
@@ -1184,7 +1184,7 @@ def test_special_expires_at_past_blocks(client, mock_db):
         # g.is_special은 DB값으로 판정(Codex#2) → 행의 is_special=True.
         mock_db["cursor"].fetchone.return_value = (
             "valid-sess", "active", None, date.today() - timedelta(days=1),
-            "student", True, "YU", None
+            "viewer", True, "YU", None
         )
 
         resp = client.get("http://localhost/api/auth/me")
@@ -1224,7 +1224,7 @@ def test_login_special_expires_at_past_blocks(client, mock_db):
         mock_get_db.return_value = mock_db["conn"]
         # is_special=True, special_expires_at 과거, subscription_end None
         mock_db["cursor"].fetchone.return_value = (
-            1, "YU", "student", True,
+            1, "YU", "viewer", True,
             generate_password_hash("password"),
             "active", None,
             date.today() - timedelta(days=1),  # special_expires_at 과거
@@ -1281,7 +1281,7 @@ def test_tile_token_invalid_returns_correct_code(client, mock_db):
         payload = {
             "sub": "1",
             "institution_id": "YU",
-            "role": "student",
+            "role": "viewer",
             "session_token": "valid-sess",
             "is_special": False,
         }
@@ -1291,7 +1291,7 @@ def test_tile_token_invalid_returns_correct_code(client, mock_db):
 
         # fail-closed(§8): 유효 구독일 + 과목(HST)이 슬라이드 과목과 일치 → 게이트 통과 → 타일토큰 검사 도달
         mock_db["cursor"].fetchone.return_value = (
-            "valid-sess", "active", "HST", None, "student", False, "YU",
+            "valid-sess", "active", "HST", None, "viewer", False, "YU",
             datetime.now(timezone.utc).date() + timedelta(days=365)
         )
 
@@ -1313,7 +1313,7 @@ def _gate_setup(client, mock_db, *, subject_code, is_special=False,
                 institution_id="YU", user_id="1"):
     """일반/특별 사용자 로그인 컨텍스트 구성. _authenticate가 g.subject_code를 세팅하도록 mock."""
     payload = {
-        "sub": user_id, "institution_id": institution_id, "role": "student",
+        "sub": user_id, "institution_id": institution_id, "role": "viewer",
         "session_token": "valid-sess", "is_special": is_special,
     }
     client.set_cookie(COOKIE_NAME, encode_token(payload))
@@ -1322,7 +1322,7 @@ def _gate_setup(client, mock_db, *, subject_code, is_special=False,
     # g.is_special은 DB값으로 판정(Codex#2) → is_special 파라미터를 행에 반영.
     mock_db["cursor"].fetchone.return_value = (
         "valid-sess", "active", subject_code, None,
-        "student", is_special, institution_id,
+        "viewer", is_special, institution_id,
         datetime.now(timezone.utc).date() + timedelta(days=365),
     )
 
@@ -1629,16 +1629,16 @@ def test_portal_admin_access(client, mock_db):
 
 
 def test_portal_non_admin_redirected(client, mock_db):
-    """일반 학생(role='student', 관리자 명단 없음)은 /portal에서 랜딩으로 리다이렉트."""
+    """일반 학생(role='viewer', 관리자 명단 없음)은 /portal에서 랜딩으로 리다이렉트."""
     with patch("server_render.get_db_conn") as mock_get_db, \
          patch("server_render.release_db_conn"):
         mock_get_db.return_value = mock_db["conn"]
-        payload = {"sub": "2", "institution_id": "YU", "role": "student",
+        payload = {"sub": "2", "institution_id": "YU", "role": "viewer",
                    "session_token": "sess-stu-1", "is_special": False}
         client.set_cookie(COOKIE_NAME, encode_token(payload))
         mock_db["cursor"].fetchone.side_effect = [
             # _authenticate: 유효 구독창(학생은 구독 필요)
-            ("sess-stu-1", "active", "HST", None, "student", False, "YU",
+            ("sess-stu-1", "active", "HST", None, "viewer", False, "YU",
              datetime.now(timezone.utc).date() + timedelta(days=365)),
             None,   # _is_institution_admin: 관리자 명단 행 없음
         ]
@@ -1719,18 +1719,18 @@ def test_institution_update_syncs_admin_roster(client, mock_db):
 def test_moonlighter_admin_removed_portal_blocked(client, mock_db):
     """겸직자(admin+조직학 학생) 관리자 제거 후: 포털 차단.
 
-    __ADMIN__ 행만 삭제 → admin 명단 행 부재 → role='student' + _is_institution_admin=None → 랜딩 리다이렉트.
+    __ADMIN__ 행만 삭제 → admin 명단 행 부재 → role='viewer' + _is_institution_admin=None → 랜딩 리다이렉트.
     계정은 active 그대로(정지 아님)임을 _authenticate 통과로 확인.
     """
     with patch("server_render.get_db_conn") as mock_get_db, \
          patch("server_render.release_db_conn"):
         mock_get_db.return_value = mock_db["conn"]
-        payload = {"sub": "3", "institution_id": "YU", "role": "student",
+        payload = {"sub": "3", "institution_id": "YU", "role": "viewer",
                    "session_token": "sess-moon", "is_special": False}
         client.set_cookie(COOKIE_NAME, encode_token(payload))
         mock_db["cursor"].fetchone.side_effect = [
             # _authenticate: 계정 active, HST 등록, 유효 구독 (정지 안 됨)
-            ("sess-moon", "active", "HST", None, "student", False, "YU",
+            ("sess-moon", "active", "HST", None, "viewer", False, "YU",
              datetime.now(timezone.utc).date() + timedelta(days=365)),
             None,   # _is_institution_admin: 관리자 행 없음(제거됨)
         ]
@@ -1792,12 +1792,12 @@ def test_db_authority_is_special_revoked_blocks(client, mock_db):
     with patch("server_render.get_db_conn") as mock_get_db, \
          patch("server_render.release_db_conn"):
         mock_get_db.return_value = mock_db["conn"]
-        payload = {"sub": "1", "institution_id": "YU", "role": "student",
+        payload = {"sub": "1", "institution_id": "YU", "role": "viewer",
                    "session_token": "valid-sess", "is_special": True}  # JWT는 특별계정이라 주장
         client.set_cookie(COOKIE_NAME, encode_token(payload))
         # DB 권위: is_special=False, 만료 구독(None) → 차단
         mock_db["cursor"].fetchone.return_value = (
-            "valid-sess", "active", "HST", None, "student", False, "YU", None
+            "valid-sess", "active", "HST", None, "viewer", False, "YU", None
         )
         resp = client.get("http://localhost/api/auth/me")
         assert resp.status_code == 401
@@ -1805,11 +1805,11 @@ def test_db_authority_is_special_revoked_blocks(client, mock_db):
 
 
 def test_db_authority_role_admin_from_db_passes(client, mock_db):
-    """#2: JWT role='student'(구독 없음)이어도 DB role='admin'이면 구독 게이트 면제(DB 권위)."""
+    """#2: JWT role='viewer'(구독 없음)이어도 DB role='admin'이면 구독 게이트 면제(DB 권위)."""
     with patch("server_render.get_db_conn") as mock_get_db, \
          patch("server_render.release_db_conn"):
         mock_get_db.return_value = mock_db["conn"]
-        payload = {"sub": "1", "institution_id": "YU", "role": "student",
+        payload = {"sub": "1", "institution_id": "YU", "role": "viewer",
                    "session_token": "valid-sess", "is_special": False}
         client.set_cookie(COOKIE_NAME, encode_token(payload))
         mock_db["cursor"].fetchone.side_effect = [
@@ -1941,7 +1941,7 @@ def test_register_duplicate_email_across_subject_blocked(client, mock_db):
         ]
         resp = client.post("/api/auth/register",
                            json={"email": "dup@univ.ac.kr", "password": "pw123456",
-                                 "role": "student", "institution_id": "YU"})
+                                 "role": "viewer", "institution_id": "YU"})
         assert resp.status_code == 409
         assert resp.get_json()["error"] == "EMAIL_EXISTS"
         # 새 계정 INSERT·인증코드 발송이 일어나지 않아야 한다
@@ -2015,7 +2015,7 @@ def test_tile_route_token_only_no_db_query(client, mock_db):
     with patch("server_render.get_db_conn") as mock_get_db, \
          patch("server_render.release_db_conn") as mock_rel:
         mock_get_db.return_value = mock_db["conn"]
-        payload = {"sub": "1", "institution_id": "YU", "role": "student",
+        payload = {"sub": "1", "institution_id": "YU", "role": "viewer",
                    "session_token": "valid-sess", "is_special": False}
         client.set_cookie(COOKIE_NAME, encode_token(payload))
         t = generate_tile_token("1", "YU", "SA-HST-001")
@@ -2028,7 +2028,7 @@ def test_tile_route_token_only_no_db_query(client, mock_db):
 def test_tile_route_missing_token_tile_invalid(client, mock_db):
     """#1: 유효 세션이라도 ?t= 토큰 없으면 TILE_TOKEN_INVALID(401), 리다이렉트 코드 아님."""
     with patch("server_render.get_db_conn") as mock_get_db:
-        payload = {"sub": "1", "institution_id": "YU", "role": "student",
+        payload = {"sub": "1", "institution_id": "YU", "role": "viewer",
                    "session_token": "valid-sess", "is_special": False}
         client.set_cookie(COOKIE_NAME, encode_token(payload))
         resp = client.get("http://localhost/dzi/SA-HST-001.dzi")
