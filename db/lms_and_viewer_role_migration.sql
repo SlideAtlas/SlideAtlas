@@ -65,6 +65,24 @@ CREATE TABLE IF NOT EXISTS favorites (
   created_at TIMESTAMP DEFAULT NOW(), PRIMARY KEY (user_id, slide_id)
 );
 
+-- ── 5. 기존 테이블 드리프트 보정 (멱등) ──────────────────────────────
+-- 라이브 RDS에 courses·course_weeks·course_week_slides·course_assistants가
+-- 예전에 생성돼 있어 CREATE IF NOT EXISTS가 skip한다. 누락 컬럼은 ALTER로 보강.
+-- (course_assistants는 현재 정의와 정합 → 보정 불필요. course_enrollments·favorites는 신규 CREATE.)
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS subject_code VARCHAR(10) REFERENCES subject_codes(code);
+ALTER TABLE course_weeks ADD COLUMN IF NOT EXISTS empty_reason TEXT;
+ALTER TABLE course_weeks ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
+
+-- course_week_slides: id PK 누락. 데이터 0건 전제로 id 컬럼 추가 + PK 설정.
+ALTER TABLE course_week_slides ADD COLUMN IF NOT EXISTS id SERIAL;
+-- 기존에 다른 PK가 있을 수 있으니 PRIMARY KEY 추가는 조건부(없을 때만).
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints
+                 WHERE table_name='course_week_slides' AND constraint_type='PRIMARY KEY') THEN
+    ALTER TABLE course_week_slides ADD PRIMARY KEY (id);
+  END IF;
+END $$;
+
 COMMIT;
 
 -- =====================================================================
