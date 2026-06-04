@@ -75,117 +75,216 @@ def test_register_missing_fields(client, mock_db):
         assert data["success"] is False
 
 
-def test_register_roster_mismatch(client, mock_db):
-    """회원가입: 명단에 없는 이메일 → 403 ROSTER_MISMATCH"""
+def test_register_not_on_roster(client, mock_db):
+    """[v3.4] 회원가입: 명단(institution_rosters)에 없는 이메일 → 403 NOT_ON_ROSTER.
+    가입자는 role을 입력하지 않는다(서버가 두 트랙으로 결정)."""
     with patch("server_render.get_db_conn") as mock_get_db, \
          patch("server_render.release_db_conn"):
         mock_get_db.return_value = mock_db["conn"]
-        mock_db["cursor"].fetchone.return_value = None  # 명단 없음
-        
+        mock_db["cursor"].fetchone.side_effect = [None]   # 이메일 미존재
+        mock_db["cursor"].fetchall.side_effect = [[]]      # roster 행 없음
+
         resp = client.post("/api/auth/register",
                           json={
                               "email": "unknown@test.com",
-                              "password": "pass123",
-                              "role": "viewer",
+                              "password": "pass1234",
                               "institution_id": "YU"
                           })
-        
+
         assert resp.status_code == 403
         data = resp.get_json()
-        assert data["error"] == "ROSTER_MISMATCH"
+        assert data["error"] == "NOT_ON_ROSTER"
         assert data["success"] is False
 
 
 def test_register_email_exists(client, mock_db):
-    """회원가입: 이미 가입된 이메일 → 409 EMAIL_EXISTS"""
+    """회원가입: 이미 가입된 이메일 → 409 EMAIL_EXISTS (roster 조회 전에 차단)."""
     with patch("server_render.get_db_conn") as mock_get_db, \
          patch("server_render.release_db_conn"):
         mock_get_db.return_value = mock_db["conn"]
-        mock_db["cursor"].fetchone.side_effect = [("HST",), (1,)]  # roster subject, 이메일 존재
-        
+        mock_db["cursor"].fetchone.side_effect = [(1,)]   # 이메일 전역 존재
+
         resp = client.post("/api/auth/register",
                           json={
                               "email": "existing@test.com",
-                              "password": "pass123",
-                              "role": "viewer",
+                              "password": "pass1234",
                               "institution_id": "YU"
                           })
-        
+
         assert resp.status_code == 409
         data = resp.get_json()
         assert data["error"] == "EMAIL_EXISTS"
+        # roster·INSERT까지 가지 않아야 한다
+        executed = " ".join(str(c.args[0]) for c in mock_db["cursor"].execute.call_args_list)
+        assert "INSERT INTO users" not in executed
 
 
-def test_register_capacity_exceeded(client, mock_db):
-    """회원가입: 정원 초과 → 409 CAPACITY_EXCEEDED"""
+def test_register_seat_full(client, mock_db):
+    """[v3.4] 회원가입: 정원 초과 → 403 SEAT_FULL (viewer 한정 좌석 검사)."""
     with patch("server_render.get_db_conn") as mock_get_db, \
          patch("server_render.release_db_conn"), \
          patch("auth.auth.send_verification_email"):
         mock_get_db.return_value = mock_db["conn"]
         mock_db["cursor"].fetchone.side_effect = [
-            ("HST",),    # roster subject_code (명단 존재)
             None,        # 이메일 없음
             (10,),       # max_seats=10
             (10,),       # active_count=10
         ]
-        
+        mock_db["cursor"].fetchall.side_effect = [
+            [("HST", "viewer")],   # roster 행 (subject)
+            [("HST", "학생")],     # active subject 1건
+        ]
+
         resp = client.post("/api/auth/register",
                           json={
                               "email": "new@test.com",
-                              "password": "pass123",
-                              "role": "viewer",
+                              "password": "pass1234",
                               "institution_id": "YU"
                           })
-        
-        assert resp.status_code == 409
+
+        assert resp.status_code == 403
         data = resp.get_json()
-        assert data["error"] == "CAPACITY_EXCEEDED"
+        assert data["error"] == "SEAT_FULL"
 
 
 def test_register_success(client, mock_db):
-    """회원가입: 성공 → 200"""
+    """[v3.4] 회원가입 성공 → 200. viewer·subject 1건 → subject_code·position 캡처."""
     with patch("server_render.get_db_conn") as mock_get_db, \
          patch("server_render.release_db_conn"), \
          patch("auth.auth.send_verification_email") as mock_send:
         mock_get_db.return_value = mock_db["conn"]
-        
         mock_db["cursor"].fetchone.side_effect = [
-            ("HST",),    # roster subject_code (명단)
             None,        # 이메일 없음
             (100,),      # max_seats
             (5,),        # active_count
             (42,),       # INSERT users RETURNING id
         ]
-        
+        mock_db["cursor"].fetchall.side_effect = [
+            [("HST", "viewer")],   # roster 행
+            [("HST", "학생")],     # active subject 1건 (position=학생)
+        ]
+
         resp = client.post("/api/auth/register",
                           json={
                               "email": "new@test.com",
                               "password": "secure123",
-                              "role": "viewer",
                               "institution_id": "YU"
                           })
-        
+
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["success"] is True
         assert "인증코드" in data["data"]["message"]
         assert mock_send.called
+        # INSERT에 subject_code='HST', role='viewer', position='학생'이 채워졌는지
+        ins = [c for c in mock_db["cursor"].execute.call_args_list
+               if "INSERT INTO users" in str(c.args[0])][0]
+        params = ins.args[1]
+        # (institution_id, subject_code, email, pw_hash, role, position, ...)
+        assert params[1] == "HST"
+        assert params[4] == "viewer"
+        assert params[5] == "학생"
 
 
 def test_register_no_active_subscription_rejected(client, mock_db):
-    """[#4] 구독 없는 roster 사용자 가입 거부 → 403 SUBSCRIPTION_INACTIVE (active 계정 미생성)."""
+    """[#4] 구독 없는 viewer 가입 거부 → 403 SUBSCRIPTION_INACTIVE (active 계정 미생성)."""
     with patch("server_render.get_db_conn") as mock_get_db, \
          patch("server_render.release_db_conn"), \
          patch("auth.auth.send_verification_email"):
         mock_get_db.return_value = mock_db["conn"]
-        mock_db["cursor"].fetchone.side_effect = [
-            ("HST",),    # roster subject_code (명단 존재)
-            None,        # 이메일 없음
-            None,        # 접근창 내 active 구독 없음 → 거부
+        mock_db["cursor"].fetchone.side_effect = [None]   # 이메일 없음
+        mock_db["cursor"].fetchall.side_effect = [
+            [("HST", "viewer")],   # roster subject 행 존재
+            [],                    # active subject 0건 (구독 없음)
         ]
         resp = client.post("/api/auth/register",
-                          json={"email": "new@test.com", "password": "pass123",
-                                "role": "viewer", "institution_id": "YU"})
+                          json={"email": "new@test.com", "password": "pass1234",
+                                "institution_id": "YU"})
+        assert resp.status_code == 403
+        assert resp.get_json()["error"] == "SUBSCRIPTION_INACTIVE"
+
+
+def test_register_multi_subject_ambiguous(client, mock_db):
+    """[v3.4 D12] active subject 2건 이상 → 403 MULTI_SUBJECT_AMBIGUOUS (fail-closed)."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"), \
+         patch("auth.auth.send_verification_email") as mock_send:
+        mock_get_db.return_value = mock_db["conn"]
+        mock_db["cursor"].fetchone.side_effect = [None]   # 이메일 없음
+        mock_db["cursor"].fetchall.side_effect = [
+            [("HST", "viewer"), ("PARA", "viewer")],   # roster 두 과목
+            [("HST", "학생"), ("PARA", "학생")],       # active 2건 → 모호
+        ]
+        resp = client.post("/api/auth/register",
+                          json={"email": "multi@test.com", "password": "pass1234",
+                                "institution_id": "YU"})
+        assert resp.status_code == 403
+        assert resp.get_json()["error"] == "MULTI_SUBJECT_AMBIGUOUS"
+        executed = " ".join(str(c.args[0]) for c in mock_db["cursor"].execute.call_args_list)
+        assert "INSERT INTO users" not in executed
+        assert not mock_send.called
+
+
+def test_register_moonlight_admin_captures_subject_position(client, mock_db):
+    """[v3.4 겸직] __ADMIN__ + active subject 1건 → role='admin'이면서 subject_code·position은
+    subject 행에서 캡처. 좌석 검사는 skip(role!=viewer)."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"), \
+         patch("auth.auth.send_verification_email") as mock_send:
+        mock_get_db.return_value = mock_db["conn"]
+        mock_db["cursor"].fetchone.side_effect = [
+            None,    # 이메일 없음
+            (99,),   # INSERT users RETURNING id
+        ]
+        mock_db["cursor"].fetchall.side_effect = [
+            [("__ADMIN__", None), ("HST", "viewer")],   # roster: 관리자 행 + subject 행
+            [("HST", "교수")],                           # active subject 1건 (position=교수)
+        ]
+        resp = client.post("/api/auth/register",
+                          json={"email": "prof@univ.ac.kr", "password": "secure123",
+                                "institution_id": "YU"})
+        assert resp.status_code == 200
+        assert mock_send.called
+        executed = " ".join(str(c.args[0]) for c in mock_db["cursor"].execute.call_args_list)
+        # 좌석 검사(COUNT)는 admin이므로 skip
+        assert "COUNT(*) FROM users" not in executed
+        ins = [c for c in mock_db["cursor"].execute.call_args_list
+               if "INSERT INTO users" in str(c.args[0])][0]
+        params = ins.args[1]
+        assert params[1] == "HST"        # subject_code = 실제 과목 (센티넬 아님)
+        assert params[4] == "admin"      # role = admin
+        assert params[5] == "교수"        # position = subject 행에서
+
+
+def test_verify_email_no_active_subscription_rejected(client, mock_db):
+    """[#4] 구독 없는 사용자 인증 거부 → 403 SUBSCRIPTION_INACTIVE (active 전환 금지)."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+        mock_db["cursor"].fetchone.side_effect = [
+            (1, "YU", "viewer", False, "HST"),   # user
+            (1, "123456", datetime.now(timezone.utc) + timedelta(minutes=5), False, 0),  # ev
+            None,   # 접근창 내 active 구독 없음 → 거부
+        ]
+        resp = client.post("/api/auth/verify-email",
+                          json={"email": "test@example.com", "code": "123456"})
+        assert resp.status_code == 403
+        assert resp.get_json()["error"] == "SUBSCRIPTION_INACTIVE"
+
+
+def test_verify_email_midterm_expiry_blocked(client, mock_db):
+    """[v3.4] register 후 verify 시점에 구독이 만료(접근창 밖)면 viewer active 전환 차단.
+    register가 채운 subject_code는 신뢰하되 active 여부만 재확인(fail-closed)."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+        mock_db["cursor"].fetchone.side_effect = [
+            (5, "YU", "viewer", False, "HST"),   # user (가입 시 subject_code 채워짐)
+            (9, "123456", datetime.now(timezone.utc) + timedelta(minutes=5), False, 0),  # ev
+            None,   # 재검사: 접근창 내 active 구독 없음(중간 만료) → 거부
+        ]
+        resp = client.post("/api/auth/verify-email",
+                          json={"email": "mid@univ.ac.kr", "code": "123456"})
         assert resp.status_code == 403
         assert resp.get_json()["error"] == "SUBSCRIPTION_INACTIVE"
 
@@ -315,11 +414,11 @@ def test_verify_email_code_mismatch_last_attempt(client, mock_db):
 
 
 def test_verify_email_capacity_exceeded_at_verify(client, mock_db):
-    """인증 단계에서 TO 재검사 → 409 CAPACITY_EXCEEDED"""
+    """[v3.4] 인증 단계에서 좌석 재검사(FOR UPDATE) → 403 SEAT_FULL"""
     with patch("server_render.get_db_conn") as mock_get_db, \
          patch("server_render.release_db_conn"):
         mock_get_db.return_value = mock_db["conn"]
-        
+
         mock_db["cursor"].fetchone.side_effect = [
             (1, "YU", "viewer", False, "HST"),
             (
@@ -330,16 +429,16 @@ def test_verify_email_capacity_exceeded_at_verify(client, mock_db):
             (100,),
             (100,),
         ]
-        
+
         resp = client.post("/api/auth/verify-email",
                           json={
                               "email": "test@example.com",
                               "code": "123456"
                           })
-        
-        assert resp.status_code == 409
+
+        assert resp.status_code == 403
         data = resp.get_json()
-        assert data["error"] == "CAPACITY_EXCEEDED"
+        assert data["error"] == "SEAT_FULL"
 
 
 def test_verify_email_success(client, mock_db):
@@ -1543,52 +1642,65 @@ def test_admin_secret_key_required_at_startup():
 # 기관 관리자 등록·인증·포털 (§9 — admin roster onboarding)
 # ─────────────────────────────────────────────
 def test_register_admin_only_allowed(client, mock_db):
-    """②: 관리자 등록(role='admin')만 있어도 /register 통과 — 과목·구독·좌석 게이트 면제."""
+    """[v3.4] ②: 관리자 행(__ADMIN__)만 있고 active subject 0건 → admin-only 가입 통과.
+    users.subject_code=NULL·position=NULL. 좌석 검사 skip."""
     with patch("server_render.get_db_conn") as mock_get_db, \
          patch("server_render.release_db_conn"), \
          patch("auth.auth.send_verification_email") as mock_send:
         mock_get_db.return_value = mock_db["conn"]
-        # admin roster에는 센티넬 과목코드. 구독/좌석 SELECT는 호출되지 않아야 한다.
         mock_db["cursor"].fetchone.side_effect = [
-            ("__ADMIN__",),   # roster subject_code (관리자 행)
             None,             # 이메일 미존재
             (42,),            # INSERT users RETURNING id
         ]
+        mock_db["cursor"].fetchall.side_effect = [
+            [("__ADMIN__", None)],   # roster: 관리자 행만
+            [],                      # active subject 0건
+        ]
         resp = client.post("/api/auth/register",
                           json={"email": "prof@univ.ac.kr", "password": "secure123",
-                                "role": "admin", "institution_id": "YU"})
+                                "institution_id": "YU"})
         assert resp.status_code == 200
         assert resp.get_json()["success"] is True
         assert mock_send.called
-        # 구독·정원 게이트 면제 확인: 실행된 SQL에 subscriptions 조회가 없어야 한다.
+        # 좌석 검사(COUNT) 면제 확인 + INSERT의 subject_code·position이 NULL인지
         executed = " ".join(str(c.args[0]) for c in mock_db["cursor"].execute.call_args_list)
-        assert "FROM subscriptions" not in executed
+        assert "COUNT(*) FROM users" not in executed
+        ins = [c for c in mock_db["cursor"].execute.call_args_list
+               if "INSERT INTO users" in str(c.args[0])][0]
+        params = ins.args[1]
+        assert params[1] is None     # subject_code NULL (admin-only)
+        assert params[4] == "admin"  # role admin
+        assert params[5] is None     # position NULL
 
 
 def test_register_admin_skips_subscription_even_if_none(client, mock_db):
-    """②(보강): 구독이 전혀 없어도 admin은 SUBSCRIPTION_INACTIVE로 거부되지 않는다."""
+    """[v3.4] ②(보강): 구독이 전혀 없어도 admin-only는 SUBSCRIPTION_INACTIVE로 거부되지 않는다."""
     with patch("server_render.get_db_conn") as mock_get_db, \
          patch("server_render.release_db_conn"), \
          patch("auth.auth.send_verification_email"):
         mock_get_db.return_value = mock_db["conn"]
         mock_db["cursor"].fetchone.side_effect = [
-            ("__ADMIN__",),   # roster
             None,             # 이메일 미존재
             (7,),             # INSERT users RETURNING id
         ]
+        mock_db["cursor"].fetchall.side_effect = [
+            [("__ADMIN__", None)],   # roster: 관리자 행만
+            [],                      # active subject 0건 (구독 없음)
+        ]
         resp = client.post("/api/auth/register",
                           json={"email": "admin@univ.ac.kr", "password": "pw123456",
-                                "role": "admin", "institution_id": "YU"})
+                                "institution_id": "YU"})
         assert resp.status_code == 200
 
 
 def test_verify_email_admin_creates_admin_role(client, mock_db):
-    """③: 관리자 인증 완료 → users.role='admin' 활성, 구독·좌석 재검사 면제."""
+    """[v3.4] ③: admin-only(subject_code NULL) 인증 완료 → role='admin' 활성, 구독·좌석 재검사 면제.
+    roster is_verified UPDATE는 __ADMIN__ 행을 대상으로 한다(결정#1)."""
     with patch("server_render.get_db_conn") as mock_get_db, \
          patch("server_render.release_db_conn"):
         mock_get_db.return_value = mock_db["conn"]
         mock_db["cursor"].fetchone.side_effect = [
-            (1, "YU", "admin", False, "__ADMIN__"),   # user (role='admin')
+            (1, "YU", "admin", False, None),   # user (role='admin', subject_code NULL)
             (1, "123456", datetime.now(timezone.utc) + timedelta(minutes=5), False, 0),  # ev
         ]
         resp = client.post("/api/auth/verify-email",
@@ -1600,8 +1712,32 @@ def test_verify_email_admin_creates_admin_role(client, mock_db):
         # active 전환 시 구독/좌석 재검사가 없어야 한다(면제).
         executed = " ".join(str(c.args[0]) for c in mock_db["cursor"].execute.call_args_list)
         assert "FROM subscriptions" not in executed
+        # roster is_verified UPDATE 대상이 __ADMIN__ 행이어야 한다.
+        upd = [c for c in mock_db["cursor"].execute.call_args_list
+               if "UPDATE institution_rosters SET is_verified" in str(c.args[0])][0]
+        assert "__ADMIN__" in upd.args[1]
         cookies = resp.headers.getlist("Set-Cookie")
         assert any(COOKIE_NAME in c for c in cookies)
+
+
+def test_verify_email_moonlight_updates_subject_roster_row(client, mock_db):
+    """[v3.4 겸직 red-team] role='admin'이어도 subject_code가 채워진 겸직 계정은 verify 시
+    __ADMIN__이 아니라 그 subject 행을 verified로 표시해야 한다(subject 행 누락 방지)."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+        mock_db["cursor"].fetchone.side_effect = [
+            (3, "YU", "admin", False, "HST"),   # 겸직: role=admin, subject_code=HST
+            (4, "123456", datetime.now(timezone.utc) + timedelta(minutes=5), False, 0),  # ev
+        ]
+        resp = client.post("/api/auth/verify-email",
+                          json={"email": "dual@univ.ac.kr", "code": "123456"})
+        assert resp.status_code == 200
+        upd = [c for c in mock_db["cursor"].execute.call_args_list
+               if "UPDATE institution_rosters SET is_verified" in str(c.args[0])][0]
+        # subject 행(HST)을 대상으로 verified, __ADMIN__ 아님
+        assert "HST" in upd.args[1]
+        assert "__ADMIN__" not in upd.args[1]
 
 
 def test_portal_admin_access(client, mock_db):
@@ -1935,13 +2071,13 @@ def test_register_duplicate_email_across_subject_blocked(client, mock_db):
          patch("server_render.release_db_conn"), \
          patch("auth.auth.send_verification_email") as mock_send:
         mock_get_db.return_value = mock_db["conn"]
+        # [v3.4] EMAIL_EXISTS는 roster 조회 전에 차단된다 — 전역 이메일 검사가 첫 쿼리.
         mock_db["cursor"].fetchone.side_effect = [
-            ("PARA",),   # roster: 이번엔 기생충학 명단으로 가입 시도
-            (1,),        # 전역 이메일 검사: 이미 계정 존재(이전 HST 가입)
+            (1,),        # 전역 이메일 검사: 이미 계정 존재(이전 가입)
         ]
         resp = client.post("/api/auth/register",
                            json={"email": "dup@univ.ac.kr", "password": "pw123456",
-                                 "role": "viewer", "institution_id": "YU"})
+                                 "institution_id": "YU"})
         assert resp.status_code == 409
         assert resp.get_json()["error"] == "EMAIL_EXISTS"
         # 새 계정 INSERT·인증코드 발송이 일어나지 않아야 한다

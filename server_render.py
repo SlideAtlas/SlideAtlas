@@ -662,6 +662,24 @@ def login_page():
     return render_template('login.html', is_logged=is_logged, next=next_url)
 
 
+@app.route('/api/institutions', methods=['GET'])
+def api_public_institutions():
+    """가입 폼 기관 드롭다운용 공개 목록(인증 불요). (§6-4 v3.4, 결정#3 a안)
+
+    id·name_ko만 반환한다 — 구독·좌석·도메인 등 내부 운영 필드는 절대 포함하지 않는다.
+    작은 공개 목록이라 rate limit·no-store는 두지 않는다(민감정보 없음).
+    """
+    conn = get_db_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, name_ko FROM institutions ORDER BY name_ko")
+            rows = cur.fetchall()
+        institutions = [{"id": r[0], "name_ko": r[1]} for r in rows]
+        return jsonify({"success": True, "institutions": institutions})
+    finally:
+        release_db_conn(conn)
+
+
 @app.route('/viewer')
 @page_login_required
 def viewer_default():

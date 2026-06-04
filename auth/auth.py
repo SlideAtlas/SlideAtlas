@@ -188,55 +188,29 @@ def _issue_token_payload(user_id, institution_id, role, is_special):
 # ─────────────────────────────────────────────
 @auth_bp.route("/register", methods=["POST"])
 def register():
+    # 두 트랙 가입 모델(§6-4, v3.4 CEO 확정): 가입자는 지위·역할·과목을 입력하지 않는다.
+    #   폼 = 기관 + 이름 + 이메일 + 비번(+확인). role·position·subject_code는 전부
+    #   institution_rosters 두 트랙(__ADMIN__ 행 / subject 행) 조회로 서버가 결정한다.
     body = request.get_json(silent=True) or {}
     email = (body.get("email") or "").strip().lower()
     password = body.get("password") or ""
-    name = (body.get("name") or "").strip()
-    role = (body.get("role") or "").strip()
     institution_id = (body.get("institution_id") or "").strip()
+    # 이름은 가입 폼에서 받지 않는다(옵션 A) — 표시용 이름은 roster.name이 단일 출처(§6-4).
+    #   users에 name 컬럼이 없고 INSERT에도 포함하지 않으므로 서버는 name을 무시한다.
 
-    if not email or not password or not role or not institution_id:
+    if not email or not password or not institution_id:
         return _err("MISSING_FIELDS", "필수 입력값이 누락되었습니다")
+    if len(password) < 8:
+        return _err("WEAK_PASSWORD", "비밀번호는 8자 이상이어야 합니다")
 
     get_db_conn, release_db_conn = _db()
     conn = get_db_conn()
     conn.autocommit = False
     try:
         with conn.cursor() as cur:
-            # 1) 명단 화이트리스트 (email + role 일치) + 과목코드 캡처 (§6-2, D4)
-            #    roster의 (institution_id, subject_code, email)에서 subject_code를 가져와
-            #    users.subject_code로 채번한다. 한 이메일이 여러 과목 명단에 있으면 과목별
-            #    독립 레코드 구조(UNIQUE(institution_id, subject_code, email))를 따르며, 본 요청은
-            #    가장 이른 과목코드 1건을 등록한다(이메일 키 기반 인증·로그인 경로 호환).
-            cur.execute(
-                """SELECT subject_code FROM institution_rosters
-                   WHERE institution_id = %s AND lower(email) = %s AND role = %s
-                   ORDER BY subject_code
-                   LIMIT 1""",
-                (institution_id, email, role),
-            )
-            roster = cur.fetchone()
-            if roster is None:
-                conn.rollback()
-                return _err("ROSTER_MISMATCH", "과 사무실에 문의하세요", 403)
-            subject_code = roster[0]
-            # 기관 관리자(role='admin') 등록은 과목·구독·좌석에 묶이지 않는다(§9). roster의
-            #   subject_code 센티넬('__ADMIN__')을 그대로 users에 채번하며, 아래 구독·정원 게이트를
-            #   건너뛴다(관리자 등록만 있어도 가입·인증이 통과해야 함 — CEO 확정). 슬라이드 접근은
-            #   별도 단일 게이트가 과목 좌석으로 판정하므로 본 면제가 콘텐츠 노출을 넓히지 않는다(§8).
-            is_admin_reg = (role == "admin")
-            if not subject_code and not is_admin_reg:
-                # 학생 명단에 과목코드가 비어있으면 데이터 결함 — 과목 축 없이는 가입 불가(§0-3·§0-4).
-                conn.rollback()
-                return _err("ROSTER_SUBJECT_MISSING", "과 사무실에 문의하세요", 403)
-            if is_admin_reg and not subject_code:
-                # admin roster 행은 센티넬 과목코드를 갖는다(NULL이면 데이터 정합성 보정).
-                subject_code = ADMIN_ROSTER_SUBJECT
-
-            # 2) 이미 가입된 이메일 — 이메일당 users 1계정 정책(Codex#3·Gemini#5 확정).
+            # 1) 이미 가입된 이메일 — 이메일당 users 1계정 정책(§6-2, Codex#3·Gemini#5 확정).
             #    과목 소속은 institution_rosters 행으로 표현하며, users.email은 전역 식별자다.
-            #    동일 이메일 재가입 시 새 계정/중복 pending을 만들지 않는다(verify/login은 email
-            #    단일 키로 모호함 없이 식별). 다른 과목을 추가로 받으려면 roster 행만 추가하면 된다.
+            #    동일 이메일 재가입 시 새 계정/중복 pending을 만들지 않는다(앱 레이어 강제).
             cur.execute(
                 "SELECT 1 FROM users WHERE lower(email) = %s",
                 (email,),
@@ -245,13 +219,68 @@ def register():
                 conn.rollback()
                 return _err("EMAIL_EXISTS", "이미 가입된 이메일입니다", 409)
 
-            # 3) 구독·정원 검사 (§13-2·§16). [#4] CEO 확정: 구독 계약·입금 전에는 학생을 받지 않는다.
-            #    (institution_id, subject_code)에 접근창 내 active 구독이 없으면 가입 거부 — active 계정
-            #    미생성. 온보딩 순서(구독 생성 → roster 등록 → 가입)를 코드가 강제. today는 KST(§18 D10).
-            #    여기는 소프트 사전검사이며, 권위 있는 동시성 재검사는 verify_email에서 행 잠금으로 수행.
-            #    관리자(is_admin_reg)는 과목 좌석을 소비하지 않으므로 이 게이트를 건너뛴다(§9).
-            if not is_admin_reg:
-                today = _today_kst()
+            # 2) roster 두 트랙 조회 (role 필터 없음 — 역할도 서버가 결정).
+            cur.execute(
+                """SELECT subject_code, position FROM institution_rosters
+                   WHERE institution_id = %s AND lower(email) = %s""",
+                (institution_id, email),
+            )
+            roster_rows = cur.fetchall()
+            if not roster_rows:
+                conn.rollback()
+                return _err("NOT_ON_ROSTER", "명단에 없습니다. 과 사무실에 문의하세요", 403)
+
+            # 3) 트랙 분할 + role 결정 (§6-4).
+            #    트랙2(__ADMIN__ 행) 존재 → role='admin'(포털 접근), 아니면 'viewer'.
+            admin_rows = [r for r in roster_rows if r[0] == ADMIN_ROSTER_SUBJECT]
+            role = "admin" if admin_rows else "viewer"
+
+            # 4) subject_code·position 해석 — position의 단일 출처는 subject 행이다(§6-4).
+            #    active = (institution, subject)가 접근창 내 active 구독을 가진 subject 행.
+            #    ※ register는 좌석·온보딩(§6-3) 정합상 subscription active-in-window만 사용
+            #      (단일 게이트의 granted-OR 분기와 의도적으로 다름 — granted 단독은 불충분).
+            #    today는 KST(§16·§18 D10).
+            today = _today_kst()
+            cur.execute(
+                """SELECT r.subject_code, r.position
+                   FROM institution_rosters r
+                   WHERE r.institution_id = %s AND lower(r.email) = %s
+                     AND r.subject_code <> %s
+                     AND EXISTS(SELECT 1 FROM subscriptions s
+                                 WHERE s.institution_id = r.institution_id
+                                   AND s.subject_code = r.subject_code
+                                   AND s.status = 'active'
+                                   AND s.access_open_date <= %s AND s.subscription_end >= %s)""",
+                (institution_id, email, ADMIN_ROSTER_SUBJECT, today, today),
+            )
+            active = cur.fetchall()
+
+            if len(active) == 1:
+                # subject·position 모두 그 매칭된 subject 행에서만 가져온다(__ADMIN__ position(NULL) 미사용).
+                subject_code, position = active[0]
+            elif len(active) == 0:
+                if role == "admin":
+                    # admin-only(또는 active subject 없는 겸직): 과목 축 없음(좌석 0·콘텐츠 비소비, §21).
+                    #   users.subject_code=NULL, position=NULL. 구독·정원 게이트 면제(§9). 슬라이드 접근은
+                    #   별도 단일 게이트가 과목 좌석으로 판정하므로 면제가 콘텐츠 노출을 넓히지 않는다(§8).
+                    subject_code, position = None, None
+                else:
+                    # viewer인데 접근창 내 active 구독 없음 — 온보딩 선행(§6-3) 위반. active 계정 미생성.
+                    conn.rollback()
+                    return _err("SUBSCRIPTION_INACTIVE",
+                                "해당 과목 구독이 활성화되지 않았습니다. 과 사무실에 문의하세요", 403)
+            else:
+                # active subject 2개 이상 — 단일 users.subject_code로 모호. v1.5(다과목)까지 fail-closed 거부(D12).
+                conn.rollback()
+                return _err("MULTI_SUBJECT_AMBIGUOUS",
+                            "여러 과목 명단에 등록되어 있습니다. 과 사무실에 문의하세요", 403)
+
+            # 5) 좌석(정원) 검사 — role=='viewer'(확정 subject 1건)일 때만(§9·§16).
+            #    admin 겸직자는 좌석 검사를 건너뛴다(정원 초과여도 가입 허용). 단 subject_code가
+            #    채워져 active가 되므로 좌석 COUNT에는 포함된다(콘텐츠 소비 = 좌석 점유). admin-only는
+            #    subject_code NULL이라 COUNT에서 빠져 좌석 0. 여기는 소프트 사전검사이며, 권위 있는
+            #    동시성 재검사는 verify_email에서 행 잠금(FOR UPDATE)으로 수행한다.
+            if role == "viewer":
                 cur.execute(
                     """SELECT max_seats FROM subscriptions
                        WHERE institution_id = %s AND subject_code = %s AND status = 'active'
@@ -261,11 +290,7 @@ def register():
                     (institution_id, subject_code, today, today),
                 )
                 sub = cur.fetchone()
-                if sub is None:
-                    conn.rollback()
-                    return _err("SUBSCRIPTION_INACTIVE",
-                                "해당 과목 구독이 활성화되지 않았습니다. 과 사무실에 문의하세요", 403)
-                max_seats = sub[0]
+                max_seats = sub[0] if sub else None
                 cur.execute(
                     """SELECT COUNT(*) FROM users
                        WHERE institution_id = %s AND subject_code = %s AND status = 'active'""",
@@ -274,15 +299,15 @@ def register():
                 active_count = cur.fetchone()[0]
                 if max_seats is not None and active_count >= max_seats:
                     conn.rollback()
-                    return _err("CAPACITY_EXCEEDED", "정원이 초과되었습니다", 409)
+                    return _err("SEAT_FULL", "정원이 초과되었습니다", 403)
 
-            # 4) users INSERT (pending_verification, subject_code 채번) + 인증코드 INSERT
+            # 6) users INSERT (pending_verification, subject_code·position 채번) + 인증코드 INSERT
             pw_hash = generate_password_hash(password)
             cur.execute(
-                """INSERT INTO users (institution_id, subject_code, email, password_hash, role, status)
-                   VALUES (%s, %s, %s, %s, %s, 'pending_verification')
+                """INSERT INTO users (institution_id, subject_code, email, password_hash, role, position, status)
+                   VALUES (%s, %s, %s, %s, %s, %s, 'pending_verification')
                    RETURNING id""",
-                (institution_id, subject_code, email, pw_hash, role),
+                (institution_id, subject_code, email, pw_hash, role, position),
             )
             user_id = cur.fetchone()[0]
 
@@ -344,17 +369,16 @@ def verify_email():
                 return _err("USER_NOT_FOUND", "인증 대기 중인 사용자가 없습니다", 404)
             user_id, institution_id, role, is_special, subject_code = user
 
-            # D4(b): 가입 경로가 subject_code를 채웠어야 한다(§6-2). 비어 있으면 가입 경로 결함이므로
-            #   임의 기본값을 채우지 않고 거부한다(§0-3). 과목 축 없이 active 전환 금지.
-            #   단 기관 관리자(role='admin')는 과목에 묶이지 않으므로 센티넬('__ADMIN__')을 갖거나
-            #   비어 있어도 통과시킨다(§9 — 관리자 등록만으로 인증 완료 가능).
+            # D4(b): 가입 경로가 subject_code를 채웠어야 한다(§6-2). viewer가 비어 있으면 가입 경로
+            #   결함이므로 임의 기본값을 채우지 않고 거부한다(§0-3). 과목 축 없이 active 전환 금지.
+            #   단 기관 관리자(role='admin')의 admin-only 계정은 과목 축이 없어 subject_code=NULL이
+            #   정상이다(§6-4 v3.4). NULL을 센티넬로 재할당하지 않고 그대로 둔다(roster UPDATE 분기에서
+            #   NULL→__ADMIN__ 행, 비NULL(겸직)→subject 행으로 처리, §9).
             is_admin_user = (role == "admin")
             if not subject_code and not is_admin_user:
                 conn.rollback()
                 print(f"[verify_email] subject_code 누락(user_id={user_id}, email={email}) — 가입 경로 결함")
                 return _err("SUBJECT_CODE_MISSING", "계정 설정 오류입니다. 과 사무실에 문의하세요", 409)
-            if is_admin_user and not subject_code:
-                subject_code = ADMIN_ROSTER_SUBJECT
 
             cur.execute(
                 """SELECT id, code, expires_at, consumed, attempt_count
@@ -433,7 +457,7 @@ def verify_email():
                 active_count = cur.fetchone()[0]
                 if max_seats is not None and active_count >= max_seats:
                     conn.rollback()
-                    return _err("CAPACITY_EXCEEDED", "정원이 초과되었습니다", 409)
+                    return _err("SEAT_FULL", "정원이 초과되었습니다", 403)
 
             session_token, payload = _issue_token_payload(
                 user_id, institution_id, role, is_special
@@ -449,12 +473,17 @@ def verify_email():
                 "UPDATE email_verifications SET consumed = TRUE WHERE id = %s",
                 (ev_id,),
             )
-            # roster는 (기관×과목×이메일) 독립 행(§6-2) — 인증된 해당 과목 명단만 표시.
+            # roster는 (기관×과목×이메일) 독립 행(§6-2) — 인증된 해당 행만 표시.
             # (institution_id, email)만으로 갱신하면 다과목 명단을 일괄 over-mark(Codex WARN2).
+            #   [v3.4 결정#1] users.subject_code 기준 분기:
+            #     · NULL(순수 admin-only) → __ADMIN__ 행을 verified.
+            #     · 비NULL(viewer 또는 active subject 1건 캡처한 겸직 admin) → 그 subject 행을 verified.
+            #   (겸직에서 __ADMIN__ 행만 바뀌고 subject 행이 누락되는 일이 없도록.)
+            roster_subject = subject_code if subject_code else ADMIN_ROSTER_SUBJECT
             cur.execute(
                 "UPDATE institution_rosters SET is_verified = TRUE "
                 "WHERE institution_id = %s AND subject_code = %s AND lower(email) = %s",
-                (institution_id, subject_code, email),
+                (institution_id, roster_subject, email),
             )
         conn.commit()
         token = encode_token(payload)

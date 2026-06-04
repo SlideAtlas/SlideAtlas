@@ -119,20 +119,16 @@
   function _signupHTML() {
     return _logo() +
       '<h2 class="terminal-view-title">회원가입</h2>' +
-      '<label class="terminal-label" for="t-inst">기관 코드</label>' +
-      '<input class="terminal-input" type="text" id="t-inst" placeholder="예: YU, SNU" autocomplete="off" style="text-transform:uppercase">' +
-      '<label class="terminal-label" for="t-name">이름</label>' +
-      '<input class="terminal-input" type="text" id="t-name" placeholder="홍길동" autocomplete="name">' +
+      '<label class="terminal-label" for="t-inst">기관</label>' +
+      '<select class="terminal-select" id="t-inst">' +
+        '<option value="">기관을 선택하세요</option>' +
+      '</select>' +
       '<label class="terminal-label" for="t-email">이메일</label>' +
-      '<input class="terminal-input" type="email" id="t-email" placeholder="your@edu.kr" autocomplete="email">' +
+      '<input class="terminal-input" type="email" id="t-email" placeholder="소속 기관에 등록된 이메일" autocomplete="email">' +
       '<label class="terminal-label" for="t-pw">비밀번호</label>' +
       '<input class="terminal-input" type="password" id="t-pw" placeholder="8자 이상" autocomplete="new-password">' +
-      '<label class="terminal-label" for="t-role">지위</label>' +
-      '<select class="terminal-select" id="t-role">' +
-        '<option value="student">학생</option>' +
-        '<option value="ta">조교</option>' +
-        '<option value="professor">교수</option>' +
-      '</select>' +
+      '<label class="terminal-label" for="t-pw2">비밀번호 확인</label>' +
+      '<input class="terminal-input" type="password" id="t-pw2" placeholder="••••••••" autocomplete="new-password">' +
       '<button class="terminal-btn" id="t-submit">회원가입</button>' +
       '<div class="terminal-error" id="t-err" style="display:none"></div>' +
       '<div class="terminal-links">' +
@@ -267,21 +263,23 @@
   }
 
   async function _doSignup() {
-    var inst  = (document.getElementById('t-inst').value  || '').trim().toUpperCase();
-    var name  = (document.getElementById('t-name').value  || '').trim();
+    var inst  = (document.getElementById('t-inst').value  || '').trim();
     var email = (document.getElementById('t-email').value || '').trim();
     var pw    = document.getElementById('t-pw').value || '';
-    var role  = document.getElementById('t-role').value || 'student';
+    var pw2   = document.getElementById('t-pw2').value || '';
     _hideErr();
-    if (!inst || !name || !email || !pw) { _showErr('모든 항목을 입력하세요.'); return; }
+    // 지위·역할·과목·이름은 입력받지 않는다 — 서버가 roster 두 트랙으로 결정하고
+    //   표시용 이름은 roster.name을 단일 출처로 쓴다(§6-4).
+    if (!inst || !email || !pw) { _showErr('모든 항목을 입력하세요.'); return; }
     if (pw.length < 8) { _showErr('비밀번호는 8자 이상이어야 합니다.'); return; }
+    if (pw !== pw2) { _showErr('비밀번호가 일치하지 않습니다.'); return; }
     var btn = document.getElementById('t-submit');
     if (btn) btn.disabled = true;
     try {
       var res  = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ institution_id: inst, name: name, email: email, password: pw, role: role })
+        body: JSON.stringify({ institution_id: inst, email: email, password: pw })
       });
       var data = await res.json();
       if (data.success) {
@@ -289,13 +287,17 @@
         return;
       }
       var code = data.error || '';
-      if (code === 'ROSTER_MISMATCH' || code === 'ROSTER_NOT_FOUND') {
+      if (code === 'NOT_ON_ROSTER') {
         _showErr('명단에 없습니다. 과 사무실에 문의하세요.');
-      } else if (code === 'EMAIL_EXISTS' || code === 'ALREADY_REGISTERED') {
+      } else if (code === 'EMAIL_EXISTS') {
         _showErr('이미 가입된 이메일입니다. 로그인 화면으로 이동합니다.');
         setTimeout(function () { _goView('LOGIN', email); }, 1800);
-      } else if (code === 'CAPACITY_EXCEEDED') {
-        _showErr('기관 정원이 초과되었습니다. 과 사무실에 문의하세요.');
+      } else if (code === 'SUBSCRIPTION_INACTIVE') {
+        _showErr('해당 과목 구독이 활성화되지 않았습니다. 과 사무실에 문의하세요.');
+      } else if (code === 'SEAT_FULL') {
+        _showErr('정원이 초과되었습니다. 과 사무실에 문의하세요.');
+      } else if (code === 'MULTI_SUBJECT_AMBIGUOUS') {
+        _showErr('여러 과목 명단에 등록되어 있습니다. 과 사무실에 문의하세요.');
       } else {
         _showErr(data.message || '회원가입에 실패했습니다.');
       }
@@ -477,7 +479,7 @@
     if (resend)   resend.addEventListener('click',   _doResend);
 
     // Enter 키 제출 지원
-    ['t-email','t-pw','t-pw2','t-code','t-inst','t-name'].forEach(function (id) {
+    ['t-email','t-pw','t-pw2','t-code','t-inst'].forEach(function (id) {
       var el = document.getElementById(id);
       if (el && submit) {
         el.addEventListener('keydown', function (e) {
@@ -486,15 +488,25 @@
       }
     });
 
-    // 기관코드 대문자 강제
-    var instEl = document.getElementById('t-inst');
-    if (instEl) {
-      instEl.addEventListener('input', function () {
-        var pos = this.selectionStart;
-        this.value = this.value.toUpperCase();
-        this.setSelectionRange(pos, pos);
+    // 회원가입 화면: 기관 드롭다운을 /api/institutions 공개 목록으로 채운다(§6-4 v3.4).
+    if (_view === 'SIGNUP') _loadInstitutions();
+  }
+
+  /* ── 기관 드롭다운 로딩 ───────────────────────────────── */
+  async function _loadInstitutions() {
+    var sel = document.getElementById('t-inst');
+    if (!sel) return;
+    try {
+      var res = await fetch('/api/institutions');
+      var data = await res.json();
+      if (!data.success || !Array.isArray(data.institutions)) return;
+      data.institutions.forEach(function (it) {
+        var opt = document.createElement('option');
+        opt.value = it.id;            // 값 = institution_id
+        opt.textContent = it.name_ko; // 표시 = 학교명
+        sel.appendChild(opt);
       });
-    }
+    } catch (_e) { /* 목록 로딩 실패 시 빈 드롭다운 유지 */ }
   }
 
   /* ── 공개 API ─────────────────────────────────────────── */
