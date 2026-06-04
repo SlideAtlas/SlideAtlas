@@ -69,6 +69,7 @@ footer{background:#0F1F3D;padding:28px 52px;display:flex;align-items:center;just
   </a>
   <div class="nav-right">
     <span class="nav-badge">Beta</span>
+    {% if is_admin %}<a class="btn-nav" href="/portal">관리자 포털</a>{% endif %}
     <a class="btn-nav" href="/">홈으로</a>
   </div>
 </nav>

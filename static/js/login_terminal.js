@@ -20,6 +20,16 @@
     return n;
   })();
 
+  /* ── 로그인/인증 후 목적지 결정 ────────────────────────
+     순수 admin-only(role='admin' AND subject_code 없음)는 슬라이드 0개 화면 대신 /portal로.
+     겸직 admin(subject_code 보유)·일반 viewer는 next(기본 /slides)로. 게이트 판정은 서버 단일
+     게이트가 담당하며, 여기선 "어디로 보내나"만 결정한다(§8 무관). */
+  function _postLoginDest(d) {
+    var noSubject = (d.subject_code === null || d.subject_code === undefined || d.subject_code === '');
+    if (d.role === 'admin' && noSubject) return '/portal';
+    return _nextUrl;
+  }
+
   /* ── 타이머 헬퍼 ─────────────────────────────────────── */
   function _clearTimers() {
     if (_verifyTimer)  { clearInterval(_verifyTimer);  _verifyTimer  = null; }
@@ -242,7 +252,7 @@
       });
       var data = await res.json();
       if (data.success) {
-        location.href = _nextUrl;
+        location.href = _postLoginDest(data.data || {});
         return;
       }
       var code = data.error || '';
@@ -323,7 +333,7 @@
       });
       var data = await res.json();
       if (data.success) {
-        location.href = _nextUrl;
+        location.href = _postLoginDest(data.data || {});
         return;
       }
       var errCode = data.error || '';

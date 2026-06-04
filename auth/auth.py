@@ -507,6 +507,8 @@ def verify_email():
         "user_id": user_id,
         "institution_id": institution_id,
         "role": role,
+        # 인증 직후 라우팅 분기용(login 응답과 동일 계약). 순수 admin-only는 /portal로.
+        "subject_code": subject_code,
         "csrf_token": csrf_token,
     })
     return _set_auth_cookies(resp, token, csrf_token)
@@ -727,6 +729,9 @@ def login():
             "user_id": user_id,
             "institution_id": institution_id,
             "role": role,
+            # 로그인 후 라우팅 분기용(프론트). 순수 admin-only(role='admin' AND subject_code IS NULL)는
+            #   슬라이드 0개 화면 대신 /portal로 보낸다. 게이트·권한 판정에는 쓰지 않는다(§8 단일 게이트 무관).
+            "subject_code": subject_code,
             "csrf_token": csrf_token,
         }
     except Exception:

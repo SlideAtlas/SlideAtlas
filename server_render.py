@@ -668,11 +668,18 @@ def api_public_institutions():
 
     id·name_ko만 반환한다 — 구독·좌석·도메인 등 내부 운영 필드는 절대 포함하지 않는다.
     작은 공개 목록이라 rate limit·no-store는 두지 않는다(민감정보 없음).
+
+    is_subscribable=TRUE인 고객 학교만 노출한다(§18 D18). 콘텐츠 소유자(SA)·공급사·미판매
+    파트너(Mahidol 등)는 제외 — 이들이 가입 드롭다운에 보이면 안 된다.
+    ⚠ 선행조건: db/institution_subscribable_migration.sql이 RDS에 적용돼 있어야 한다(컬럼 부재 시 쿼리 오류).
     """
     conn = get_db_conn()
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT id, name_ko FROM institutions ORDER BY name_ko")
+            cur.execute(
+                "SELECT id, name_ko FROM institutions "
+                "WHERE is_subscribable = TRUE ORDER BY name_ko"
+            )
             rows = cur.fetchall()
         institutions = [{"id": r[0], "name_ko": r[1]} for r in rows]
         return jsonify({"success": True, "institutions": institutions})
@@ -809,12 +816,16 @@ def slides():
         stains[stain] = stains.get(stain, 0) + 1
     total = len(all_slides)
     stain_class = {'H&E': 'he', 'PAS': 'pas', 'Masson Trichrome': 'masson', 'Silver': 'silver'}
+    # 헤더 "관리자 포털" 링크 노출 여부. 포털 게이트와 동일 기준(현재 __ADMIN__ roster 행 존재)으로
+    #   판정해, 권한 회수된 사용자에게 죽은 링크를 보여주지 않는다(§9). 게이트·접근권과는 무관.
+    is_admin = _is_institution_admin(g.user_id, g.institution_id)
     return render_template('slides.html',
         slides=all_slides,
         systems=systems,
         stains=stains,
         total=total,
         stain_class=stain_class,
+        is_admin=is_admin,
     )
 
 def _is_institution_admin(user_id, institution_id):
@@ -863,9 +874,13 @@ def portal():
     finally:
         release_db_conn(conn)
 
+    # "슬라이드 보기" 링크 노출 여부. 겸직(subject_code 보유)만 콘텐츠 접근권이 있으므로 노출하고,
+    #   순수 admin-only(subject_code NULL=좌석0·콘텐츠 비소비, §6-4)는 슬라이드 0개라 숨긴다.
+    has_slides = g.subject_code is not None
     # 최소 라우트(§18 D15): scope 격리·게이트만 우선 구현. 3탭(명단관리·구독플랜·이용리포트)
     #   본화면은 D15 별도 작업에서 institution_portal.html 목업(§17) 기준으로 구현.
-    return render_template('portal.html', institution_id=inst_id, institution_name=inst_name)
+    return render_template('portal.html', institution_id=inst_id, institution_name=inst_name,
+                           has_slides=has_slides)
 
 
 @app.route('/api/chat', methods=['POST'])
