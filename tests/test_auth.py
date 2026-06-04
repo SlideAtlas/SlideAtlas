@@ -531,7 +531,7 @@ def test_login_invalid_credentials_wrong_password(client, mock_db):
         # Login query: id, institution_id, role, is_special, pw_hash, status, locked_at, subscription_end
         # Then _check_and_increment_failed queries: failed_attempts, failed_window_start
         mock_db["cursor"].fetchone.side_effect = [
-            (1, "YU", "viewer", False, correct_hash, "active", None, None,
+            (1, "YU", "viewer", "HST", False, correct_hash, "active", None, None,
              datetime.now(timezone.utc) + timedelta(days=365)),
             (0, None),  # _check_and_increment_failed
         ]
@@ -556,7 +556,7 @@ def test_login_email_not_verified(client, mock_db):
         from werkzeug.security import generate_password_hash
         
         mock_db["cursor"].fetchone.return_value = (
-            1, "YU", "viewer", False,
+            1, "YU", "viewer", "HST", False,
             generate_password_hash("password"),
             "pending_verification",
             None,  # locked_at
@@ -584,7 +584,7 @@ def test_login_subscription_expired_regular_user(client, mock_db):
         from werkzeug.security import generate_password_hash
         
         mock_db["cursor"].fetchone.return_value = (
-            1, "YU", "viewer", False,
+            1, "YU", "viewer", "HST", False,
             generate_password_hash("password"),
             "active",
             None,  # locked_at
@@ -612,7 +612,7 @@ def test_login_subscription_expired_but_is_special(client, mock_db):
         from werkzeug.security import generate_password_hash
         
         mock_db["cursor"].fetchone.return_value = (
-            1, "YU", "viewer", True,
+            1, "YU", "viewer", "HST", True,
             generate_password_hash("password"),
             "active",
             None,  # locked_at
@@ -640,7 +640,7 @@ def test_login_success(client, mock_db):
         from werkzeug.security import generate_password_hash
         
         mock_db["cursor"].fetchone.return_value = (
-            1, "YU", "viewer", False,
+            1, "YU", "viewer", "HST", False,
             generate_password_hash("password"),
             "active",
             None,  # locked_at
@@ -871,7 +871,7 @@ def test_login_account_locked(client, mock_db):
 
         locked_at = datetime.now(timezone.utc) - timedelta(hours=1)  # 잠근지 1시간
         mock_db["cursor"].fetchone.return_value = (
-            1, "YU", "viewer", False,
+            1, "YU", "viewer", "HST", False,
             generate_password_hash("password"),
             "locked",
             locked_at,  # locked_at 1시간 전 (24h 미경과)
@@ -896,7 +896,7 @@ def test_login_account_auto_unlock(client, mock_db):
 
         locked_at = datetime.now(timezone.utc) - timedelta(hours=25)  # 25시간 전 잠금
         mock_db["cursor"].fetchone.return_value = (
-            1, "YU", "viewer", False,
+            1, "YU", "viewer", "HST", False,
             generate_password_hash("password"),
             "locked",
             locked_at,
@@ -924,7 +924,7 @@ def test_login_wrong_password_locks_account(client, mock_db):
 
         # Login query + _check_and_increment_failed: already at 9, new attempt = 10 → lock
         mock_db["cursor"].fetchone.side_effect = [
-            (1, "YU", "viewer", False, correct_hash, "active", None, None,
+            (1, "YU", "viewer", "HST", False, correct_hash, "active", None, None,
              datetime.now(timezone.utc).date() + timedelta(days=365)),
             (9, window_start),   # failed_attempts=9, window still active → new=10 → locked
         ]
@@ -1281,7 +1281,7 @@ def test_login_before_access_open_date_blocks(client, mock_db):
         mock_get_db.return_value = mock_db["conn"]
         # 접근창 밖 → subquery NULL(subscription_end=None)
         mock_db["cursor"].fetchone.return_value = (
-            1, "YU", "viewer", False,
+            1, "YU", "viewer", "HST", False,
             generate_password_hash("password"),
             "active", None,
             None,   # special_expires_at
@@ -1351,7 +1351,7 @@ def test_login_special_expires_at_past_blocks(client, mock_db):
         mock_get_db.return_value = mock_db["conn"]
         # is_special=True, special_expires_at 과거, subscription_end None
         mock_db["cursor"].fetchone.return_value = (
-            1, "YU", "viewer", True,
+            1, "YU", "viewer", "HST", True,
             generate_password_hash("password"),
             "active", None,
             date.today() - timedelta(days=1),  # special_expires_at 과거
@@ -1814,7 +1814,7 @@ def test_login_admin_roster_removed_blocked(client, mock_db):
         pw_hash = generate_password_hash("secure123")
         mock_db["cursor"].fetchone.side_effect = [
             # (id, institution_id, role, is_special, pw_hash, status, locked_at, special_expires_at, subscription_end)
-            (1, "YU", "admin", False, pw_hash, "active", None, None, None),
+            (1, "YU", "admin", None, False, pw_hash, "active", None, None, None),
             None,   # _has_admin_roster: __ADMIN__ 행 없음(회수) → 면제 박탈
         ]
         resp = client.post("/api/auth/login",
@@ -1831,7 +1831,7 @@ def test_login_admin_only_roster_present_succeeds(client, mock_db):
         from werkzeug.security import generate_password_hash
         pw_hash = generate_password_hash("secure123")
         mock_db["cursor"].fetchone.side_effect = [
-            (1, "YU", "admin", False, pw_hash, "active", None, None, None),
+            (1, "YU", "admin", None, False, pw_hash, "active", None, None, None),
             (1,),   # _has_admin_roster: __ADMIN__ 행 존재 → 면제 유지
         ]
         resp = client.post("/api/auth/login",
@@ -1840,6 +1840,42 @@ def test_login_admin_only_roster_present_succeeds(client, mock_db):
         assert resp.get_json()["success"] is True
         cookies = resp.headers.getlist("Set-Cookie")
         assert any(COOKIE_NAME in c for c in cookies)
+
+
+def test_login_moonlight_admin_subject_expired_blocked(client, mock_db):
+    """[Codex 라운드2] 겸직 admin(subject_code 보유) + 과목 구독 만료 + __ADMIN__ roster 잔존
+    → login 차단(이전엔 role=admin 면제로 통과). 4경로 일관."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+        from werkzeug.security import generate_password_hash
+        pw_hash = generate_password_hash("secure123")
+        mock_db["cursor"].fetchone.side_effect = [
+            # subject_code='HST'(좌석 점유) → admin이어도 면제 안 됨. subscription_end 만료.
+            (1, "YU", "admin", "HST", False, pw_hash, "active", None, None,
+             datetime.now(timezone.utc).date() - timedelta(days=1)),
+        ]
+        resp = client.post("/api/auth/login",
+                          json={"email": "dual@univ.ac.kr", "password": "secure123"})
+        assert resp.status_code == 403
+        assert resp.get_json()["error"] == "SUBSCRIPTION_EXPIRED"
+
+
+def test_login_moonlight_admin_active_subscription_succeeds(client, mock_db):
+    """[Codex 라운드2] 겸직 admin + 과목 구독 active → 정상 로그인(과잉차단 회귀 없음)."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+        from werkzeug.security import generate_password_hash
+        pw_hash = generate_password_hash("secure123")
+        mock_db["cursor"].fetchone.side_effect = [
+            (1, "YU", "admin", "HST", False, pw_hash, "active", None, None,
+             datetime.now(timezone.utc).date() + timedelta(days=365)),
+        ]
+        resp = client.post("/api/auth/login",
+                          json={"email": "dual@univ.ac.kr", "password": "secure123"})
+        assert resp.status_code == 200
+        assert resp.get_json()["success"] is True
 
 
 def test_portal_admin_access(client, mock_db):
@@ -1856,7 +1892,7 @@ def test_portal_admin_access(client, mock_db):
         client.set_cookie(COOKIE_NAME, encode_token(payload))
         mock_db["cursor"].fetchone.side_effect = [
             # _authenticate: subscription_end=None이어도 db_role='admin' + roster 존재라 통과.
-            ("sess-admin-1", "active", "__ADMIN__", None, "admin", False, "YU", None),
+            ("sess-admin-1", "active", None, None, "admin", False, "YU", None),
             (1,),                  # _has_admin_roster: 구독 면제 결합 — 관리자 행 존재(Codex#2)
             (1,),                  # _is_institution_admin: 관리자 roster 행 존재
             ("연세대 의과대학",),   # 포털: institutions.name_ko
@@ -2013,7 +2049,7 @@ def test_portal_role_admin_but_roster_removed_blocked(client, mock_db):
         client.set_cookie(COOKIE_NAME, encode_token(payload))
         mock_db["cursor"].fetchone.side_effect = [
             # _authenticate: db_role='admin'이지만 subscription_end=None
-            ("sess-ex-admin", "active", "__ADMIN__", None, "admin", False, "YU", None),
+            ("sess-ex-admin", "active", None, None, "admin", False, "YU", None),
             None,   # _has_admin_roster: 관리자 행 없음(회수됨) → 면제 박탈 → 구독 만료 차단
         ]
         resp = client.get("http://localhost/portal")
@@ -2052,7 +2088,7 @@ def test_db_authority_role_admin_from_db_passes(client, mock_db):
         client.set_cookie(COOKIE_NAME, encode_token(payload))
         mock_db["cursor"].fetchone.side_effect = [
             # DB role='admin' + roster 존재 → 구독 None이어도 통과
-            ("valid-sess", "active", "__ADMIN__", None, "admin", False, "YU", None),
+            ("valid-sess", "active", None, None, "admin", False, "YU", None),
             (1,),                  # _has_admin_roster: 관리자 행 존재(면제 유지)
             (1, "admin@test.com", "admin", "YU", False, "active", None),  # me()
         ]
@@ -2060,6 +2096,24 @@ def test_db_authority_role_admin_from_db_passes(client, mock_db):
         assert resp.status_code == 200
         # me()는 g가 아닌 DB를 다시 읽지만, _authenticate가 admin 분기로 통과했음을 200으로 확인
         assert resp.get_json()["data"]["role"] == "admin"
+
+
+def test_authenticate_moonlight_admin_subject_expired_blocked(client, mock_db):
+    """[Codex 라운드2] 보호 라우트(_authenticate): 겸직 admin(subject_code 보유) + 과목 구독 만료
+    + __ADMIN__ roster 잔존 → 차단(SUBSCRIPTION_EXPIRED). login과 동일 기준(4경로 일관)."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+        payload = {"sub": "3", "institution_id": "YU", "role": "admin",
+                   "session_token": "valid-sess", "is_special": False}
+        client.set_cookie(COOKIE_NAME, encode_token(payload))
+        mock_db["cursor"].fetchone.side_effect = [
+            # subject_code='HST'(좌석 점유) → admin이어도 면제 안 됨. 매칭 구독 없음(NULL)→만료.
+            ("valid-sess", "active", "HST", None, "admin", False, "YU", None),
+        ]
+        resp = client.get("http://localhost/api/auth/me")
+        assert resp.status_code == 401
+        assert resp.get_json()["error"] == "SUBSCRIPTION_EXPIRED"
 
 
 def test_admin_session_token_mismatch_blocks(client, mock_db):
@@ -2343,7 +2397,7 @@ def test_admin_roster_removed_loses_subscription_exemption(client, mock_db):
                    "session_token": "valid-sess", "is_special": False}
         client.set_cookie(COOKIE_NAME, encode_token(payload))
         mock_db["cursor"].fetchone.side_effect = [
-            ("valid-sess", "active", "__ADMIN__", None, "admin", False, "YU", None),  # _authenticate
+            ("valid-sess", "active", None, None, "admin", False, "YU", None),  # _authenticate
             None,   # _has_admin_roster: roster 없음 → 면제 박탈
         ]
         resp = client.get("http://localhost/api/auth/me")   # API 경로

@@ -642,7 +642,7 @@ def login():
             #   active 구독만 본다(미래 학기 active도 창 전엔 NULL→만료). today는 KST(§16·§18 D10).
             today = _today_kst()
             cur.execute(
-                """SELECT u.id, u.institution_id, u.role, u.is_special,
+                """SELECT u.id, u.institution_id, u.role, u.subject_code, u.is_special,
                           u.password_hash, u.status, u.locked_at, u.special_expires_at,
                           (SELECT MAX(s.subscription_end)
                              FROM subscriptions s
@@ -660,7 +660,7 @@ def login():
             if row is None:
                 conn.rollback()
                 return _err("INVALID_CREDENTIALS", "이메일 또는 비밀번호가 올바르지 않습니다", 401)
-            (user_id, institution_id, role, is_special,
+            (user_id, institution_id, role, subject_code, is_special,
              pw_hash, status, locked_at, special_expires_at, subscription_end) = row
 
             if status == "pending_verification":
@@ -691,16 +691,18 @@ def login():
                 if special_expires_at is not None and special_expires_at < today:
                     conn.rollback()
                     return _err("SUBSCRIPTION_EXPIRED", "특별계정 사용 기간이 만료되었습니다", 403)
-            elif role == "admin" and _has_admin_roster(user_id):
+            elif role == "admin" and subject_code is None and _has_admin_roster(user_id):
+                # [Codex 라운드2] 구독 만료 면제는 '순수 admin-only(subject_code IS NULL, 좌석 0)'에만.
+                #   subject_code가 있으면(겸직, 좌석 점유) admin이어도 아래 else로 떨어져 구독 만료
+                #   검사를 받는다 — register·verify·_authenticate와 4경로 일관.
                 # 기관 관리자(포털 전용): 구독 만료 게이트 면제(§9). 단 _authenticate와 동일하게
-                #   '현재 __ADMIN__ roster 행 존재'와 결합한다(Codex 발견 4, 동일 함수 재사용).
+                #   '현재 __ADMIN__ roster 행 존재'와 결합한다(발견 4, 동일 함수 재사용).
                 #   roster 회수 시 면제가 사라져 아래 else로 떨어지고, 매칭 구독이 없거나 만료면
-                #   SUBSCRIPTION_EXPIRED로 로그인 단계에서 차단된다(로그인만 성공하고 보호 라우트에서
-                #   막히던 불일치 제거). 슬라이드 접근은 별도 단일 게이트가 과목 좌석으로 판정(§8).
+                #   SUBSCRIPTION_EXPIRED로 로그인 단계에서 차단된다. 슬라이드 접근은 별도 단일 게이트(§8).
                 pass
             else:
                 # 매칭 구독이 없으면(subscription_end=NULL) 라이선스 격리상 차단(fail-closed).
-                #   (role=admin이어도 __ADMIN__ roster가 없으면 여기로 떨어진다.)
+                #   (role=admin이어도 subject_code 보유 또는 __ADMIN__ roster 부재면 여기로 떨어진다.)
                 if subscription_end is None or subscription_end < today:
                     conn.rollback()
                     return _err("SUBSCRIPTION_EXPIRED", "구독이 만료되었습니다", 403)

@@ -213,7 +213,10 @@ def _authenticate():
         #     special_expires_at NULL(무기한)은 통과 — 비권장이나 허용. 경과 시 차단.
         if special_expires_at is not None and special_expires_at < today:
             return ("SUBSCRIPTION_EXPIRED", "특별계정 사용 기간이 만료되었습니다. 과 사무실에 문의하세요")
-    elif db_role == "admin" and _has_admin_roster(user_id):
+    elif db_role == "admin" and subject_code is None and _has_admin_roster(user_id):
+        # [Codex 라운드2] 구독 만료 면제는 '순수 admin-only(subject_code IS NULL, 좌석 0)'에만.
+        #   subject_code가 있으면(겸직, 좌석 점유) admin이어도 아래 else로 떨어져 구독 만료 검사를
+        #   받는다 — register·verify·login과 4경로 일관(좌석 점유 = 콘텐츠 소비 = 만료 집행).
         # 기관 관리자(포털 전용): 과목 구독에 묶이지 않으므로 매 요청 구독 만료 게이트 면제.
         #   [Codex#2] 단, 면제는 '현재 __ADMIN__ roster 행 존재'와 결합한다 — roster 회수(권한 박탈)
         #   시 면제도 사라져 아래 else로 떨어지고(매칭 구독 없음 → SUBSCRIPTION_EXPIRED) API 사용까지 막힌다.
