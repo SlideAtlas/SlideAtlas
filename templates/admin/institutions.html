@@ -58,7 +58,7 @@
 
 /* admin contact rows */
 .adm-row{display:grid;grid-template-columns:1.1fr .9fr 1.4fr 1.1fr 30px;gap:8px;align-items:center;margin-bottom:8px}
-.adm-row input,.adm-row select{padding:8px 9px;font-size:12.5px;border:1px solid var(--line);border-radius:8px;font-family:inherit;outline:none}
+.adm-row input,.adm-row select{min-width:0;padding:8px 9px;font-size:12.5px;border:1px solid var(--line);border-radius:8px;font-family:inherit;outline:none}
 .adm-row input:focus,.adm-row select:focus{border-color:var(--sky)}
 .adm-row .del-btn{background:#FBECEC;border:none;color:var(--danger);width:30px;height:34px;border-radius:7px;cursor:pointer;font-size:15px}
 .adm-row .del-btn:hover{background:#f5dada}
@@ -176,7 +176,7 @@
       </div>
     </div>
     <div class="m-foot">
-      <span class="note">저장 후 SES 포털 안내 발송 예정 (추후 활성화)</span>
+      <span class="note">관리자는 등록 후 본인이 회원가입(이메일 인증)으로 포털에 접속합니다.</span>
       <div style="display:flex;gap:8px">
         <button class="btn btn-ghost" onclick="closeModal('ov-form')">취소</button>
         <button class="btn btn-pri" id="form-save-btn" onclick="submitForm()">기관 추가</button>
@@ -488,7 +488,8 @@ function addAdmRow(v) {
   refreshCap();
 }
 function delAdmRow(btn) {
-  if (admCount() <= 1) return;
+  // 마지막(유일) 관리자 행도 삭제 가능해야 한다 — 제거 시 빈 contacts가 전송되어
+  //   백엔드가 __ADMIN__ roster 행을 DELETE(포털 권한 회수). 가드 제거(삭제 버그 수정).
   btn.closest('.adm-row').remove();
   refreshCap();
 }

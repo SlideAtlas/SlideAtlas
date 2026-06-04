@@ -1922,10 +1922,10 @@ def test_portal_non_admin_redirected(client, mock_db):
 
 
 def test_institution_create_registers_admin_roster(client, mock_db):
-    """①: 기관 추가 시 admin_contacts → institution_rosters(role='admin', '__ADMIN__', position) 등록."""
+    """①: 기관 추가 시 admin_contacts → institution_rosters(role='admin', '__ADMIN__', position) 등록.
+    [CEO 확정] 포털 초대 메일은 자동 발송하지 않는다 — 명단 등록만(관리자는 본인이 가입)."""
     with patch("server_render.get_db_conn") as mock_get_db, \
-         patch("server_render.release_db_conn"), \
-         patch("server_render._send_portal_invite_email", return_value=True) as mock_invite:
+         patch("server_render.release_db_conn"):
         mock_get_db.return_value = mock_db["conn"]
         mock_db["cursor"].fetchone.side_effect = [
             (1, "super_admin", "Admin", "active", "admin-sess-tok", None),  # _get_admin_user (+session_token)
@@ -1943,6 +1943,8 @@ def test_institution_create_registers_admin_roster(client, mock_db):
         data = resp.get_json()
         assert data["ok"] is True
         assert data["admins_registered"] == 1
+        # 초대 메일 발송 개념 제거 — 응답에 invites_sent 키가 없어야 한다.
+        assert "invites_sent" not in data
         # roster INSERT 호출에 센티넬 과목코드·role='admin'·position·이메일이 들어갔는지 확인.
         roster_inserts = [
             c for c in mock_db["cursor"].execute.call_args_list
@@ -1953,15 +1955,12 @@ def test_institution_create_registers_admin_roster(client, mock_db):
         assert "__ADMIN__" in params
         assert "prof@univ.ac.kr" in params
         assert "교수" in params
-        # 포털 안내 메일 발송 시도
-        assert mock_invite.called
 
 
 def test_institution_update_syncs_admin_roster(client, mock_db):
     """기관 수정(PUT): 관리자 제거 = __ADMIN__ roster 행만 DELETE. 계정/과목 권한은 불가침."""
     with patch("server_render.get_db_conn") as mock_get_db, \
-         patch("server_render.release_db_conn"), \
-         patch("server_render._send_portal_invite_email", return_value=True):
+         patch("server_render.release_db_conn"):
         mock_get_db.return_value = mock_db["conn"]
         mock_db["cursor"].fetchone.side_effect = [
             (1, "super_admin", "Admin", "active", "admin-sess-tok", None),  # _get_admin_user (+session_token)
@@ -1988,6 +1987,34 @@ def test_institution_update_syncs_admin_roster(client, mock_db):
         assert not any("suspended" in str(c.args[0]) for c in executed)
         assert not any("DELETE FROM users" in str(c.args[0]) for c in executed)
         assert not any("UPDATE users" in str(c.args[0]) for c in executed)
+
+
+def test_register_after_admin_removed_is_viewer_not_admin(client, mock_db):
+    """관리자(__ADMIN__) 제거 후: 해당 이메일이 subject 행만 남으면 재가입 시 role='admin'이
+    부여되지 않고 일반 viewer로 가입된다(포털 권한 회수 일관). 학생 roster 행은 그대로 활용."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"), \
+         patch("auth.auth.send_verification_email"):
+        mock_get_db.return_value = mock_db["conn"]
+        mock_db["cursor"].fetchone.side_effect = [
+            None,        # 이메일 미존재
+            (100,),      # max_seats
+            (5,),        # active_count
+            (77,),       # INSERT users RETURNING id
+        ]
+        mock_db["cursor"].fetchall.side_effect = [
+            [("HST", "viewer")],   # roster: __ADMIN__ 행 없음(제거됨), subject 행만 잔존
+            [("HST", "학생")],     # active subject 1건
+        ]
+        resp = client.post("/api/auth/register",
+                          json={"email": "ex-admin@univ.ac.kr", "password": "secure123",
+                                "institution_id": "YU"})
+        assert resp.status_code == 200
+        ins = [c for c in mock_db["cursor"].execute.call_args_list
+               if "INSERT INTO users" in str(c.args[0])][0]
+        params = ins.args[1]
+        assert params[4] == "viewer"   # role: admin 아님(권한 회수 일관)
+        assert params[1] == "HST"      # subject 행은 정상 활용
 
 
 def test_moonlighter_admin_removed_portal_blocked(client, mock_db):

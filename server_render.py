@@ -1964,44 +1964,6 @@ def api_institutions_list():
         release_db_conn(conn)
 
 
-def _send_portal_invite_email(to_email: str, name: str) -> bool:
-    """기관 관리자에게 포털 가입 안내 발송 (현재: Gmail SMTP 임시 stub).
-
-    # TODO(D2): SES 도메인 인증(slide-atlas.net) 완료 후 boto3 SES로 교체. 호출부 무변경.
-    발송 실패가 기관 추가 트랜잭션을 되돌리지는 않는다(호출부에서 결과만 수집).
-    """
-    try:
-        import smtplib
-        import re as _re
-        from email.mime.text import MIMEText as _MIMEText
-        # GMAIL_USER / GMAIL_APP_PW 는 .env 또는 Render 환경변수에서만 읽음 (하드코딩 금지)
-        sender = os.environ.get('GMAIL_USER', '')
-        if not sender:
-            return False
-        # 헤더 주입 방지: 수신 주소에 개행 있으면 발송 거부(§8 v3.1).
-        if _re.search(r'[\r\n]', to_email or ''):
-            print('[portal-invite] 수신 주소에 개행 포함 — 발송 거부')
-            return False
-        greet = (name or '').strip() or '기관 관리자'
-        body = (
-            f"{greet}님, 안녕하세요.\n\n"
-            "SlideAtlas 기관 관리자로 등록됐습니다.\n"
-            "https://slide-atlas.net/register 에서 회원가입 후 포털에 접속하세요.\n\n"
-            "— SlideAtlas | atlaslab.co.kr"
-        )
-        msg = _MIMEText(body)
-        msg['Subject'] = '[SlideAtlas] 기관 관리자 포털 가입 안내'
-        msg['From'] = sender
-        msg['To'] = to_email
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as s:
-            s.login(sender, os.environ['GMAIL_APP_PW'])
-            s.send_message(msg)
-        return True
-    except Exception as e:
-        print(f'[portal-invite] 발송 실패({to_email}): {e}')
-        return False
-
-
 def _upsert_admin_roster(cur, inst_id, contacts):
     """admin_contacts 각 행을 institution_rosters에 관리자(role='admin')로 등록/갱신.
 
@@ -2009,7 +1971,7 @@ def _upsert_admin_roster(cur, inst_id, contacts):
     '__ADMIN__'을 쓴다 → 같은 이메일이 과목 명단('HST' 등)과 충돌 없이 공존(§9).
     role='admin'(시스템 권한, 포털 접근)과 position(교수/조교 등, 표시용)은 별개 개념이다.
     이미 존재하는 이메일은 ON CONFLICT DO NOTHING(중복 무시) 후 name/position만 갱신.
-    반환: 새로 INSERT 시도한(=안내 발송 대상) (email, name) 목록.
+    반환: 등록 대상 (email, name) 목록(등록 수 집계용 — 초대 메일은 발송하지 않는다, §9).
     """
     invited = []
     for c in contacts:
@@ -2128,13 +2090,13 @@ def api_institution_create():
                     """, (inst_id, subject_code))
 
                 # 관리자 명단 등록 (§9): admin_contacts → institution_rosters(role='admin').
-                #   같은 트랜잭션으로 기관·구독과 함께 커밋. 안내 메일은 커밋 후 발송.
-                invited = _upsert_admin_roster(cur, inst_id, contacts)
+                #   같은 트랜잭션으로 기관·구독과 함께 커밋. CEO 확정: 별도 포털 초대 메일은
+                #   자동 발송하지 않는다 — 관리자도 학생과 동일하게 본인이 가입(register→verify)하며
+                #   roster __ADMIN__ 행이 가입 대조의 근거다(§9).
+                registered = _upsert_admin_roster(cur, inst_id, contacts)
 
-        # 트랜잭션 커밋 완료 — 포털 안내 메일 발송(실패해도 기관 추가는 완료 처리).
-        sent = sum(1 for em, nm in invited if _send_portal_invite_email(em, nm))
         return jsonify({'ok': True, 'id': inst_id,
-                        'admins_registered': len(invited), 'invites_sent': sent})
+                        'admins_registered': len(registered)})
     except psycopg2.IntegrityError as e:
         return jsonify({'ok': False, 'error': str(e)}), 409
     except Exception as e:
@@ -2256,17 +2218,9 @@ def api_institution_update(inst_id):
                         (inst_id, ADMIN_ROSTER_SUBJECT, em),
                     )
 
-        # 새로 추가된 관리자에게만 포털 안내 발송(기존 유지/제거 대상 제외). 실패해도 수정은 완료.
-        new_contacts = [
-            c for c in contacts
-            if (c.get('email') or '').strip().lower() in to_add
-        ]
-        sent = sum(
-            1 for c in new_contacts
-            if _send_portal_invite_email((c.get('email') or '').strip().lower(), c.get('name') or '')
-        )
+        # CEO 확정: 포털 초대 메일 자동 발송 없음 — 관리자는 본인이 가입(register→verify)한다(§9).
         return jsonify({'ok': True, 'admins_added': len(to_add),
-                        'admins_removed': len(to_remove), 'invites_sent': sent})
+                        'admins_removed': len(to_remove)})
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)}), 500
     finally:
