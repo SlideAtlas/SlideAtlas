@@ -227,14 +227,16 @@ def test_register_multi_subject_ambiguous(client, mock_db):
 
 def test_register_moonlight_admin_captures_subject_position(client, mock_db):
     """[v3.4 겸직] __ADMIN__ + active subject 1건 → role='admin'이면서 subject_code·position은
-    subject 행에서 캡처. 좌석 검사는 skip(role!=viewer)."""
+    subject 행에서 캡처. [Codex 발견 1] subject_code가 있으면 좌석 검사를 받는다(좌석 여유 시 통과)."""
     with patch("server_render.get_db_conn") as mock_get_db, \
          patch("server_render.release_db_conn"), \
          patch("auth.auth.send_verification_email") as mock_send:
         mock_get_db.return_value = mock_db["conn"]
         mock_db["cursor"].fetchone.side_effect = [
-            None,    # 이메일 없음
-            (99,),   # INSERT users RETURNING id
+            None,     # 이메일 없음
+            (100,),   # max_seats (좌석 검사 — 겸직도 subject 있으면 수행)
+            (5,),     # active_count
+            (99,),    # INSERT users RETURNING id
         ]
         mock_db["cursor"].fetchall.side_effect = [
             [("__ADMIN__", None), ("HST", "viewer")],   # roster: 관리자 행 + subject 행
@@ -246,14 +248,40 @@ def test_register_moonlight_admin_captures_subject_position(client, mock_db):
         assert resp.status_code == 200
         assert mock_send.called
         executed = " ".join(str(c.args[0]) for c in mock_db["cursor"].execute.call_args_list)
-        # 좌석 검사(COUNT)는 admin이므로 skip
-        assert "COUNT(*) FROM users" not in executed
+        # [Codex 발견 1] subject_code 보유 → 좌석 검사(COUNT) 수행됨(콘텐츠 소비 = 좌석 점유)
+        assert "COUNT(*) FROM users" in executed
         ins = [c for c in mock_db["cursor"].execute.call_args_list
                if "INSERT INTO users" in str(c.args[0])][0]
         params = ins.args[1]
         assert params[1] == "HST"        # subject_code = 실제 과목 (센티넬 아님)
         assert params[4] == "admin"      # role = admin
         assert params[5] == "교수"        # position = subject 행에서
+
+
+def test_register_moonlight_admin_seat_full_blocked(client, mock_db):
+    """[Codex 발견 1] 겸직 admin도 좌석을 점유하므로 정원 초과 시 SEAT_FULL로 차단된다
+    (이전 role=='viewer' 기준에서는 우회로 통과하던 케이스)."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"), \
+         patch("auth.auth.send_verification_email") as mock_send:
+        mock_get_db.return_value = mock_db["conn"]
+        mock_db["cursor"].fetchone.side_effect = [
+            None,     # 이메일 없음
+            (10,),    # max_seats=10
+            (10,),    # active_count=10 → 포화
+        ]
+        mock_db["cursor"].fetchall.side_effect = [
+            [("__ADMIN__", None), ("HST", "viewer")],
+            [("HST", "교수")],
+        ]
+        resp = client.post("/api/auth/register",
+                          json={"email": "prof@univ.ac.kr", "password": "secure123",
+                                "institution_id": "YU"})
+        assert resp.status_code == 403
+        assert resp.get_json()["error"] == "SEAT_FULL"
+        executed = " ".join(str(c.args[0]) for c in mock_db["cursor"].execute.call_args_list)
+        assert "INSERT INTO users" not in executed
+        assert not mock_send.called
 
 
 def test_verify_email_no_active_subscription_rejected(client, mock_db):
@@ -1722,13 +1750,16 @@ def test_verify_email_admin_creates_admin_role(client, mock_db):
 
 def test_verify_email_moonlight_updates_subject_roster_row(client, mock_db):
     """[v3.4 겸직 red-team] role='admin'이어도 subject_code가 채워진 겸직 계정은 verify 시
-    __ADMIN__이 아니라 그 subject 행을 verified로 표시해야 한다(subject 행 누락 방지)."""
+    __ADMIN__이 아니라 그 subject 행을 verified로 표시해야 한다(subject 행 누락 방지).
+    [Codex 발견 2] subject_code 보유 → 구독·좌석 재검사도 받는다(좌석 여유 시 통과)."""
     with patch("server_render.get_db_conn") as mock_get_db, \
          patch("server_render.release_db_conn"):
         mock_get_db.return_value = mock_db["conn"]
         mock_db["cursor"].fetchone.side_effect = [
             (3, "YU", "admin", False, "HST"),   # 겸직: role=admin, subject_code=HST
             (4, "123456", datetime.now(timezone.utc) + timedelta(minutes=5), False, 0),  # ev
+            (100,),   # max_seats (재검사 — 겸직도 subject 있으면 수행)
+            (5,),     # active_count
         ]
         resp = client.post("/api/auth/verify-email",
                           json={"email": "dual@univ.ac.kr", "code": "123456"})
@@ -1738,6 +1769,77 @@ def test_verify_email_moonlight_updates_subject_roster_row(client, mock_db):
         # subject 행(HST)을 대상으로 verified, __ADMIN__ 아님
         assert "HST" in upd.args[1]
         assert "__ADMIN__" not in upd.args[1]
+
+
+def test_verify_email_moonlight_subject_expired_blocked(client, mock_db):
+    """[Codex 발견 2] 겸직 admin이라도 캡처된 과목 구독이 만료(접근창 밖)면 verify에서 차단된다."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+        mock_db["cursor"].fetchone.side_effect = [
+            (3, "YU", "admin", False, "HST"),   # 겸직
+            (4, "123456", datetime.now(timezone.utc) + timedelta(minutes=5), False, 0),  # ev
+            None,   # 접근창 내 active 구독 없음 → 차단
+        ]
+        resp = client.post("/api/auth/verify-email",
+                          json={"email": "dual@univ.ac.kr", "code": "123456"})
+        assert resp.status_code == 403
+        assert resp.get_json()["error"] == "SUBSCRIPTION_INACTIVE"
+
+
+def test_verify_email_moonlight_seat_full_blocked(client, mock_db):
+    """[Codex 발견 2] 겸직 admin이라도 좌석 포화면 verify에서 SEAT_FULL로 차단된다."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+        mock_db["cursor"].fetchone.side_effect = [
+            (3, "YU", "admin", False, "HST"),   # 겸직
+            (4, "123456", datetime.now(timezone.utc) + timedelta(minutes=5), False, 0),  # ev
+            (10,),  # max_seats
+            (10,),  # active_count → 포화
+        ]
+        resp = client.post("/api/auth/verify-email",
+                          json={"email": "dual@univ.ac.kr", "code": "123456"})
+        assert resp.status_code == 403
+        assert resp.get_json()["error"] == "SEAT_FULL"
+
+
+def test_login_admin_roster_removed_blocked(client, mock_db):
+    """[Codex 발견 4] role=admin이지만 __ADMIN__ roster가 회수되고 매칭 구독도 없으면
+    login 단계에서 SUBSCRIPTION_EXPIRED로 차단된다(면제는 roster 결합 — _has_admin_roster)."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+        from werkzeug.security import generate_password_hash
+        pw_hash = generate_password_hash("secure123")
+        mock_db["cursor"].fetchone.side_effect = [
+            # (id, institution_id, role, is_special, pw_hash, status, locked_at, special_expires_at, subscription_end)
+            (1, "YU", "admin", False, pw_hash, "active", None, None, None),
+            None,   # _has_admin_roster: __ADMIN__ 행 없음(회수) → 면제 박탈
+        ]
+        resp = client.post("/api/auth/login",
+                          json={"email": "ex-admin@univ.ac.kr", "password": "secure123"})
+        assert resp.status_code == 403
+        assert resp.get_json()["error"] == "SUBSCRIPTION_EXPIRED"
+
+
+def test_login_admin_only_roster_present_succeeds(client, mock_db):
+    """[Codex 발견 4] 순수 admin-only(__ADMIN__ roster 존재)는 구독 없어도 정상 로그인(면제 유지)."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+        from werkzeug.security import generate_password_hash
+        pw_hash = generate_password_hash("secure123")
+        mock_db["cursor"].fetchone.side_effect = [
+            (1, "YU", "admin", False, pw_hash, "active", None, None, None),
+            (1,),   # _has_admin_roster: __ADMIN__ 행 존재 → 면제 유지
+        ]
+        resp = client.post("/api/auth/login",
+                          json={"email": "admin@univ.ac.kr", "password": "secure123"})
+        assert resp.status_code == 200
+        assert resp.get_json()["success"] is True
+        cookies = resp.headers.getlist("Set-Cookie")
+        assert any(COOKIE_NAME in c for c in cookies)
 
 
 def test_portal_admin_access(client, mock_db):

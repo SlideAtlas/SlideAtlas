@@ -23,6 +23,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 from .decorators import (
     encode_token, login_required, COOKIE_NAME, _today_kst, ADMIN_ROSTER_SUBJECT,
+    _has_admin_roster,
 )
 
 load_dotenv()  # .env 있으면 읽기, 없으면(Render) 환경변수 그대로 사용
@@ -275,12 +276,13 @@ def register():
                 return _err("MULTI_SUBJECT_AMBIGUOUS",
                             "여러 과목 명단에 등록되어 있습니다. 과 사무실에 문의하세요", 403)
 
-            # 5) 좌석(정원) 검사 — role=='viewer'(확정 subject 1건)일 때만(§9·§16).
-            #    admin 겸직자는 좌석 검사를 건너뛴다(정원 초과여도 가입 허용). 단 subject_code가
-            #    채워져 active가 되므로 좌석 COUNT에는 포함된다(콘텐츠 소비 = 좌석 점유). admin-only는
-            #    subject_code NULL이라 COUNT에서 빠져 좌석 0. 여기는 소프트 사전검사이며, 권위 있는
-            #    동시성 재검사는 verify_email에서 행 잠금(FOR UPDATE)으로 수행한다.
-            if role == "viewer":
+            # 5) 좌석(정원) 검사 — 면제 기준은 subject_code 유무다(Codex 발견 1·2 수정).
+            #    콘텐츠를 소비(=좌석 점유, subject_code 있음)하는 사용자는 admin 겸직이어도 정원
+            #    검사를 받는다. subject_code가 NULL인 순수 admin-only(좌석 0)만 검사를 건너뛴다.
+            #    (이전 role=='viewer' 기준은 겸직 admin이 좌석 점유하면서 정원 검사를 우회했음.)
+            #    여기는 소프트 사전검사이며, 권위 있는 동시성 재검사는 verify_email에서 행 잠금
+            #    (FOR UPDATE)으로 수행한다.
+            if subject_code is not None:
                 cur.execute(
                     """SELECT max_seats FROM subscriptions
                        WHERE institution_id = %s AND subject_code = %s AND status = 'active'
@@ -431,8 +433,10 @@ def verify_email():
             #   (deprecated)는 참조하지 않는다(§0-2). 구독 행을 FOR UPDATE로 잠가 동시 verify가
             #   마지막 좌석을 중복 통과하지 못하게 한다(과목 단위 직렬화).
             # [#4] 접근창 내 active 구독 필수(없으면 거부 — active 전환 금지). today는 KST(§18 D10).
-            #   관리자(is_admin_user)는 좌석을 소비하지 않으므로 구독·정원 재검사를 건너뛴다(§9).
-            if not is_admin_user:
+            #   면제 기준은 subject_code 유무다(Codex 발견 1·2 수정). 캡처된 subject가 있으면
+            #   admin 겸직이어도 (1) 그 과목 active-in-window 구독 재확인(fail-closed) (2) 좌석
+            #   FOR UPDATE 재검사를 수행한다. subject_code가 NULL인 순수 admin-only만 면제한다.
+            if subject_code is not None:
                 today = _today_kst()
                 cur.execute(
                     """SELECT max_seats FROM subscriptions
@@ -687,12 +691,16 @@ def login():
                 if special_expires_at is not None and special_expires_at < today:
                     conn.rollback()
                     return _err("SUBSCRIPTION_EXPIRED", "특별계정 사용 기간이 만료되었습니다", 403)
-            elif role == "admin":
-                # 기관 관리자(포털 전용): 과목 구독에 묶이지 않으므로 구독 만료 게이트 면제(§9).
-                #   슬라이드 접근은 별도 단일 게이트가 과목 좌석으로 판정(§8).
+            elif role == "admin" and _has_admin_roster(user_id):
+                # 기관 관리자(포털 전용): 구독 만료 게이트 면제(§9). 단 _authenticate와 동일하게
+                #   '현재 __ADMIN__ roster 행 존재'와 결합한다(Codex 발견 4, 동일 함수 재사용).
+                #   roster 회수 시 면제가 사라져 아래 else로 떨어지고, 매칭 구독이 없거나 만료면
+                #   SUBSCRIPTION_EXPIRED로 로그인 단계에서 차단된다(로그인만 성공하고 보호 라우트에서
+                #   막히던 불일치 제거). 슬라이드 접근은 별도 단일 게이트가 과목 좌석으로 판정(§8).
                 pass
             else:
                 # 매칭 구독이 없으면(subscription_end=NULL) 라이선스 격리상 차단(fail-closed).
+                #   (role=admin이어도 __ADMIN__ roster가 없으면 여기로 떨어진다.)
                 if subscription_end is None or subscription_end < today:
                     conn.rollback()
                     return _err("SUBSCRIPTION_EXPIRED", "구독이 만료되었습니다", 403)
