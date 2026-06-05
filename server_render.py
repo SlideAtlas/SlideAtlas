@@ -3,6 +3,7 @@ load_dotenv()
 
 import os
 import sys
+import re
 import threading
 import json
 from functools import wraps
@@ -61,12 +62,12 @@ if not _admin_secret:
 app.secret_key = _admin_secret
 
 # -- JWT 인증 Blueprint 등록 ---------------------------------------------------
-from auth.auth import auth_bp
+from auth.auth import auth_bp, active_window_subscription, active_seat_count
 app.register_blueprint(auth_bp)
 from auth.decorators import (
     login_required, page_login_required, tile_token_required,
     generate_tile_token, verify_tile_token,
-    ADMIN_ROSTER_SUBJECT,
+    ADMIN_ROSTER_SUBJECT, _today_kst,
 )
 
 # -- 어드민 템플릿 컨텍스트 프로세서 -------------------------------------------
@@ -669,16 +670,18 @@ def api_public_institutions():
     id·name_ko만 반환한다 — 구독·좌석·도메인 등 내부 운영 필드는 절대 포함하지 않는다.
     작은 공개 목록이라 rate limit·no-store는 두지 않는다(민감정보 없음).
 
-    is_subscribable=TRUE인 고객 학교만 노출한다(§18 D18). 콘텐츠 소유자(SA)·공급사·미판매
-    파트너(Mahidol 등)는 제외 — 이들이 가입 드롭다운에 보이면 안 된다.
-    ⚠ 선행조건: db/institution_subscribable_migration.sql이 RDS에 적용돼 있어야 한다(컬럼 부재 시 쿼리 오류).
+    노출 기준(§18 D18 재설계, v3.8): '구독(subscriptions) 행이 존재하는 기관'만 반환한다.
+    슈퍼관리자가 구독 플랜을 입력한 기관(=고객 학교, 무료 베타 포함 status 무관)만 자동 노출되고,
+    콘텐츠 소유자(SA)·공급사·미판매 파트너는 구독 행이 없어 자동 제외된다. 플래그 수동관리 불필요.
+    (구 is_subscribable 컬럼 의존 제거 — 컬럼은 죽은 컬럼으로 두고 v1.5에 정리, §18 D18.)
     """
     conn = get_db_conn()
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT id, name_ko FROM institutions "
-                "WHERE is_subscribable = TRUE ORDER BY name_ko"
+                "SELECT DISTINCT i.id, i.name_ko FROM institutions i "
+                "JOIN subscriptions s ON s.institution_id = i.id "
+                "ORDER BY i.name_ko"
             )
             rows = cur.fetchall()
         institutions = [{"id": r[0], "name_ko": r[1]} for r in rows]
@@ -881,6 +884,489 @@ def portal():
     #   본화면은 D15 별도 작업에서 institution_portal.html 목업(§17) 기준으로 구현.
     return render_template('portal.html', institution_id=inst_id, institution_name=inst_name,
                            has_slides=has_slides)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 기관 포털 P1 — 명단 관리 API (§9 멀티테넌시 / §21 / D17 sync 해결)
+#   포털 관리자(_is_institution_admin 통과)가 자기 기관 '과목 이용자 명단'을 관리한다.
+#   · scope 는 g.institution_id 로 강제 — 타 기관 명단 접근·수정 불가(§9).
+#   · 상태변경 API 는 login_required(→ 더블서밋 CSRF 자동) + _portal_guard(_is_institution_admin 재확인).
+#   · 과목 입력 allowlist = '구독 행 보유 과목'(CEO 확정). 미래학기 구독=접근창 닫힘은 분기 C 안전망.
+#   · __ADMIN__(기관 관리자) 행은 읽기전용 표시 — 추가·삭제는 슈퍼관리자 기관수정 화면 관할(CEO 확정).
+#   · sync 판정식은 register()와 동일한 공통 헬퍼(active_window_subscription/active_seat_count)만 사용(§0).
+#   · role 은 어떤 sync 경로에서도 UPDATE 하지 않는다 — 겸직 admin 보존(§3).
+# ═════════════════════════════════════════════════════════════════════════════
+# [v3.9 Codex/Gemini High#2 저장형 XSS 방어] 따옴표·괄호·세미콜론·제어문자를 허용하던 느슨한
+#   `[^@\s]+` 를 운영 안전 allowlist 로 좁힌다. 개별추가·업로드 공통. (템플릿 측은 inline onclick 제거.)
+_PORTAL_EMAIL_RE = re.compile(r'^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$')
+_PORTAL_POSITIONS = ('학생', '조교', '교수')   # 과목 명단 지위(행정직원=admin-only, 과목행 없음 §21-1)
+_PORTAL_UPLOAD_MAX_ROWS = 2000
+_PORTAL_UPLOAD_MAX_BYTES = 10 * 1024 * 1024      # 업로드 스트림 바이트 상한(Content-Length 헤더 비신뢰, 실계수)
+_PORTAL_XLSX_MAX_UNCOMPRESSED = 50 * 1024 * 1024  # xlsx 압축해제 총합 상한(압축폭탄 1차 방어)
+# [v3.9 Codex 2차 Low#2] entry 수는 '보조 backstop'으로만 — 시트·이미지·로고·스타일 포함 정상 업무 xlsx는
+#   entry 100을 넘기 쉬워 정상 명단 오탐을 유발했다. 핵심 방어는 압축해제 총량+실측 업로드 크기+행/셀 상한이며,
+#   entry 수는 극단적 비정상(수천 entry)만 거른다. xlsx 실무 편의 우선.
+_PORTAL_XLSX_MAX_ENTRIES = 1000
+_PORTAL_OUTCOME_MSG = {
+    'synced': '동기화(과목 전환)',
+    'no_change': '변경 없음',
+    'seat_full': '좌석 부족 보류',
+    'pending_window': '구독 시작일에 자동 반영',
+    'multi_subject_hold': '다과목 미지원 보류(D12)',
+    'added_no_user': '명단 추가(가입 대기)',
+    'removed_seat_reclaimed': '제거·좌석 반환',
+    'removed_roster_only': '명단 행만 제거',
+}
+
+
+class _RosterParseError(Exception):
+    pass
+
+
+def _portal_guard():
+    """포털 API 공통 게이트: 로그인 사용자가 자기 기관 관리자인지 재확인.
+    반환 (inst_id, None) 또는 (None, (json_error, status))."""
+    inst_id = getattr(g, 'institution_id', None)
+    if not inst_id or not _is_institution_admin(g.user_id, inst_id):
+        return None, (jsonify({'success': False, 'error': 'FORBIDDEN',
+                               'message': '기관 관리자 권한이 없습니다'}), 403)
+    return inst_id, None
+
+
+def _subscribed_subjects(cur, institution_id):
+    """그 기관이 '구독 행을 보유한' 과목만(status 무관) — 멤버 추가/업로드 과목 allowlist.
+    반환 {code: name_ko}(name_ko 없으면 code 폴백)."""
+    cur.execute(
+        """SELECT DISTINCT sc.code, COALESCE(sc.name_ko, sc.code)
+             FROM subscriptions s
+             JOIN subject_codes sc ON sc.code = s.subject_code
+            WHERE s.institution_id = %s
+            ORDER BY sc.code""",
+        (institution_id,),
+    )
+    return {r[0]: r[1] for r in cur.fetchall()}
+
+
+def _clean_name(raw):
+    """표시 이름 위생: 공백/개행/제어문자 제거 + 길이 캡(100). (수식주입은 export 시점 방어 — §8.)"""
+    s = (raw or '').replace('\r', ' ').replace('\n', ' ').strip()
+    s = ''.join(ch for ch in s if ord(ch) >= 32)
+    return s[:100]
+
+
+def _sync_member(cur, institution_id, subject_code, email, name, position, today, seat_cache):
+    """과목 명단 행 1건 upsert + 동일 이메일 기존 user 동기화(§3 D17 해결).
+
+    판정식은 register()와 동일한 공통 헬퍼만 재사용(§0). role 은 절대 건드리지 않는다(겸직 admin 보존).
+    seat_cache: {subject_code: [max_seats(int|None), used(int), found(bool)]}
+      — 일괄 업로드 좌석 직렬화 캐시(첫 사용 시 구독행 FOR UPDATE 잠금+카운트, 이후 메모리 차감).
+    반환 outcome ∈ {'synced','no_change','seat_full','pending_window','multi_subject_hold','added_no_user'}.
+    """
+    email = email.strip().lower()
+    name = _clean_name(name)
+
+    # 1) 동일 이메일·동일 기관 기존 user 조회.
+    #    [v3.9 Codex/Gemini High#1 IDOR] institution_id 로 스코프한다 — 이 누락 시 A기관 관리자가
+    #    B기관 사용자 이메일을 자기 roster에 넣어 B기관 user의 subject_code/position을 바꾸거나
+    #    '추가 후 삭제'로 B기관 user의 active 과목을 NULL 회수해 슬라이드 접근을 끊을 수 있다(§9 위반).
+    #    타 기관 이메일은 '현재 기관에 기존 user 없음'으로 취급 → roster-only(분기 D).
+    #    [v3.9 Codex 2차 Med#1] status 포함 — 좌석 카운팅은 active 사용자에만 적용(아래 2)).
+    cur.execute(
+        "SELECT id, subject_code, status FROM users WHERE lower(email) = %s AND institution_id = %s",
+        (email, institution_id),
+    )
+    urow = cur.fetchone()
+    u_status = urow[2] if urow is not None else None
+
+    # 2) 좌석 판정을 roster 쓰기 '앞'에 둔다(Med#3): seat_full이면 roster upsert도 user 변경도 하지 않고
+    #    그 행만 skip(아무 것도 안 바뀜). 좌석 검사는 admin-only(subject NULL) 승격(분기 A)에서만 의미.
+    #    판정식은 register/verify 와 동일한 공통 헬퍼만 사용(§0).
+    #    [v3.9 Codex 2차 Med#1] '실제 active 좌석을 만드는 경우(status='active')'에만 좌석을 검사·가산한다 —
+    #      메모리 캐시 증분 기준을 active_seat_count(status='active')와 정확히 일치시킨다(§0 단일판정식).
+    #      pending user 승격은 active 좌석을 점유하지 않으므로 seat_full로 막지 않고(빈 좌석 오거부 방지),
+    #      그 좌석 검사는 verify_email 의 FOR UPDATE 재검사에 위임한다(활성화 시점에 권위 판정).
+    #      단 접근창(found) 판정에 쓰려고 pending 도 st 는 계산해 둔다(좌석 가산은 안 함).
+    if urow is not None and urow[1] is None:
+        st = seat_cache.get(subject_code)
+        if st is None:
+            found, max_seats = active_window_subscription(
+                cur, institution_id, subject_code, today, for_update=True)
+            used = active_seat_count(cur, institution_id, subject_code) if found else 0
+            st = [max_seats, used, found]
+            seat_cache[subject_code] = st
+        _max, _used, _found = st
+        if u_status == 'active' and _found and _max is not None and _used >= _max:
+            return 'seat_full'        # active 승격이 정원 초과 — roster 미생성, user 불변(전체 롤백 아님).
+
+    # 3) roster 행 upsert (role='viewer' 고정 — role 은 sync 대상 아님). is_verified 기존값 유지.
+    #    seat_full 을 제외한 모든 분기(synced/no_change/multi/pending/added)에서 roster 행은 남는다.
+    cur.execute(
+        """INSERT INTO institution_rosters (institution_id, subject_code, email, name, role, position)
+           VALUES (%s, %s, %s, %s, 'viewer', %s)
+           ON CONFLICT (institution_id, subject_code, email)
+           DO UPDATE SET name = EXCLUDED.name, position = EXCLUDED.position""",
+        (institution_id, subject_code, email, name, position),
+    )
+
+    # 4) user 동기화 분기.
+    if urow is None:
+        return 'added_no_user'        # 분기 D — 실제 좌석 점유·채번은 그 사람이 가입할 때(또는 타 기관 이메일).
+    user_id, u_subject = urow[0], urow[1]
+
+    if u_subject == subject_code:
+        # 이미 이 과목 — position 만 동기화(좌석 변화 없음, subject·role 불변).
+        cur.execute("UPDATE users SET position = %s WHERE id = %s AND institution_id = %s",
+                    (position, user_id, institution_id))
+        return 'no_change'
+    if u_subject is not None:
+        # 분기 B — 이미 다른 과목. v1.0 단일 subject_code라 덮어쓰지 않음(D12). roster 행만 추가됨.
+        return 'multi_subject_hold'
+
+    # u_subject IS NULL = admin-only. 분기 A/C — st 는 위 2)에서 채워짐(접근창 판정).
+    _max, _used, _found = seat_cache[subject_code]
+    if not _found:
+        return 'pending_window'       # 분기 C — 접근창 닫힘(미래학기/창 전). admin-only 유지(fail-closed).
+    # 분기 A — NULL→과목 전환 + position 갱신. role 불변(겸직 admin 보존).
+    cur.execute(
+        "UPDATE users SET subject_code = %s, position = %s WHERE id = %s AND institution_id = %s",
+        (subject_code, position, user_id, institution_id),
+    )
+    # active 사용자를 실제 좌석으로 만든 경우에만 메모리 좌석 +1(§0: active_seat_count 기준과 일치).
+    #   pending user 전환은 좌석 미점유 — verify 의 FOR UPDATE 재검사가 활성화 시점에 정원을 집행한다.
+    if u_status == 'active':
+        seat_cache[subject_code][1] = _used + 1
+    return 'synced'
+
+
+def _remove_member(cur, institution_id, subject_code, email):
+    """과목 명단 행 1건 제거 + 좌석 회수(§3). __ADMIN__ 행은 제거 불가(읽기전용, 슈퍼관리자 관할).
+    반환 outcome ∈ {'removed_seat_reclaimed','removed_roster_only','not_found','admin_row_protected'}."""
+    email = email.strip().lower()
+    if subject_code == ADMIN_ROSTER_SUBJECT:
+        return 'admin_row_protected'
+    cur.execute(
+        "DELETE FROM institution_rosters "
+        "WHERE institution_id = %s AND subject_code = %s AND lower(email) = %s",
+        (institution_id, subject_code, email),
+    )
+    if cur.rowcount == 0:
+        return 'not_found'
+    # 동일 이메일·동일 기관 user 가 이 과목을 현재 active 과목으로 점유 중이면 회수.
+    #   [v3.9 High#1 IDOR] institution_id 스코프 — 타 기관 user 행을 NULL 회수하지 못하게(§9).
+    cur.execute(
+        "SELECT id, subject_code FROM users WHERE lower(email) = %s AND institution_id = %s",
+        (email, institution_id),
+    )
+    urow = cur.fetchone()
+    if urow and urow[1] == subject_code:
+        # subject_code NULL 회수(좌석 1석 반환 + 슬라이드 접근 즉시 차단=단일 게이트 자동) + position NULL.
+        #   role 불변 → 겸직(__ADMIN__ 보유)이면 admin-only 복귀, 계정 자체는 삭제 안 함(§9 계정 불가침).
+        cur.execute(
+            "UPDATE users SET subject_code = NULL, position = NULL WHERE id = %s AND institution_id = %s",
+            (urow[0], institution_id),
+        )
+        return 'removed_seat_reclaimed'
+    return 'removed_roster_only'
+
+
+def _looks_like_header(cells):
+    joined = ' '.join((c or '').strip() for c in cells[:4]).lower()
+    return ('이름' in joined or 'name' in joined) and ('이메일' in joined or 'email' in joined)
+
+
+def _read_capped(stream, max_bytes):
+    """업로드 스트림을 청크로 읽되 실측 바이트가 상한을 넘으면 즉시 중단(Content-Length 헤더 비신뢰).
+       chunked 인코딩으로 헤더를 우회해도 실제 바이트 계수로 차단된다."""
+    chunks, total = [], 0
+    while True:
+        chunk = stream.read(65536)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            raise _RosterParseError(f'파일이 너무 큽니다(최대 {max_bytes // (1024 * 1024)}MB)')
+        chunks.append(chunk)
+    return b''.join(chunks)
+
+
+def _xlsx_zip_guard(data):
+    """xlsx(=zip) 선검사: load 전에 압축해제 총합·entry 수를 보고 압축폭탄을 차단(load_workbook은
+       내부적으로 압축을 풀므로 반드시 load 전에 검사한다)."""
+    import zipfile as _zip, io as _io
+    try:
+        zf = _zip.ZipFile(_io.BytesIO(data))
+    except _zip.BadZipFile:
+        raise _RosterParseError('엑셀 파일을 읽을 수 없습니다')
+    try:
+        infos = zf.infolist()
+        if len(infos) > _PORTAL_XLSX_MAX_ENTRIES:
+            raise _RosterParseError('엑셀 구조가 비정상입니다(entry 과다)')
+        total_unc = sum(i.file_size for i in infos)
+        if total_unc > _PORTAL_XLSX_MAX_UNCOMPRESSED:
+            raise _RosterParseError('엑셀 압축 해제 크기가 과도합니다(압축폭탄 의심)')
+    finally:
+        zf.close()
+
+
+def _rows_from_iter(row_iter, max_rows):
+    """공통: (4컬럼 정규화 + 헤더/빈행 스킵 + 스트리밍 중 행상한 적용). 상한 초과 시 즉시 거부.
+       빈 행이 과도해도 절대 무한루프하지 않도록 전체 순회 횟수도 backstop 으로 제한."""
+    out = []
+    scanned = 0
+    scan_limit = max_rows * 50 + 1000   # 빈 행/forged dimension 대비 backstop
+    for i, row in enumerate(row_iter):
+        scanned += 1
+        if scanned > scan_limit:
+            raise _RosterParseError('엑셀 행 수가 과도합니다')
+        # 셀 길이 캡(보안검증 권고): 거대 단일 셀이 다운스트림으로 전파/저장되지 않게 일관 제한.
+        #   정상 이름/이메일/과목/지위는 수십자 이내 — 512자 캡은 유효 데이터에 영향 없고, 초과분은
+        #   어차피 validator/allowlist/DB 제약에서 거부된다(이름은 _clean_name 에서 100자 재캡).
+        cells = ['' if c is None else str(c)[:512] for c in (list(row) + ['', '', '', ''])[:4]]
+        if i == 0 and _looks_like_header(cells):
+            continue
+        if not any(c.strip() for c in cells):
+            continue
+        out.append((cells[0], cells[1], cells[2], cells[3]))
+        if len(out) > max_rows:
+            raise _RosterParseError(f'최대 {max_rows}행까지 처리합니다')
+    return out
+
+
+def _parse_xlsx_roster(data, max_rows):
+    """xlsx 안전 파싱(★ 포맷 유지 — CSV 전용 전환 금지, 학교 실무는 xlsx).
+       (a) read_only=True 스트리밍 (b) zip 압축폭탄 선검사 (c) 행상한 스트리밍 적용."""
+    try:
+        import openpyxl
+    except ImportError:
+        raise _RosterParseError('서버에 openpyxl 미설치')
+    import io as _io
+    _xlsx_zip_guard(data)
+    try:
+        wb = openpyxl.load_workbook(_io.BytesIO(data), read_only=True, data_only=True)
+    except _RosterParseError:
+        raise
+    except Exception:
+        raise _RosterParseError('엑셀 파일을 읽을 수 없습니다')
+    try:
+        return _rows_from_iter(wb.active.iter_rows(values_only=True), max_rows)
+    finally:
+        wb.close()
+
+
+def _parse_csv_roster(data, max_rows):
+    import csv as _csv, io as _io
+    text = None
+    for enc in ('utf-8-sig', 'cp949', 'utf-8'):
+        try:
+            text = data.decode(enc)
+            break
+        except UnicodeDecodeError:
+            continue
+    if text is None:
+        raise _RosterParseError('CSV 인코딩을 해석할 수 없습니다')
+    return _rows_from_iter(_csv.reader(_io.StringIO(text)), max_rows)
+
+
+@app.route('/portal/api/roster', methods=['GET'])
+@login_required
+def portal_roster_list():
+    inst_id, err = _portal_guard()
+    if err:
+        return err
+    conn = get_db_conn()
+    try:
+        with conn.cursor() as cur:
+            subjects = _subscribed_subjects(cur, inst_id)
+            cur.execute(
+                """SELECT r.name, r.position, r.subject_code, r.email, r.is_verified
+                     FROM institution_rosters r
+                    WHERE r.institution_id = %s
+                    ORDER BY (r.subject_code = %s) ASC, r.subject_code, r.name""",
+                (inst_id, ADMIN_ROSTER_SUBJECT),
+            )
+            members, admins = [], []
+            for name, position, subj, email, verified in cur.fetchall():
+                if subj == ADMIN_ROSTER_SUBJECT:
+                    admins.append({'name': name or '', 'email': email,
+                                   'is_verified': bool(verified)})   # 읽기전용 표시
+                else:
+                    members.append({'name': name or '', 'position': position,
+                                    'subject_code': subj,
+                                    'subject_name': subjects.get(subj, subj),
+                                    'email': email, 'is_verified': bool(verified)})
+        return jsonify({'success': True, 'institution_id': inst_id,
+                        'subjects': [{'code': c, 'name_ko': n} for c, n in subjects.items()],
+                        'members': members, 'admins': admins})
+    finally:
+        release_db_conn(conn)
+
+
+@app.route('/portal/api/roster', methods=['POST'])
+@login_required
+def portal_roster_add():
+    inst_id, err = _portal_guard()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    name = (body.get('name') or '').strip()
+    position = (body.get('position') or '').strip()
+    subject_code = (body.get('subject_code') or '').strip()
+    email = (body.get('email') or '').strip().lower()
+    if not email or not _PORTAL_EMAIL_RE.match(email):
+        return jsonify({'success': False, 'error': 'INVALID_EMAIL',
+                        'message': '이메일 형식이 올바르지 않습니다'}), 400
+    if position not in _PORTAL_POSITIONS:
+        return jsonify({'success': False, 'error': 'INVALID_POSITION',
+                        'message': '지위는 학생/조교/교수만 가능합니다'}), 400
+
+    conn = get_db_conn()
+    conn.autocommit = False
+    try:
+        with conn.cursor() as cur:
+            subjects = _subscribed_subjects(cur, inst_id)
+            if subject_code not in subjects:
+                conn.rollback()
+                return jsonify({'success': False, 'error': 'INVALID_SUBJECT',
+                                'message': '구독 중인 과목만 등록할 수 있습니다'}), 400
+            outcome = _sync_member(cur, inst_id, subject_code, email, name,
+                                   position, _today_kst(), {})
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        release_db_conn(conn)
+        return jsonify({'success': False, 'error': 'SERVER_ERROR',
+                        'message': '처리 중 오류가 발생했습니다'}), 500
+    finally:
+        try:
+            conn.autocommit = True
+        except Exception:
+            pass
+    release_db_conn(conn)
+    return jsonify({'success': True, 'outcome': outcome,
+                    'message': _PORTAL_OUTCOME_MSG.get(outcome, outcome)})
+
+
+@app.route('/portal/api/roster', methods=['DELETE'])
+@login_required
+def portal_roster_delete():
+    inst_id, err = _portal_guard()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    subject_code = (body.get('subject_code') or '').strip()
+    email = (body.get('email') or '').strip().lower()
+    if not email or not subject_code:
+        return jsonify({'success': False, 'error': 'MISSING_FIELDS',
+                        'message': '과목과 이메일이 필요합니다'}), 400
+    conn = get_db_conn()
+    conn.autocommit = False
+    try:
+        with conn.cursor() as cur:
+            outcome = _remove_member(cur, inst_id, subject_code, email)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        release_db_conn(conn)
+        return jsonify({'success': False, 'error': 'SERVER_ERROR',
+                        'message': '처리 중 오류가 발생했습니다'}), 500
+    finally:
+        try:
+            conn.autocommit = True
+        except Exception:
+            pass
+    release_db_conn(conn)
+    if outcome == 'not_found':
+        return jsonify({'success': False, 'error': 'NOT_FOUND',
+                        'message': '해당 명단 행이 없습니다'}), 404
+    if outcome == 'admin_row_protected':
+        return jsonify({'success': False, 'error': 'ADMIN_ROW_PROTECTED',
+                        'message': '기관 관리자 행은 포털에서 제거할 수 없습니다'}), 403
+    return jsonify({'success': True, 'outcome': outcome,
+                    'message': _PORTAL_OUTCOME_MSG.get(outcome, outcome)})
+
+
+@app.route('/portal/api/roster/upload', methods=['POST'])
+@login_required
+def portal_roster_upload():
+    inst_id, err = _portal_guard()
+    if err:
+        return err
+    # 명단 파일은 텍스트(수천 행이라도 수백 KB). 전역 MAX_CONTENT_LENGTH 는 어드민 슬라이드(GB급 SVS)
+    #   업로드를 깨뜨리므로 두지 않고, 이 라우트에서만 국소로 막는다(High#4):
+    #   · content_length 는 '빠른 사전 거부'로만 쓰고(헤더 비신뢰) 권위 검사는 실측 바이트(_read_capped).
+    #   · xlsx 는 load 전에 zip 압축폭탄 선검사 + read_only 스트리밍 + 행상한.
+    if request.content_length and request.content_length > _PORTAL_UPLOAD_MAX_BYTES:
+        return jsonify({'success': False, 'error': 'FILE_TOO_LARGE',
+                        'message': f'파일이 너무 큽니다(최대 {_PORTAL_UPLOAD_MAX_BYTES // (1024*1024)}MB)'}), 413
+    f = request.files.get('file')
+    if f is None or not f.filename:
+        return jsonify({'success': False, 'error': 'NO_FILE', 'message': '파일이 없습니다'}), 400
+    fname = f.filename.lower()
+    if not (fname.endswith('.xlsx') or fname.endswith('.csv')):
+        return jsonify({'success': False, 'error': 'BAD_FORMAT',
+                        'message': '.xlsx 또는 .csv 파일만 지원합니다'}), 400
+    try:
+        data = _read_capped(f.stream, _PORTAL_UPLOAD_MAX_BYTES)   # 실측 바이트 상한
+        if fname.endswith('.xlsx'):
+            rows = _parse_xlsx_roster(data, _PORTAL_UPLOAD_MAX_ROWS)
+        else:
+            rows = _parse_csv_roster(data, _PORTAL_UPLOAD_MAX_ROWS)
+    except _RosterParseError as e:
+        return jsonify({'success': False, 'error': 'PARSE_ERROR', 'message': str(e)}), 400
+    if not rows:
+        return jsonify({'success': False, 'error': 'EMPTY', 'message': '데이터 행이 없습니다'}), 400
+
+    conn = get_db_conn()
+    conn.autocommit = False
+    results = []
+    try:
+        with conn.cursor() as cur:
+            subjects = _subscribed_subjects(cur, inst_id)
+            # 과목 셀은 code 또는 name_ko 둘 다 허용 → code 로 정규화.
+            name_to_code = {}
+            for c, n in subjects.items():
+                name_to_code[c.lower()] = c
+                name_to_code[(n or '').strip().lower()] = c
+            today = _today_kst()
+            seat_cache, seen = {}, set()
+            for idx, (rname, rpos, rsubj, remail) in enumerate(rows, start=1):
+                remail = (remail or '').strip().lower()
+                rpos = (rpos or '').strip()
+                rsubj = (rsubj or '').strip()
+                # 행별 검증 — '예상된 거절'은 skip-and-report(전체 롤백 아님, §3).
+                if not remail or not _PORTAL_EMAIL_RE.match(remail):
+                    results.append({'row': idx, 'email': remail, 'outcome': 'invalid_email'})
+                    continue
+                if rpos not in _PORTAL_POSITIONS:
+                    results.append({'row': idx, 'email': remail, 'outcome': 'invalid_position'})
+                    continue
+                code = name_to_code.get(rsubj.lower())
+                if code is None:
+                    results.append({'row': idx, 'email': remail, 'outcome': 'invalid_subject'})
+                    continue
+                key = (code, remail)
+                if key in seen:
+                    results.append({'row': idx, 'email': remail, 'outcome': 'duplicate_row'})
+                    continue
+                seen.add(key)
+                outcome = _sync_member(cur, inst_id, code, remail, rname, rpos, today, seat_cache)
+                results.append({'row': idx, 'email': remail, 'subject_code': code, 'outcome': outcome})
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        release_db_conn(conn)
+        return jsonify({'success': False, 'error': 'SERVER_ERROR',
+                        'message': '처리 중 오류로 전체 취소되었습니다'}), 500
+    finally:
+        try:
+            conn.autocommit = True
+        except Exception:
+            pass
+    release_db_conn(conn)
+    counts = {}
+    for r in results:
+        counts[r['outcome']] = counts.get(r['outcome'], 0) + 1
+    return jsonify({'success': True, 'total': len(results), 'counts': counts, 'results': results})
 
 
 @app.route('/api/chat', methods=['POST'])

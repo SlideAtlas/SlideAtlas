@@ -1,3 +1,87 @@
+# COMPLETION_REPORT — 기관 포털 P1(명단 관리) + D18 (2026-06-05 v3.8)
+
+작업일: 2026-06-05 | 작업자: Lead Developer | 기준: CLAUDE.md §0·§3·§8·§9·§18 D17·D18
+상태: **구현·내부 QA(security-reviewer FAIL 0건)·pytest 127 passed 완료 — Codex/Gemini 외부검증 대기**
+
+## 1. 범위
+- 포털 3탭 중 **P1(명단 관리)만** 구현. P2(구독 플랜)·P3(이용 리포트)는 다음 세션.
+- D18(가입 드롭다운 기준) 함께 처리.
+
+## 2. CEO 확정 설계
+- __ADMIN__(기관 관리자) 행 = **포털에서 읽기 전용 표시**(추가/삭제는 슈퍼관리자 기관수정 관할).
+- 멤버 과목 입력 = **구독 보유 과목으로 제한**(구독행 존재 = subscribable, D18과 정합).
+
+## 3. 변경 파일
+- `auth/auth.py`: `active_window_subscription`·`active_seat_count` **공통 헬퍼 추출**, register()/verify_email()가 재사용(§0 단일진실). 판정식 무변경(리팩터만), pytest 110 회귀 없음.
+- `server_render.py`:
+  - D18: `api_public_institutions()` → `SELECT DISTINCT i.id,i.name_ko FROM institutions i JOIN subscriptions s ON s.institution_id=i.id`. is_subscribable 의존 제거(코드 참조 0건). 상단 `import re` 추가.
+  - 포털 P1 API: `_portal_guard`(scope=g.institution_id, _is_institution_admin 재확인), `_subscribed_subjects`, `_sync_member`(4분기+seat_full+no_change), `_remove_member`(회수/보호), `_parse_xlsx_roster`/`_parse_csv_roster`, 라우트 GET/POST/DELETE `/portal/api/roster` + POST `/portal/api/roster/upload`(content-length 5MB 상한).
+- `templates/portal.html`: 명단 관리 탭 기능 구현(interceptor.js CSRF 자동주입, esc() XSS, 추가/업로드/삭제/필터, 관리자 읽기전용 표시).
+- `tests/test_portal_p1.py`: 신규 17건.
+
+## 4. sync 로직(§3 D17 해결) — 판정식은 register와 단일화(§0)
+| 분기 | 조건 | 동작 | outcome |
+|------|------|------|---------|
+| A | admin-only(subject NULL) + 접근창 열림 + 좌석 여유 | NULL→과목 전환(FOR UPDATE 좌석) + position 갱신 | synced |
+| A' | 위 + 좌석 소진 | skip(전환 안 함), 전체 롤백 아님 | seat_full |
+| B | 기존 user 이미 다른 과목 active | 보류(덮어쓰지 않음, D12) | multi_subject_hold |
+| C | 접근창 닫힘/구독 없음 | admin-only 유지(fail-closed) | pending_window |
+| D | 기존 user 없음 | roster 행만 추가(가입 시 채번) | added_no_user |
+| — | 이미 같은 과목 active | position만 동기화 | no_change |
+- **role 불변**: 어떤 sync UPDATE도 users.role 미변경(겸직 admin 보존).
+- **제거 회수**: active 과목 행 삭제 → subject_code·position NULL(좌석 반환+접근 차단), 계정·role 보존. __ADMIN__ 보호.
+
+## 5. 테스트 — pytest 127 passed (기존 110 + 신규 17)
+sync 4분기·seat_full·no_change·seat_cache 직렬화·FOR UPDATE / 제거 4종(active reclaim·겸직 보존·__ADMIN__ 보호·not_found·roster-only) / D18 JOIN / scope 격리(인증필요·비관리자 403·자기기관 scope).
+
+## 6. 내부 보안 검증(security-reviewer) — FAIL 0건
+A~J 항목 PASS. 주의 2건: ① 업로드 크기 상한 → **content-length 5MB 가드 추가로 반영**(전역 MAX_CONTENT_LENGTH는 어드민 슬라이드 GB 업로드를 깨므로 국소 적용). ② granted-OR vs active-only 분기 차이 = 의도된 설계(온보딩 정합), 추적.
+
+## 7. 미완/한계(숨기지 않음)
+- **다과목 동시 active(D12)**: 분기 B는 보류만 — 한 계정이 여러 과목을 동시에 여는 건 v1.5.
+- **DB는 mock 테스트**(로컬 RDS 접속 불가, §19) — 라이브 동작은 EC2 배포 후 스모크 필요.
+- **외부검증 미완**: §12 풀 거버넌스상 Codex 자유탐색+체크리스트 → Gemini → CEO 승인 남음.
+- is_subscribable 컬럼 DROP·suppliers 분리는 v1.5(D18 잔여).
+
+## 8. 배포
+push까지. EC2 git pull + `systemctl restart slideatlas`는 CEO 직접(§12·§20). 마이그레이션 불요(D18 쿼리 교체, 신규 컬럼 없음).
+
+---
+
+## 9. v3.9 — Codex+Gemini 외부검증 반영 (2026-06-05)
+외부검증(Codex 정밀추적 / Gemini 구조)에서 나온 확정 수정분. 전체 pytest **149 passed**, 내부 보안 재검증 완료.
+
+| # | 등급 | 항목 | 수정 |
+|---|------|------|------|
+| 1 | High | 타 기관 IDOR | `_sync_member`·`_remove_member`의 user 조회·UPDATE에 `AND institution_id=%s` 스코프. 타 기관 이메일은 분기 D(roster-only)로 취급 → 타 기관 user의 subject_code/position/좌석 변조 불가(§9). |
+| 2 | High | 포털 명단 저장형 XSS | (a) 템플릿 inline onclick 제거 → `data-*` + tbody 이벤트 위임. (b) 이메일 validator allowlist 강화(따옴표·괄호·세미콜론·제어문자 거부). 개별추가·업로드 공통. |
+| 3 | Med | seat_full인데 roster 커밋 | `_sync_member` 재구조화: user조회·좌석판정을 roster upsert **앞**으로. seat_full이면 roster 행·user 모두 불변. 판정식은 register/verify 공통 헬퍼 재사용(§0). |
+| 4 | Med | xlsx 압축폭탄/대용량 | ★xlsx 포맷 유지. `_read_capped`(실측 바이트 10MB, Content-Length 비신뢰), `_xlsx_zip_guard`(load 전 압축해제 50MB·entry 100 선검사), `_rows_from_iter`(스트리밍 행상한 2000 + scan backstop). |
+| 5 | Low | 겸직 is_verified 표시 | verify_email: 겸직(subject+__ADMIN__) 인증 시 두 행 모두 verified(`subject_code = ANY(list)`). ★WARN2 유지(타 과목 행 미인증). |
+
+**CLAUDE.md**: §18 D21(접근모델 이원화 granted-OR vs 구독, v1.5/별건)·D22(좌석 mutex tie, D14 Locust) 신설, D13 과목이동 2단계 명문화, v3.9 footer.
+
+**신규 테스트**: IDOR 스코프(sync/remove user 조회·UPDATE) / seat_full roster 미생성 / 이메일 regex allowlist / 파서 안전(_read_capped·_xlsx_zip_guard·_rows_from_iter). test_auth 겸직 is_verified 2건 기대값 갱신.
+
+**한계·미완(숨기지 않음)**:
+- DB는 여전히 mock 단위검증 — 라이브 IDOR/업로드 동작은 EC2 배포 후 스모크 필요.
+- D21(접근모델 이원화)·D22(좌석 tie)는 이번 범위 밖(추적만). D12 다과목은 v1.5.
+- **외부검증 재라운드 미완**: §12상 Codex+Gemini 재검증 1라운드 → CEO 승인 → 머지 남음.
+
+## 10. v3.9 2차 — Codex 2차 재검증 반영 (2026-06-05)
+| # | 등급 | 항목 | 수정 |
+|---|------|------|------|
+| 1 | Med | 좌석 캐시 §0 불일치 | `_sync_member` user 조회에 `status` 포함. 메모리 seat_cache 증분·seat_full 게이트를 **status='active' 전환에만** 적용 → `active_seat_count`(status='active')와 카운트 기준 정확히 일치. pending admin-only 승격은 좌석 미점유(verify_email FOR UPDATE가 활성화 시점 정원 집행). 버그: pending도 +1해 빈 좌석인데 후속 active 행이 seat_full 오거부되던 것 해소. |
+| 2 | Low | xlsx entry 상한 오탐 | `_PORTAL_XLSX_MAX_ENTRIES` 100→1000. 시트·이미지·로고·스타일 다수의 정상 업무 xlsx 오탐 방지. 핵심 방어(압축해제 50MB·실측 10MB·행 2000·셀 512)는 유지. |
+
+**Codex 2차 재확인 결과**: #1·#2(좌석 캐시 active 기준 일치 / pending 미점유·verify FOR UPDATE 권위) **OK**. #3은 register의 '접근창 subject 후보 산정'이 헬퍼 아닌 inline EXISTS라는 **문자 수준 §0 지적**(조건식은 동일, 쿼리 형태가 본질적으로 달라 헬퍼 직접 사용 불가) — register에 "술어 변경 시 헬퍼와 동기화" 주석 추가로 마킹(리팩터는 hot-path 위험 대비 효용 낮아 보류, 추적).
+
+**테스트**: sync 픽스처 status 3-튜플 갱신 + pending user 2건(좌석 미점유 / seat_full 미차단) + 정상 업무파일 통과 신규. 전체 **pytest 152 passed**.
+
+**다음**: CEO 승인 → 머지. (Gemini는 2건이 라인 이슈라 재검 불요 — 지시.)
+
+---
+
 # COMPLETION_REPORT — 기관 관리자 등록 흐름 (admin roster onboarding)
 
 작업일: 2026-06-01 | 작업자: Lead Developer | 기준: CLAUDE.md §9·§18 D12·D15·§13-2

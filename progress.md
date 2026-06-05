@@ -1,5 +1,53 @@
 # SlideAtlas 슈퍼관리자 구현 진행 상황
 
+## ════════ 기관 포털 P1(명단 관리) + D18(드롭다운 기준) — 2026-06-05 ════════
+브랜치: main / git pull: up to date / pytest 기준선 111건. §12 풀 거버넌스 대상(인증·좌석).
+
+### 조사 완료 (현재 코드 상태)
+- `auth/auth.py:register()` 좌석·구독·접근창 판정식(스텝 4·5):
+  - 접근창 active EXISTS: `status='active' AND access_open_date<=today_kst AND subscription_end>=today_kst`
+  - 좌석: subscriptions.max_seats vs COUNT(users active), verify_email FOR UPDATE 재검사
+  - `len(active)` 분기: 1=캡처 / 0=admin→NULL 아니면 SUBSCRIPTION_INACTIVE / ≥2=MULTI_SUBJECT_AMBIGUOUS
+- `api_public_institutions()` L665 현재 `WHERE is_subscribable=TRUE` → D18 교체.
+- `_is_institution_admin()` L831(=__ADMIN__ roster 존재), `portal()` L856(scope 강제 골격).
+- decorators: g.user_id/institution_id/role/subject_code, _csrf_ok 더블서밋, _today_kst, ADMIN_ROSTER_SUBJECT.
+- position=한국어(교수/조교/학생/행정직원), subject_codes에 code/name_ko. 멤버 명단 관리 엔드포인트 신규. openpyxl 가능.
+
+### 설계 방향
+- register 판정식 → 공통 헬퍼 추출, sync 재사용(§0 단일진실).
+- 포털 P1 API GET/POST(개별·업로드)/DELETE, login_required+CSRF+_is_institution_admin, scope=g.institution_id.
+- sync 4분기(A 전환/B 다과목보류/C 닫힘보류/D 신규) + 제거 회수. role 불변.
+- D18: subscriptions 행 존재 기관(DISTINCT JOIN).
+
+### 진행 로그
+[2026-06-05][Lead Developer] 조사 완료, 설계 CEO 확인 요청 단계.
+[2026-06-05][CEO 확정] __ADMIN__ 행=읽기전용 표시 / 멤버 과목 입력=구독 보유 과목으로 제한.
+[2026-06-05][구현] auth/auth.py: active_window_subscription·active_seat_count 공통 헬퍼 추출, register·verify_email 재사용(§0). pytest 110 회귀 없음.
+[2026-06-05][구현] server_render.py: D18 드롭다운 JOIN subscriptions 교체(is_subscribable 의존 제거). import re 추가.
+[2026-06-05][구현] server_render.py 포털 P1 API: GET/POST/DELETE /portal/api/roster + POST /portal/api/roster/upload.
+  - _portal_guard(scope=g.institution_id, _is_institution_admin 재확인), _subscribed_subjects(구독행 allowlist),
+    _sync_member(4분기 A/B/C/D + seat_full + no_change, role 불변, FOR UPDATE 좌석 직렬화·seat_cache),
+    _remove_member(active 좌석반환/겸직 계정보존/__ADMIN__ 보호/not_found/roster-only), xlsx·csv 파서(헤더스킵·인코딩폴백·행캡·dedup).
+[2026-06-05][구현] templates/portal.html: 명단관리 탭 기능 구현(interceptor.js 로드=CSRF 자동주입, esc() XSS 방어, 추가/업로드/삭제/필터).
+[2026-06-05][test] tests/test_portal_p1.py 17건 신규(sync 4분기·seat_full·no_change·FOR UPDATE·제거 4종·D18·scope 3종). 전체 pytest 127 passed.
+
+### ════ v3.9 — Codex+Gemini 외부검증 반영(High2·Med3 필수) ════
+[2026-06-05][High#1 IDOR] _sync_member·_remove_member의 user 조회·UPDATE에 `AND institution_id=%s` 추가. 타 기관 이메일은 '현재 기관 user 없음'(분기 D)으로 취급 → 타 기관 user 변조/좌석 회수 차단(§9).
+[2026-06-05][High#2 저장형 XSS] (a) templates/portal.html: 삭제 inline onclick 제거 → data-subject/data-email + tbody 이벤트 위임. (b) server_render.py: 이메일 validator `[^@\s]+` → allowlist `[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}`(따옴표·괄호·세미콜론·제어문자 거부, 개별추가·업로드 공통).
+[2026-06-05][Med#3 seat_full] _sync_member 구조 변경: user 조회·좌석판정을 roster upsert '앞'으로. seat_full이면 roster 행도 user도 안 바뀜. 판정식은 register/verify 공통 헬퍼 재사용(§0).
+[2026-06-05][Med#4 xlsx 안전] _read_capped(실측 바이트 10MB), _xlsx_zip_guard(압축해제 50MB·entry 100 선검사), _rows_from_iter(스트리밍 행상한 2000+scan backstop). xlsx 포맷 유지(CSV 전용 전환 안 함). 업로드 라우트가 f.stream을 capped read 후 BytesIO로 파싱.
+[2026-06-05][Low#5 is_verified] auth/auth.py verify_email: 겸직(subject+__ADMIN__) 인증 시 두 행 모두 is_verified=TRUE (`subject_code = ANY(list)`). WARN2 유지(타 과목 행 미인증). 기존 테스트 2건 기대값 갱신.
+[2026-06-05][D21·D22] CLAUDE.md §18 신설(접근모델 이원화 / 좌석 mutex tie), D13 과목이동 2단계 명문화, v3.9 footer.
+[2026-06-05][test] test_portal_p1.py 신규(IDOR 스코프·seat_full roster 미생성·이메일 regex·파서 안전 7+) + test_auth.py 겸직 is_verified 2건 갱신. 전체 pytest 149 passed. 회귀 0.
+[2026-06-05][주의] test_auth가 importlib.reload(server_render) 호출 → test_portal_p1는 예외클래스/헬퍼를 `import server_render as sr`로 늦은 조회(by-name import는 reload 후 어긋남).
+
+### ════ v3.9 2차 — Codex 2차 재검증(라인 이슈 2건) ════
+[2026-06-05][Med#1 §0 좌석캐시] _sync_member user 조회에 status 추가. 메모리 seat_cache 증분·seat_full 게이트를 status='active'에만 적용 → active_seat_count(status='active')와 카운트 기준 일치(§0). pending admin-only 승격은 좌석 미점유(verify FOR UPDATE가 활성화 시점 집행) → 빈 좌석인데 후속 정상 행이 seat_full 오거부되던 버그 해소.
+[2026-06-05][Low#2 xlsx entry] _PORTAL_XLSX_MAX_ENTRIES 100→1000. 시트·이미지·로고 다수 정상 업무 xlsx 오탐 방지. 핵심 방어(압축해제 50MB·실측 10MB·행2000·셀512)는 유지.
+[2026-06-05][test] sync 픽스처 status 3-튜플로 갱신 + pending user 2건(좌석 미점유/seat_full 미차단) + 정상 업무파일 통과 신규. 전체 pytest 152 passed. 회귀 0.
+
+
+
 ## 기관 관리자 등록 흐름 (admin roster onboarding) — 2026-06-01 구현 (Codex 외부검증 대기)
 
 브랜치: `feature/admin-roster-onboarding-2026-06`. CLAUDE.md §9·§18 D12·D15.
