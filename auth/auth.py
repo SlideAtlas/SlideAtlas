@@ -172,6 +172,46 @@ def _check_auto_unlock(cur, user_id: int, status: str, locked_at) -> str:
     return "locked"
 
 
+# ─────────────────────────────────────────────
+# 구독·좌석 판정 공통 헬퍼 (§0 단일 진실)
+#   register()·verify_email() 와 포털 명단 sync(server_render._sync_member)가
+#   모두 이 동일한 식을 재사용한다. 두 경로가 다른 식을 가지면 §0 위반(좌석·접근창 판정이 갈림).
+# ─────────────────────────────────────────────
+def active_window_subscription(cur, institution_id, subject_code, today, for_update=False):
+    """(기관×과목)의 접근창 내 active 구독을 조회.
+
+    접근창 = status='active' AND access_open_date <= today AND subscription_end >= today
+            (today 는 KST 기준 — §16·§18 D10).
+    반환 (found: bool, max_seats: int|None).
+      found=False    → 접근창 내 active 구독 없음(미래학기/만료/미구독) → fail-closed 대상.
+      max_seats=None → 구독은 있으나 정원 무제한(또는 미설정).
+    for_update=True 면 구독 행을 FOR UPDATE 로 잠가 동시 좌석검사를 과목 단위로 직렬화한다.
+    """
+    lock = " FOR UPDATE" if for_update else ""
+    cur.execute(
+        f"""SELECT max_seats FROM subscriptions
+            WHERE institution_id = %s AND subject_code = %s AND status = 'active'
+              AND access_open_date <= %s AND subscription_end >= %s
+            ORDER BY subscription_end DESC
+            LIMIT 1{lock}""",
+        (institution_id, subject_code, today, today),
+    )
+    row = cur.fetchone()
+    if row is None:
+        return (False, None)
+    return (True, row[0])
+
+
+def active_seat_count(cur, institution_id, subject_code):
+    """해당 (기관×과목)에서 좌석을 점유한 active 사용자 수(정원 검사 분모)."""
+    cur.execute(
+        """SELECT COUNT(*) FROM users
+           WHERE institution_id = %s AND subject_code = %s AND status = 'active'""",
+        (institution_id, subject_code),
+    )
+    return cur.fetchone()[0]
+
+
 def _issue_token_payload(user_id, institution_id, role, is_special):
     session_token = str(uuid.uuid4())
     payload = {
@@ -283,22 +323,10 @@ def register():
             #    여기는 소프트 사전검사이며, 권위 있는 동시성 재검사는 verify_email에서 행 잠금
             #    (FOR UPDATE)으로 수행한다.
             if subject_code is not None:
-                cur.execute(
-                    """SELECT max_seats FROM subscriptions
-                       WHERE institution_id = %s AND subject_code = %s AND status = 'active'
-                         AND access_open_date <= %s AND subscription_end >= %s
-                       ORDER BY subscription_end DESC
-                       LIMIT 1""",
-                    (institution_id, subject_code, today, today),
-                )
-                sub = cur.fetchone()
-                max_seats = sub[0] if sub else None
-                cur.execute(
-                    """SELECT COUNT(*) FROM users
-                       WHERE institution_id = %s AND subject_code = %s AND status = 'active'""",
-                    (institution_id, subject_code),
-                )
-                active_count = cur.fetchone()[0]
+                # 공통 헬퍼 재사용(§0): 포털 sync 와 동일한 접근창·좌석 식.
+                _found, max_seats = active_window_subscription(
+                    cur, institution_id, subject_code, today)
+                active_count = active_seat_count(cur, institution_id, subject_code)
                 if max_seats is not None and active_count >= max_seats:
                     conn.rollback()
                     return _err("SEAT_FULL", "정원이 초과되었습니다", 403)
@@ -438,27 +466,14 @@ def verify_email():
             #   FOR UPDATE 재검사를 수행한다. subject_code가 NULL인 순수 admin-only만 면제한다.
             if subject_code is not None:
                 today = _today_kst()
-                cur.execute(
-                    """SELECT max_seats FROM subscriptions
-                       WHERE institution_id = %s AND subject_code = %s AND status = 'active'
-                         AND access_open_date <= %s AND subscription_end >= %s
-                       ORDER BY subscription_end DESC
-                       LIMIT 1
-                       FOR UPDATE""",
-                    (institution_id, subject_code, today, today),
-                )
-                sub = cur.fetchone()
-                if sub is None:
+                # 공통 헬퍼 재사용(§0): 구독 행 FOR UPDATE 로 좌석검사 직렬화(동시성 방어).
+                found, max_seats = active_window_subscription(
+                    cur, institution_id, subject_code, today, for_update=True)
+                if not found:
                     conn.rollback()
                     return _err("SUBSCRIPTION_INACTIVE",
                                 "해당 과목 구독이 활성화되지 않았습니다. 과 사무실에 문의하세요", 403)
-                max_seats = sub[0]
-                cur.execute(
-                    """SELECT COUNT(*) FROM users
-                       WHERE institution_id = %s AND subject_code = %s AND status = 'active'""",
-                    (institution_id, subject_code),
-                )
-                active_count = cur.fetchone()[0]
+                active_count = active_seat_count(cur, institution_id, subject_code)
                 if max_seats is not None and active_count >= max_seats:
                     conn.rollback()
                     return _err("SEAT_FULL", "정원이 초과되었습니다", 403)

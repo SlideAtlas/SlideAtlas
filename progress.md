@@ -1,5 +1,38 @@
 # SlideAtlas 슈퍼관리자 구현 진행 상황
 
+## ════════ 기관 포털 P1(명단 관리) + D18(드롭다운 기준) — 2026-06-05 ════════
+브랜치: main / git pull: up to date / pytest 기준선 111건. §12 풀 거버넌스 대상(인증·좌석).
+
+### 조사 완료 (현재 코드 상태)
+- `auth/auth.py:register()` 좌석·구독·접근창 판정식(스텝 4·5):
+  - 접근창 active EXISTS: `status='active' AND access_open_date<=today_kst AND subscription_end>=today_kst`
+  - 좌석: subscriptions.max_seats vs COUNT(users active), verify_email FOR UPDATE 재검사
+  - `len(active)` 분기: 1=캡처 / 0=admin→NULL 아니면 SUBSCRIPTION_INACTIVE / ≥2=MULTI_SUBJECT_AMBIGUOUS
+- `api_public_institutions()` L665 현재 `WHERE is_subscribable=TRUE` → D18 교체.
+- `_is_institution_admin()` L831(=__ADMIN__ roster 존재), `portal()` L856(scope 강제 골격).
+- decorators: g.user_id/institution_id/role/subject_code, _csrf_ok 더블서밋, _today_kst, ADMIN_ROSTER_SUBJECT.
+- position=한국어(교수/조교/학생/행정직원), subject_codes에 code/name_ko. 멤버 명단 관리 엔드포인트 신규. openpyxl 가능.
+
+### 설계 방향
+- register 판정식 → 공통 헬퍼 추출, sync 재사용(§0 단일진실).
+- 포털 P1 API GET/POST(개별·업로드)/DELETE, login_required+CSRF+_is_institution_admin, scope=g.institution_id.
+- sync 4분기(A 전환/B 다과목보류/C 닫힘보류/D 신규) + 제거 회수. role 불변.
+- D18: subscriptions 행 존재 기관(DISTINCT JOIN).
+
+### 진행 로그
+[2026-06-05][Lead Developer] 조사 완료, 설계 CEO 확인 요청 단계.
+[2026-06-05][CEO 확정] __ADMIN__ 행=읽기전용 표시 / 멤버 과목 입력=구독 보유 과목으로 제한.
+[2026-06-05][구현] auth/auth.py: active_window_subscription·active_seat_count 공통 헬퍼 추출, register·verify_email 재사용(§0). pytest 110 회귀 없음.
+[2026-06-05][구현] server_render.py: D18 드롭다운 JOIN subscriptions 교체(is_subscribable 의존 제거). import re 추가.
+[2026-06-05][구현] server_render.py 포털 P1 API: GET/POST/DELETE /portal/api/roster + POST /portal/api/roster/upload.
+  - _portal_guard(scope=g.institution_id, _is_institution_admin 재확인), _subscribed_subjects(구독행 allowlist),
+    _sync_member(4분기 A/B/C/D + seat_full + no_change, role 불변, FOR UPDATE 좌석 직렬화·seat_cache),
+    _remove_member(active 좌석반환/겸직 계정보존/__ADMIN__ 보호/not_found/roster-only), xlsx·csv 파서(헤더스킵·인코딩폴백·행캡·dedup).
+[2026-06-05][구현] templates/portal.html: 명단관리 탭 기능 구현(interceptor.js 로드=CSRF 자동주입, esc() XSS 방어, 추가/업로드/삭제/필터).
+[2026-06-05][test] tests/test_portal_p1.py 17건 신규(sync 4분기·seat_full·no_change·FOR UPDATE·제거 4종·D18·scope 3종). 전체 pytest 127 passed.
+
+
+
 ## 기관 관리자 등록 흐름 (admin roster onboarding) — 2026-06-01 구현 (Codex 외부검증 대기)
 
 브랜치: `feature/admin-roster-onboarding-2026-06`. CLAUDE.md §9·§18 D12·D15.

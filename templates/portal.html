@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>기관 관리자 포털 — SlideAtlas</title>
+  <script src="/static/js/interceptor.js"></script>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
            margin: 0; background: #f5f6f8; color: #1a2238; }
@@ -19,9 +20,31 @@
     .tabs button { border: none; background: none; padding: 14px 18px; font-size: 14px;
                    cursor: pointer; color: #5a6478; border-bottom: 2px solid transparent; }
     .tabs button.on { color: #1a2238; border-bottom-color: #1a2238; font-weight: 600; }
-    main { padding: 28px; }
+    main { padding: 28px; max-width: 1100px; }
+    .panel { display: none; }
+    .panel.on { display: block; }
     .note { background: #fff; border: 1px solid #e3e6ec; border-radius: 8px;
             padding: 20px; color: #5a6478; font-size: 14px; line-height: 1.6; }
+    .card { background:#fff; border:1px solid #e3e6ec; border-radius:8px; padding:18px 20px; margin-bottom:18px; }
+    .card h2 { font-size:15px; margin:0 0 14px; }
+    .row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+    input, select { padding:7px 10px; border:1px solid #cdd2dc; border-radius:6px; font-size:13px; }
+    button.act { background:#1a2238; color:#fff; border:none; border-radius:6px; padding:8px 14px;
+                 font-size:13px; cursor:pointer; }
+    button.act:hover { background:#2a3656; }
+    button.ghost { background:#fff; color:#1a2238; border:1px solid #cdd2dc; }
+    table { width:100%; border-collapse:collapse; margin-top:12px; font-size:13px; }
+    th, td { text-align:left; padding:9px 8px; border-bottom:1px solid #eef0f4; }
+    th { color:#7a8294; font-weight:600; font-size:12px; }
+    .badge { font-size:11px; padding:2px 8px; border-radius:10px; }
+    .badge.ok { background:#e3f5ec; color:#1c7a4d; }
+    .badge.wait { background:#fdf0e3; color:#9a6418; }
+    .del { background:none; border:none; color:#c0392b; cursor:pointer; font-size:13px; }
+    .muted { color:#7a8294; font-size:12px; }
+    #toast { position:fixed; bottom:20px; right:20px; background:#1a2238; color:#fff;
+             padding:11px 16px; border-radius:8px; font-size:13px; opacity:0;
+             transition:opacity .25s; pointer-events:none; max-width:360px; }
+    #toast.show { opacity:1; }
   </style>
 </head>
 <body>
@@ -30,7 +53,6 @@
       <h1>기관 관리자 포털</h1>
       <div class="inst">{{ institution_name }} ({{ institution_id }})</div>
     </div>
-    {# 겸직 관리자(콘텐츠 접근권 보유)만 콘텐츠로 복귀하는 링크 노출. 순수 admin-only는 슬라이드 0개라 숨김. #}
     {% if has_slides %}<a class="to-slides" href="/slides">슬라이드 보기 →</a>{% endif %}
   </header>
   <nav class="tabs">
@@ -39,19 +61,182 @@
     <button data-tab="report">이용 리포트</button>
   </nav>
   <main>
-    <div class="note">
-      기관 관리자 포털에 접속했습니다. 본 화면(명단 관리·구독 플랜·이용 리포트 3탭)의
-      세부 기능은 준비 중입니다. 명단·리포트는 자기 기관({{ institution_id }}) 범위로만
-      제공됩니다.
+    <!-- ══ 명단 관리 ══ -->
+    <div class="panel on" id="panel-roster">
+      <div class="card">
+        <h2>이용자 명단 추가</h2>
+        <div class="muted" style="margin-bottom:10px">
+          과목은 기관이 구독 중인 과목만 등록할 수 있습니다. 이미 가입한 사용자는 추가 시 과목·지위가 자동 동기화됩니다.
+        </div>
+        <div class="row">
+          <input id="add-name" placeholder="이름" style="width:120px">
+          <select id="add-position">
+            <option value="학생">학생</option>
+            <option value="조교">조교</option>
+            <option value="교수">교수</option>
+          </select>
+          <select id="add-subject"><option value="">과목 선택</option></select>
+          <input id="add-email" placeholder="이메일" style="width:220px">
+          <button class="act" onclick="addMember()">추가</button>
+        </div>
+        <div class="row" style="margin-top:14px">
+          <label class="muted">엑셀/CSV 일괄 업로드 (컬럼 순서: 이름 | 지위 | 과목 | 이메일)</label>
+          <input type="file" id="upload-file" accept=".xlsx,.csv">
+          <button class="act ghost" onclick="uploadMembers()">업로드</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>이용자 명단 <span class="muted" id="member-count"></span></h2>
+        <div class="row" style="margin-bottom:4px">
+          <select id="filter-subject" onchange="renderMembers()"><option value="">전체 과목</option></select>
+          <select id="filter-position" onchange="renderMembers()">
+            <option value="">전체 지위</option><option>학생</option><option>조교</option><option>교수</option>
+          </select>
+        </div>
+        <table>
+          <thead><tr><th>이름</th><th>지위</th><th>과목</th><th>이메일</th><th>인증</th><th></th></tr></thead>
+          <tbody id="member-tbody"></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2>기관 관리자 <span class="muted">(읽기 전용 · 추가/변경은 SlideAtlas 운영팀 문의)</span></h2>
+        <table>
+          <thead><tr><th>이름</th><th>이메일</th><th>인증</th></tr></thead>
+          <tbody id="admin-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ══ 구독 플랜 / 이용 리포트 (다음 세션) ══ -->
+    <div class="panel" id="panel-plan">
+      <div class="note">구독 플랜 화면은 준비 중입니다(P2).</div>
+    </div>
+    <div class="panel" id="panel-report">
+      <div class="note">이용 리포트 화면은 준비 중입니다(P3).</div>
     </div>
   </main>
+  <div id="toast"></div>
+
   <script>
-    document.querySelectorAll('.tabs button').forEach(b => {
-      b.addEventListener('click', () => {
-        document.querySelectorAll('.tabs button').forEach(x => x.classList.remove('on'));
+    var SUBJECTS = [];
+
+    function toast(msg) {
+      var t = document.getElementById('toast');
+      t.textContent = msg; t.classList.add('show');
+      clearTimeout(t._t); t._t = setTimeout(function(){ t.classList.remove('show'); }, 3200);
+    }
+    function esc(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+      });
+    }
+
+    var MEMBERS = [], ADMINS = [];
+
+    async function loadRoster() {
+      try {
+        var r = await fetch('/portal/api/roster');
+        var d = await r.json();
+        if (!d.success) { toast(d.message || '불러오기 실패'); return; }
+        SUBJECTS = d.subjects || [];
+        MEMBERS = d.members || [];
+        ADMINS = d.admins || [];
+        fillSubjectSelects();
+        renderMembers();
+        renderAdmins();
+      } catch (e) { toast('네트워크 오류'); }
+    }
+
+    function fillSubjectSelects() {
+      var opts = SUBJECTS.map(function(s){ return '<option value="'+esc(s.code)+'">'+esc(s.name_ko)+'</option>'; }).join('');
+      document.getElementById('add-subject').innerHTML = '<option value="">과목 선택</option>' + opts;
+      document.getElementById('filter-subject').innerHTML = '<option value="">전체 과목</option>' + opts;
+    }
+
+    function renderMembers() {
+      var fs = document.getElementById('filter-subject').value;
+      var fp = document.getElementById('filter-position').value;
+      var rows = MEMBERS.filter(function(m){
+        return (!fs || m.subject_code === fs) && (!fp || m.position === fp);
+      });
+      document.getElementById('member-count').textContent = '(' + rows.length + '명)';
+      document.getElementById('member-tbody').innerHTML = rows.map(function(m){
+        var badge = m.is_verified ? '<span class="badge ok">인증</span>' : '<span class="badge wait">대기</span>';
+        return '<tr>'
+          + '<td>'+esc(m.name)+'</td><td>'+esc(m.position||'')+'</td>'
+          + '<td>'+esc(m.subject_name||m.subject_code)+'</td><td>'+esc(m.email)+'</td>'
+          + '<td>'+badge+'</td>'
+          + '<td><button class="del" onclick="delMember(\''+esc(m.subject_code)+'\',\''+esc(m.email)+'\')">삭제</button></td>'
+          + '</tr>';
+      }).join('') || '<tr><td colspan="6" class="muted">등록된 이용자가 없습니다.</td></tr>';
+    }
+
+    function renderAdmins() {
+      document.getElementById('admin-tbody').innerHTML = ADMINS.map(function(a){
+        var badge = a.is_verified ? '<span class="badge ok">인증</span>' : '<span class="badge wait">대기</span>';
+        return '<tr><td>'+esc(a.name)+'</td><td>'+esc(a.email)+'</td><td>'+badge+'</td></tr>';
+      }).join('') || '<tr><td colspan="3" class="muted">등록된 관리자가 없습니다.</td></tr>';
+    }
+
+    async function addMember() {
+      var body = {
+        name: document.getElementById('add-name').value.trim(),
+        position: document.getElementById('add-position').value,
+        subject_code: document.getElementById('add-subject').value,
+        email: document.getElementById('add-email').value.trim()
+      };
+      if (!body.subject_code) { toast('과목을 선택하세요'); return; }
+      if (!body.email) { toast('이메일을 입력하세요'); return; }
+      var r = await fetch('/portal/api/roster', {
+        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
+      });
+      var d = await r.json();
+      toast(d.message || (d.success ? '추가됨' : '실패'));
+      if (d.success) {
+        document.getElementById('add-name').value = '';
+        document.getElementById('add-email').value = '';
+        loadRoster();
+      }
+    }
+
+    async function delMember(subject_code, email) {
+      if (!confirm(email + ' 의 ' + subject_code + ' 과목 등록을 제거할까요?\n해당 과목 좌석이 반환되고 슬라이드 접근이 차단됩니다.')) return;
+      var r = await fetch('/portal/api/roster', {
+        method:'DELETE', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({subject_code: subject_code, email: email})
+      });
+      var d = await r.json();
+      toast(d.message || (d.success ? '제거됨' : '실패'));
+      if (d.success) loadRoster();
+    }
+
+    async function uploadMembers() {
+      var f = document.getElementById('upload-file').files[0];
+      if (!f) { toast('파일을 선택하세요'); return; }
+      var fd = new FormData(); fd.append('file', f);
+      var r = await fetch('/portal/api/roster/upload', { method:'POST', body: fd });
+      var d = await r.json();
+      if (!d.success) { toast(d.message || '업로드 실패'); return; }
+      var c = d.counts || {};
+      var parts = [];
+      for (var k in c) parts.push(k + ':' + c[k]);
+      toast('총 ' + d.total + '행 처리 — ' + parts.join(', '));
+      document.getElementById('upload-file').value = '';
+      loadRoster();
+    }
+
+    document.querySelectorAll('.tabs button').forEach(function(b){
+      b.addEventListener('click', function(){
+        document.querySelectorAll('.tabs button').forEach(function(x){ x.classList.remove('on'); });
         b.classList.add('on');
+        document.querySelectorAll('.panel').forEach(function(p){ p.classList.remove('on'); });
+        document.getElementById('panel-' + b.dataset.tab).classList.add('on');
       });
     });
+
+    loadRoster();
   </script>
 </body>
 </html>
