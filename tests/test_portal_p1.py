@@ -70,7 +70,7 @@ def test_sync_branch_d_new_email_added_no_user():
 def test_sync_branch_b_multi_subject_hold():
     """분기 B: 기존 user가 이미 다른 과목 active → 덮어쓰지 않음(D12)."""
     cur = _cur()
-    cur.fetchone.side_effect = [(7, "PATH")]   # 이미 PATH active
+    cur.fetchone.side_effect = [(7, "PATH", "active")]   # 이미 PATH active
     out = _sync_member(cur, "CNU", "HST", "u@cnu.ac.kr", "이겸", "학생", TODAY, {})
     assert out == "multi_subject_hold"
     assert _update_users_sqls(cur) == []   # 기존 과목 유지, UPDATE 없음
@@ -80,7 +80,7 @@ def test_sync_branch_c_window_closed_pending():
     """분기 C: admin-only 사용자 + 접근창 닫힘(구독 없음/미래학기) → admin-only 유지(fail-closed)."""
     cur = _cur()
     # users=(id, NULL) → admin-only / active_window_subscription fetchone=None(창 닫힘)
-    cur.fetchone.side_effect = [(9, None), None]
+    cur.fetchone.side_effect = [(9, None, "active"), None]
     out = _sync_member(cur, "CNU", "HST", "adm@cnu.ac.kr", "박관리", "조교", TODAY, {})
     assert out == "pending_window"
     assert _update_users_sqls(cur) == []   # subject_code 채우지 않음(fail-closed §5-4)
@@ -90,7 +90,7 @@ def test_sync_branch_a_promote_synced():
     """분기 A: admin-only + 접근창 열림 + 좌석 여유 → NULL→과목 전환, role 불변."""
     cur = _cur()
     # users=(id, NULL) / 구독 max_seats=150 / 현재 좌석 0
-    cur.fetchone.side_effect = [(11, None), (150,), (0,)]
+    cur.fetchone.side_effect = [(11, None, "active"), (150,), (0,)]
     seat_cache = {}
     out = _sync_member(cur, "CNU", "HST", "adm@cnu.ac.kr", "최겸직", "교수", TODAY, seat_cache)
     assert out == "synced"
@@ -105,7 +105,7 @@ def test_sync_branch_a_promote_synced():
 def test_sync_branch_a_seat_full_skip():
     """분기 A 좌석부족: 좌석 소진 → skip(admin-only 유지), 전체 롤백 아님."""
     cur = _cur()
-    cur.fetchone.side_effect = [(12, None), (5,), (5,)]   # max_seats=5, used=5
+    cur.fetchone.side_effect = [(12, None, "active"), (5,), (5,)]   # max_seats=5, used=5
     out = _sync_member(cur, "CNU", "HST", "adm2@cnu.ac.kr", "정만석", "학생", TODAY, {})
     assert out == "seat_full"
     assert _update_users_sqls(cur) == []   # 전환 안 함
@@ -114,7 +114,7 @@ def test_sync_branch_a_seat_full_skip():
 def test_sync_no_change_updates_position_only():
     """이미 같은 과목 active → position 만 동기화(좌석·subject·role 불변)."""
     cur = _cur()
-    cur.fetchone.side_effect = [(13, "HST")]
+    cur.fetchone.side_effect = [(13, "HST", "active")]
     out = _sync_member(cur, "CNU", "HST", "s@cnu.ac.kr", "강학생", "조교", TODAY, {})
     assert out == "no_change"
     ups = _update_users_sqls(cur)
@@ -129,7 +129,7 @@ def test_sync_seat_cache_serializes_bulk():
     cur = _cur()
     # 1행: users(NULL) → 구독 max_seats=1, used=0 → 전환(used→1)
     # 2행: users(NULL) → 캐시 사용(추가 구독/카운트 쿼리 없음) → used=1>=1 → seat_full
-    cur.fetchone.side_effect = [(21, None), (1,), (0,), (22, None)]
+    cur.fetchone.side_effect = [(21, None, "active"), (1,), (0,), (22, None, "active")]
     seat_cache = {}
     o1 = _sync_member(cur, "CNU", "HST", "a@cnu.ac.kr", "A", "학생", TODAY, seat_cache)
     o2 = _sync_member(cur, "CNU", "HST", "b@cnu.ac.kr", "B", "학생", TODAY, seat_cache)
@@ -140,7 +140,7 @@ def test_sync_seat_cache_serializes_bulk():
 def test_sync_branch_a_uses_for_update_lock():
     """분기 A 좌석검사는 구독 행 FOR UPDATE 로 직렬화한다(§5-3)."""
     cur = _cur()
-    cur.fetchone.side_effect = [(30, None), (150,), (0,)]
+    cur.fetchone.side_effect = [(30, None, "active"), (150,), (0,)]
     _sync_member(cur, "CNU", "HST", "x@cnu.ac.kr", "X", "학생", TODAY, {})
     sqls = " ".join(" ".join(str(c.args[0]).split()).lower() for c in cur.execute.call_args_list)
     assert "for update" in sqls
@@ -305,7 +305,7 @@ def test_sync_user_lookup_scoped_to_institution():
 def test_sync_synced_update_scoped_to_institution():
     """분기 A 의 user UPDATE 도 institution_id 로 스코프된다(타 기관 user 변조 차단)."""
     cur = _cur()
-    cur.fetchone.side_effect = [(11, None), (150,), (0,)]
+    cur.fetchone.side_effect = [(11, None, "active"), (150,), (0,)]
     _sync_member(cur, "CNU", "HST", "u@cnu.ac.kr", "U", "학생", TODAY, {})
     ups = _update_users_sqls(cur)
     assert len(ups) == 1
@@ -330,7 +330,7 @@ def test_remove_user_lookup_scoped_to_institution():
 def test_sync_seat_full_does_not_upsert_roster():
     """좌석 소진 시 roster upsert 자체가 일어나지 않아야 한다(그 행만 skip, 아무 것도 안 바뀜)."""
     cur = _cur()
-    cur.fetchone.side_effect = [(12, None), (5,), (5,)]   # admin-only, max=5, used=5
+    cur.fetchone.side_effect = [(12, None, "active"), (5,), (5,)]   # admin-only, max=5, used=5
     out = _sync_member(cur, "CNU", "HST", "a@cnu.ac.kr", "A", "학생", TODAY, {})
     assert out == "seat_full"
     inserts = [c for c in cur.execute.call_args_list
@@ -405,14 +405,26 @@ def test_read_capped_allows_small():
     assert data == b"hello"
 
 
-def test_xlsx_zip_guard_rejects_many_entries():
+def test_xlsx_zip_guard_rejects_extreme_entries():
+    """극단적 비정상(>1000 entry)만 거른다(압축폭탄 보조 backstop)."""
     import io, zipfile
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as z:
-        for i in range(120):                 # > _PORTAL_XLSX_MAX_ENTRIES(100)
+        for i in range(1100):                # > _PORTAL_XLSX_MAX_ENTRIES(1000)
             z.writestr(f"f{i}.xml", b"x")
     with pytest.raises(sr._RosterParseError):
         sr._xlsx_zip_guard(buf.getvalue())
+
+
+def test_xlsx_zip_guard_allows_normal_business_file():
+    """[Low#2] 시트·이미지·로고·스타일 다수(entry 100 초과)인 정상 업무 xlsx는 통과해야 한다(오탐 방지)."""
+    import io, zipfile
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        for i in range(150):                 # 100 초과지만 정상 범위
+            z.writestr(f"xl/media/image{i}.png", b"\x89PNG")
+        z.writestr("xl/worksheets/sheet1.xml", b"<x/>")
+    sr._xlsx_zip_guard(buf.getvalue())        # 예외 없이 통과
 
 
 def test_xlsx_zip_guard_rejects_non_zip():
@@ -426,3 +438,37 @@ def test_xlsx_zip_guard_passes_normal():
     with zipfile.ZipFile(buf, "w") as z:
         z.writestr("xl/worksheets/sheet1.xml", b"<x/>")
     sr._xlsx_zip_guard(buf.getvalue())          # 예외 없이 통과
+
+
+# ── Codex 2차 Med#1: 좌석 캐시가 pending user를 좌석 점유로 오산하지 않는가 ──
+def test_sync_pending_user_does_not_consume_seat():
+    """max_seats=1, active=0. 1행=pending admin-only 전환(좌석 미점유) → 2행=active user 정상 처리(seat_full 아님)."""
+    cur = _cur()
+    # 1행: pending admin-only(NULL,'pending_verification') → window open, active_count=0
+    #   2행: active admin-only(NULL,'active') → 캐시상 used 여전히 0 이라 전환 성공(증분 +1)
+    cur.fetchone.side_effect = [
+        (51, None, "pending_verification"),  # 1행 user
+        (1,),                                 # active_window max_seats=1
+        (0,),                                 # active_seat_count=0
+        (52, None, "active"),                 # 2행 user (캐시 재사용 — 추가 구독/카운트 쿼리 없음)
+    ]
+    seat_cache = {}
+    o1 = _sync_member(cur, "CNU", "HST", "pend@cnu.ac.kr", "P", "학생", TODAY, seat_cache)
+    o2 = _sync_member(cur, "CNU", "HST", "act@cnu.ac.kr", "A", "학생", TODAY, seat_cache)
+    assert o1 == "synced"                     # pending 도 subject_code 동기화
+    assert seat_cache["HST"][1] == 1          # active(2행)만 좌석 +1 — pending(1행)은 미가산(§0 active 기준)
+    assert o2 == "synced"                     # 빈 좌석이므로 정상 전환(오거부 아님)
+
+
+def test_sync_pending_user_not_blocked_by_seat_full():
+    """좌석이 꽉 차도(active=max) pending user 전환은 seat_full로 막지 않는다(verify가 활성화 시점 집행)."""
+    cur = _cur()
+    cur.fetchone.side_effect = [
+        (60, None, "pending_verification"),   # pending admin-only
+        (1,),                                 # max_seats=1
+        (1,),                                 # active_seat_count=1 (이미 만석)
+    ]
+    out = _sync_member(cur, "CNU", "HST", "p2@cnu.ac.kr", "P2", "학생", TODAY, {})
+    assert out == "synced"                    # seat_full 아님 — subject 동기화, 좌석은 verify FOR UPDATE가 집행
+    ups = _update_users_sqls(cur)
+    assert len(ups) == 1 and "subject_code" in ups[0]

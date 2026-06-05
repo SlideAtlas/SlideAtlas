@@ -41,6 +41,11 @@
 [2026-06-05][test] test_portal_p1.py 신규(IDOR 스코프·seat_full roster 미생성·이메일 regex·파서 안전 7+) + test_auth.py 겸직 is_verified 2건 갱신. 전체 pytest 149 passed. 회귀 0.
 [2026-06-05][주의] test_auth가 importlib.reload(server_render) 호출 → test_portal_p1는 예외클래스/헬퍼를 `import server_render as sr`로 늦은 조회(by-name import는 reload 후 어긋남).
 
+### ════ v3.9 2차 — Codex 2차 재검증(라인 이슈 2건) ════
+[2026-06-05][Med#1 §0 좌석캐시] _sync_member user 조회에 status 추가. 메모리 seat_cache 증분·seat_full 게이트를 status='active'에만 적용 → active_seat_count(status='active')와 카운트 기준 일치(§0). pending admin-only 승격은 좌석 미점유(verify FOR UPDATE가 활성화 시점 집행) → 빈 좌석인데 후속 정상 행이 seat_full 오거부되던 버그 해소.
+[2026-06-05][Low#2 xlsx entry] _PORTAL_XLSX_MAX_ENTRIES 100→1000. 시트·이미지·로고 다수 정상 업무 xlsx 오탐 방지. 핵심 방어(압축해제 50MB·실측 10MB·행2000·셀512)는 유지.
+[2026-06-05][test] sync 픽스처 status 3-튜플로 갱신 + pending user 2건(좌석 미점유/seat_full 미차단) + 정상 업무파일 통과 신규. 전체 pytest 152 passed. 회귀 0.
+
 
 
 ## 기관 관리자 등록 흐름 (admin roster onboarding) — 2026-06-01 구현 (Codex 외부검증 대기)

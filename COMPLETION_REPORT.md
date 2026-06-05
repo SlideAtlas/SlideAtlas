@@ -68,6 +68,18 @@ push까지. EC2 git pull + `systemctl restart slideatlas`는 CEO 직접(§12·§
 - D21(접근모델 이원화)·D22(좌석 tie)는 이번 범위 밖(추적만). D12 다과목은 v1.5.
 - **외부검증 재라운드 미완**: §12상 Codex+Gemini 재검증 1라운드 → CEO 승인 → 머지 남음.
 
+## 10. v3.9 2차 — Codex 2차 재검증 반영 (2026-06-05)
+| # | 등급 | 항목 | 수정 |
+|---|------|------|------|
+| 1 | Med | 좌석 캐시 §0 불일치 | `_sync_member` user 조회에 `status` 포함. 메모리 seat_cache 증분·seat_full 게이트를 **status='active' 전환에만** 적용 → `active_seat_count`(status='active')와 카운트 기준 정확히 일치. pending admin-only 승격은 좌석 미점유(verify_email FOR UPDATE가 활성화 시점 정원 집행). 버그: pending도 +1해 빈 좌석인데 후속 active 행이 seat_full 오거부되던 것 해소. |
+| 2 | Low | xlsx entry 상한 오탐 | `_PORTAL_XLSX_MAX_ENTRIES` 100→1000. 시트·이미지·로고·스타일 다수의 정상 업무 xlsx 오탐 방지. 핵심 방어(압축해제 50MB·실측 10MB·행 2000·셀 512)는 유지. |
+
+**Codex 2차 재확인 결과**: #1·#2(좌석 캐시 active 기준 일치 / pending 미점유·verify FOR UPDATE 권위) **OK**. #3은 register의 '접근창 subject 후보 산정'이 헬퍼 아닌 inline EXISTS라는 **문자 수준 §0 지적**(조건식은 동일, 쿼리 형태가 본질적으로 달라 헬퍼 직접 사용 불가) — register에 "술어 변경 시 헬퍼와 동기화" 주석 추가로 마킹(리팩터는 hot-path 위험 대비 효용 낮아 보류, 추적).
+
+**테스트**: sync 픽스처 status 3-튜플 갱신 + pending user 2건(좌석 미점유 / seat_full 미차단) + 정상 업무파일 통과 신규. 전체 **pytest 152 passed**.
+
+**다음**: CEO 승인 → 머지. (Gemini는 2건이 라인 이슈라 재검 불요 — 지시.)
+
 ---
 
 # COMPLETION_REPORT — 기관 관리자 등록 흐름 (admin roster onboarding)

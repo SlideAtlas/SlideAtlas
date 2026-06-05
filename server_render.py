@@ -902,8 +902,11 @@ _PORTAL_EMAIL_RE = re.compile(r'^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,
 _PORTAL_POSITIONS = ('학생', '조교', '교수')   # 과목 명단 지위(행정직원=admin-only, 과목행 없음 §21-1)
 _PORTAL_UPLOAD_MAX_ROWS = 2000
 _PORTAL_UPLOAD_MAX_BYTES = 10 * 1024 * 1024      # 업로드 스트림 바이트 상한(Content-Length 헤더 비신뢰, 실계수)
-_PORTAL_XLSX_MAX_UNCOMPRESSED = 50 * 1024 * 1024  # xlsx 압축해제 총합 상한(압축폭탄 차단)
-_PORTAL_XLSX_MAX_ENTRIES = 100                    # xlsx zip entry 수 상한(비정상 구조 차단)
+_PORTAL_XLSX_MAX_UNCOMPRESSED = 50 * 1024 * 1024  # xlsx 압축해제 총합 상한(압축폭탄 1차 방어)
+# [v3.9 Codex 2차 Low#2] entry 수는 '보조 backstop'으로만 — 시트·이미지·로고·스타일 포함 정상 업무 xlsx는
+#   entry 100을 넘기 쉬워 정상 명단 오탐을 유발했다. 핵심 방어는 압축해제 총량+실측 업로드 크기+행/셀 상한이며,
+#   entry 수는 극단적 비정상(수천 entry)만 거른다. xlsx 실무 편의 우선.
+_PORTAL_XLSX_MAX_ENTRIES = 1000
 _PORTAL_OUTCOME_MSG = {
     'synced': '동기화(과목 전환)',
     'no_change': '변경 없음',
@@ -967,15 +970,22 @@ def _sync_member(cur, institution_id, subject_code, email, name, position, today
     #    B기관 사용자 이메일을 자기 roster에 넣어 B기관 user의 subject_code/position을 바꾸거나
     #    '추가 후 삭제'로 B기관 user의 active 과목을 NULL 회수해 슬라이드 접근을 끊을 수 있다(§9 위반).
     #    타 기관 이메일은 '현재 기관에 기존 user 없음'으로 취급 → roster-only(분기 D).
+    #    [v3.9 Codex 2차 Med#1] status 포함 — 좌석 카운팅은 active 사용자에만 적용(아래 2)).
     cur.execute(
-        "SELECT id, subject_code FROM users WHERE lower(email) = %s AND institution_id = %s",
+        "SELECT id, subject_code, status FROM users WHERE lower(email) = %s AND institution_id = %s",
         (email, institution_id),
     )
     urow = cur.fetchone()
+    u_status = urow[2] if urow is not None else None
 
     # 2) 좌석 판정을 roster 쓰기 '앞'에 둔다(Med#3): seat_full이면 roster upsert도 user 변경도 하지 않고
     #    그 행만 skip(아무 것도 안 바뀜). 좌석 검사는 admin-only(subject NULL) 승격(분기 A)에서만 의미.
     #    판정식은 register/verify 와 동일한 공통 헬퍼만 사용(§0).
+    #    [v3.9 Codex 2차 Med#1] '실제 active 좌석을 만드는 경우(status='active')'에만 좌석을 검사·가산한다 —
+    #      메모리 캐시 증분 기준을 active_seat_count(status='active')와 정확히 일치시킨다(§0 단일판정식).
+    #      pending user 승격은 active 좌석을 점유하지 않으므로 seat_full로 막지 않고(빈 좌석 오거부 방지),
+    #      그 좌석 검사는 verify_email 의 FOR UPDATE 재검사에 위임한다(활성화 시점에 권위 판정).
+    #      단 접근창(found) 판정에 쓰려고 pending 도 st 는 계산해 둔다(좌석 가산은 안 함).
     if urow is not None and urow[1] is None:
         st = seat_cache.get(subject_code)
         if st is None:
@@ -985,8 +995,8 @@ def _sync_member(cur, institution_id, subject_code, email, name, position, today
             st = [max_seats, used, found]
             seat_cache[subject_code] = st
         _max, _used, _found = st
-        if _found and _max is not None and _used >= _max:
-            return 'seat_full'        # roster upsert 전에 차단 — 행 미생성, user 불변(전체 롤백 아님).
+        if u_status == 'active' and _found and _max is not None and _used >= _max:
+            return 'seat_full'        # active 승격이 정원 초과 — roster 미생성, user 불변(전체 롤백 아님).
 
     # 3) roster 행 upsert (role='viewer' 고정 — role 은 sync 대상 아님). is_verified 기존값 유지.
     #    seat_full 을 제외한 모든 분기(synced/no_change/multi/pending/added)에서 roster 행은 남는다.
@@ -1001,27 +1011,30 @@ def _sync_member(cur, institution_id, subject_code, email, name, position, today
     # 4) user 동기화 분기.
     if urow is None:
         return 'added_no_user'        # 분기 D — 실제 좌석 점유·채번은 그 사람이 가입할 때(또는 타 기관 이메일).
-    user_id, u_subject = urow
+    user_id, u_subject = urow[0], urow[1]
 
     if u_subject == subject_code:
-        # 이미 이 과목 active — position 만 동기화(좌석 변화 없음, subject·role 불변).
+        # 이미 이 과목 — position 만 동기화(좌석 변화 없음, subject·role 불변).
         cur.execute("UPDATE users SET position = %s WHERE id = %s AND institution_id = %s",
                     (position, user_id, institution_id))
         return 'no_change'
     if u_subject is not None:
-        # 분기 B — 이미 다른 과목 active. v1.0 단일 subject_code라 덮어쓰지 않음(D12). roster 행만 추가됨.
+        # 분기 B — 이미 다른 과목. v1.0 단일 subject_code라 덮어쓰지 않음(D12). roster 행만 추가됨.
         return 'multi_subject_hold'
 
-    # u_subject IS NULL = admin-only. 분기 A/C — 좌석은 위 2)에서 이미 잠그고 판정함(캐시에 존재).
+    # u_subject IS NULL = admin-only. 분기 A/C — st 는 위 2)에서 채워짐(접근창 판정).
     _max, _used, _found = seat_cache[subject_code]
     if not _found:
         return 'pending_window'       # 분기 C — 접근창 닫힘(미래학기/창 전). admin-only 유지(fail-closed).
-    # 분기 A — 좌석 여유: NULL→과목 전환 + position 갱신. role 불변(겸직 admin 보존).
+    # 분기 A — NULL→과목 전환 + position 갱신. role 불변(겸직 admin 보존).
     cur.execute(
         "UPDATE users SET subject_code = %s, position = %s WHERE id = %s AND institution_id = %s",
         (subject_code, position, user_id, institution_id),
     )
-    seat_cache[subject_code][1] = _used + 1   # 메모리 좌석 차감(동일 트랜잭션 내 후속 행 정확)
+    # active 사용자를 실제 좌석으로 만든 경우에만 메모리 좌석 +1(§0: active_seat_count 기준과 일치).
+    #   pending user 전환은 좌석 미점유 — verify 의 FOR UPDATE 재검사가 활성화 시점에 정원을 집행한다.
+    if u_status == 'active':
+        seat_cache[subject_code][1] = _used + 1
     return 'synced'
 
 

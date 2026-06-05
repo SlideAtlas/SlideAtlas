@@ -281,6 +281,11 @@ def register():
             #    ※ register는 좌석·온보딩(§6-3) 정합상 subscription active-in-window만 사용
             #      (단일 게이트의 granted-OR 분기와 의도적으로 다름 — granted 단독은 불충분).
             #    today는 KST(§16·§18 D10).
+            #    ★ §0 동기화 주의(Codex 2차 #3): 아래 접근창 술어
+            #      (status='active' AND access_open_date<=today AND subscription_end>=today)는
+            #      active_window_subscription() 헬퍼와 '문자 그대로 동일'해야 한다. 여기는 'roster 행 중
+            #      active 과목 나열'이라 쿼리 형태(EXISTS 상관 서브쿼리)가 달라 헬퍼를 직접 못 쓰지만,
+            #      술어를 바꿀 땐 반드시 헬퍼와 함께 바꾼다(둘이 갈리면 §0 위반).
             today = _today_kst()
             cur.execute(
                 """SELECT r.subject_code, r.position
