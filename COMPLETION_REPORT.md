@@ -48,6 +48,28 @@ push까지. EC2 git pull + `systemctl restart slideatlas`는 CEO 직접(§12·§
 
 ---
 
+## 9. v3.9 — Codex+Gemini 외부검증 반영 (2026-06-05)
+외부검증(Codex 정밀추적 / Gemini 구조)에서 나온 확정 수정분. 전체 pytest **149 passed**, 내부 보안 재검증 완료.
+
+| # | 등급 | 항목 | 수정 |
+|---|------|------|------|
+| 1 | High | 타 기관 IDOR | `_sync_member`·`_remove_member`의 user 조회·UPDATE에 `AND institution_id=%s` 스코프. 타 기관 이메일은 분기 D(roster-only)로 취급 → 타 기관 user의 subject_code/position/좌석 변조 불가(§9). |
+| 2 | High | 포털 명단 저장형 XSS | (a) 템플릿 inline onclick 제거 → `data-*` + tbody 이벤트 위임. (b) 이메일 validator allowlist 강화(따옴표·괄호·세미콜론·제어문자 거부). 개별추가·업로드 공통. |
+| 3 | Med | seat_full인데 roster 커밋 | `_sync_member` 재구조화: user조회·좌석판정을 roster upsert **앞**으로. seat_full이면 roster 행·user 모두 불변. 판정식은 register/verify 공통 헬퍼 재사용(§0). |
+| 4 | Med | xlsx 압축폭탄/대용량 | ★xlsx 포맷 유지. `_read_capped`(실측 바이트 10MB, Content-Length 비신뢰), `_xlsx_zip_guard`(load 전 압축해제 50MB·entry 100 선검사), `_rows_from_iter`(스트리밍 행상한 2000 + scan backstop). |
+| 5 | Low | 겸직 is_verified 표시 | verify_email: 겸직(subject+__ADMIN__) 인증 시 두 행 모두 verified(`subject_code = ANY(list)`). ★WARN2 유지(타 과목 행 미인증). |
+
+**CLAUDE.md**: §18 D21(접근모델 이원화 granted-OR vs 구독, v1.5/별건)·D22(좌석 mutex tie, D14 Locust) 신설, D13 과목이동 2단계 명문화, v3.9 footer.
+
+**신규 테스트**: IDOR 스코프(sync/remove user 조회·UPDATE) / seat_full roster 미생성 / 이메일 regex allowlist / 파서 안전(_read_capped·_xlsx_zip_guard·_rows_from_iter). test_auth 겸직 is_verified 2건 기대값 갱신.
+
+**한계·미완(숨기지 않음)**:
+- DB는 여전히 mock 단위검증 — 라이브 IDOR/업로드 동작은 EC2 배포 후 스모크 필요.
+- D21(접근모델 이원화)·D22(좌석 tie)는 이번 범위 밖(추적만). D12 다과목은 v1.5.
+- **외부검증 재라운드 미완**: §12상 Codex+Gemini 재검증 1라운드 → CEO 승인 → 머지 남음.
+
+---
+
 # COMPLETION_REPORT — 기관 관리자 등록 흐름 (admin roster onboarding)
 
 작업일: 2026-06-01 | 작업자: Lead Developer | 기준: CLAUDE.md §9·§18 D12·D15·§13-2

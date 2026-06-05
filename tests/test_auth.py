@@ -1740,17 +1740,20 @@ def test_verify_email_admin_creates_admin_role(client, mock_db):
         # active 전환 시 구독/좌석 재검사가 없어야 한다(면제).
         executed = " ".join(str(c.args[0]) for c in mock_db["cursor"].execute.call_args_list)
         assert "FROM subscriptions" not in executed
-        # roster is_verified UPDATE 대상이 __ADMIN__ 행이어야 한다.
+        # roster is_verified UPDATE 대상이 __ADMIN__ 행이어야 한다(admin-only는 subject 행 없음).
+        #   [v3.9 Low#5] 대상은 subject_code = ANY(list) 형태의 list 파라미터(3번째)다.
         upd = [c for c in mock_db["cursor"].execute.call_args_list
                if "UPDATE institution_rosters SET is_verified" in str(c.args[0])][0]
-        assert "__ADMIN__" in upd.args[1]
+        assert upd.args[1][2] == ["__ADMIN__"]
         cookies = resp.headers.getlist("Set-Cookie")
         assert any(COOKIE_NAME in c for c in cookies)
 
 
 def test_verify_email_moonlight_updates_subject_roster_row(client, mock_db):
-    """[v3.4 겸직 red-team] role='admin'이어도 subject_code가 채워진 겸직 계정은 verify 시
-    __ADMIN__이 아니라 그 subject 행을 verified로 표시해야 한다(subject 행 누락 방지).
+    """[v3.4 겸직 red-team] role='admin'이고 subject_code가 채워진 겸직 계정은 verify 시
+    그 subject 행을 verified로 표시해야 한다(subject 행 누락 방지).
+    [v3.9 Low#5] 겸직은 subject 행 + __ADMIN__ 행을 '모두' verified 로 표시한다 —
+      과거엔 subject 행만 갱신돼 포털에서 관리자가 '대기'로 잘못 표시됐다. ★ WARN2 유지: 두 특정 행만(타 과목 행 미인증).
     [Codex 발견 2] subject_code 보유 → 구독·좌석 재검사도 받는다(좌석 여유 시 통과)."""
     with patch("server_render.get_db_conn") as mock_get_db, \
          patch("server_render.release_db_conn"):
@@ -1766,9 +1769,9 @@ def test_verify_email_moonlight_updates_subject_roster_row(client, mock_db):
         assert resp.status_code == 200
         upd = [c for c in mock_db["cursor"].execute.call_args_list
                if "UPDATE institution_rosters SET is_verified" in str(c.args[0])][0]
-        # subject 행(HST)을 대상으로 verified, __ADMIN__ 아님
-        assert "HST" in upd.args[1]
-        assert "__ADMIN__" not in upd.args[1]
+        # 겸직: subject 행(HST) + __ADMIN__ 행 둘 다 verified 대상(list 파라미터)
+        assert "HST" in upd.args[1][2]
+        assert "__ADMIN__" in upd.args[1][2]
 
 
 def test_verify_email_moonlight_subject_expired_blocked(client, mock_db):

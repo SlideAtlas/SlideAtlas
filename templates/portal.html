@@ -168,7 +168,9 @@
           + '<td>'+esc(m.name)+'</td><td>'+esc(m.position||'')+'</td>'
           + '<td>'+esc(m.subject_name||m.subject_code)+'</td><td>'+esc(m.email)+'</td>'
           + '<td>'+badge+'</td>'
-          + '<td><button class="del" onclick="delMember(\''+esc(m.subject_code)+'\',\''+esc(m.email)+'\')">삭제</button></td>'
+          // [v3.9 High#2 XSS] inline onclick 에 사용자 문자열(email)을 보간하지 않는다.
+          //   data-* 속성 + 이벤트 위임으로 처리 — 핸들러는 dataset 의 '디코드된 원문'을 fetch body 로만 쓴다.
+          + '<td><button class="del" data-subject="'+esc(m.subject_code)+'" data-email="'+esc(m.email)+'">삭제</button></td>'
           + '</tr>';
       }).join('') || '<tr><td colspan="6" class="muted">등록된 이용자가 없습니다.</td></tr>';
     }
@@ -234,6 +236,14 @@
         document.querySelectorAll('.panel').forEach(function(p){ p.classList.remove('on'); });
         document.getElementById('panel-' + b.dataset.tab).classList.add('on');
       });
+    });
+
+    // [v3.9 High#2 XSS] 삭제는 inline onclick 이 아니라 tbody 위임으로 처리(한 번만 바인딩).
+    //   innerHTML 재렌더돼도 tbody 자체는 유지되므로 위임이 지속된다. dataset 값은 HTML/JS 로 다시 들어가지 않음.
+    document.getElementById('member-tbody').addEventListener('click', function(e){
+      var btn = e.target.closest('button.del');
+      if (!btn) return;
+      delMember(btn.dataset.subject, btn.dataset.email);
     });
 
     loadRoster();

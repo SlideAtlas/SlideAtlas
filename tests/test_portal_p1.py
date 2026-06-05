@@ -20,10 +20,17 @@ os.environ.setdefault("GMAIL_APP_PW", "test-app-pw")
 os.environ.setdefault("ADMIN_SECRET_KEY", "test-admin-secret-for-pytest")
 
 import pytest
+import server_render as sr   # 라이브 모듈 참조 — test_auth 가 importlib.reload(server_render)를
+                             #   호출하므로, 예외 클래스/헬퍼는 반드시 모듈 속성으로 늦게 조회한다
+                             #   (by-name import 는 reload 후 구 객체에 묶여 pytest.raises 가 어긋남).
 from server_render import app, _sync_member, _remove_member
 from auth.decorators import ADMIN_ROSTER_SUBJECT
 
 TODAY = date(2026, 9, 1)
+
+
+def _norm(sql):
+    return " ".join(str(sql).split()).lower()
 
 
 @pytest.fixture
@@ -275,3 +282,147 @@ def test_portal_roster_scope_uses_g_institution(client):
         if len(c.args) > 1 and c.args[1]:
             used_insts.extend([a for a in c.args[1] if a == "CNU"])
     assert "CNU" in used_insts
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 외부검증(Codex+Gemini) 반영 수정 — 회귀 방지 (v3.9)
+# ═════════════════════════════════════════════════════════════════════════════
+
+# ── High#1 IDOR: user 조회·UPDATE가 institution_id 로 스코프되는가 ──
+def test_sync_user_lookup_scoped_to_institution():
+    """A기관 sync가 타 기관 user를 못 본다 — user SELECT 가 institution_id 로 스코프(타 기관 이메일=없음 취급)."""
+    cur = _cur()
+    cur.fetchone.side_effect = [None]   # 스코프 밖 → '현재 기관에 user 없음'
+    out = _sync_member(cur, "CNU", "HST", "victim@other.ac.kr", "X", "학생", TODAY, {})
+    assert out == "added_no_user"
+    sel = [c for c in cur.execute.call_args_list
+           if "from users" in _norm(c.args[0])][0]
+    assert "institution_id" in _norm(sel.args[0])
+    assert "CNU" in sel.args[1]
+    assert _update_users_sqls(cur) == []   # 타 기관 user 변경 없음
+
+
+def test_sync_synced_update_scoped_to_institution():
+    """분기 A 의 user UPDATE 도 institution_id 로 스코프된다(타 기관 user 변조 차단)."""
+    cur = _cur()
+    cur.fetchone.side_effect = [(11, None), (150,), (0,)]
+    _sync_member(cur, "CNU", "HST", "u@cnu.ac.kr", "U", "학생", TODAY, {})
+    ups = _update_users_sqls(cur)
+    assert len(ups) == 1
+    assert "institution_id" in ups[0]
+
+
+def test_remove_user_lookup_scoped_to_institution():
+    """제거 회수도 institution_id 로 스코프 — 타 기관 user의 active 과목을 NULL 회수하지 못한다."""
+    cur = _cur()
+    cur.rowcount = 1
+    cur.fetchone.side_effect = [None]   # 스코프 밖 user
+    out = _remove_member(cur, "CNU", "HST", "victim@other.ac.kr")
+    assert out == "removed_roster_only"
+    sel = [c for c in cur.execute.call_args_list
+           if "select id, subject_code from users" in _norm(c.args[0])][0]
+    assert "institution_id" in _norm(sel.args[0])
+    assert "CNU" in sel.args[1]
+    assert _update_users_sqls(cur) == []
+
+
+# ── Med#3: seat_full 이면 roster 행도 만들지 않는다 ──
+def test_sync_seat_full_does_not_upsert_roster():
+    """좌석 소진 시 roster upsert 자체가 일어나지 않아야 한다(그 행만 skip, 아무 것도 안 바뀜)."""
+    cur = _cur()
+    cur.fetchone.side_effect = [(12, None), (5,), (5,)]   # admin-only, max=5, used=5
+    out = _sync_member(cur, "CNU", "HST", "a@cnu.ac.kr", "A", "학생", TODAY, {})
+    assert out == "seat_full"
+    inserts = [c for c in cur.execute.call_args_list
+               if "insert into institution_rosters" in _norm(c.args[0])]
+    assert inserts == []                   # roster 행 미생성(Med#3)
+    assert _update_users_sqls(cur) == []   # user 불변
+
+
+def test_sync_accepted_branches_do_upsert_roster():
+    """seat_full 외 분기(예: 분기 D)는 roster 행을 남긴다."""
+    cur = _cur()
+    cur.fetchone.side_effect = [None]   # 신규(분기 D)
+    out = _sync_member(cur, "CNU", "HST", "new@cnu.ac.kr", "N", "학생", TODAY, {})
+    assert out == "added_no_user"
+    inserts = [c for c in cur.execute.call_args_list
+               if "insert into institution_rosters" in _norm(c.args[0])]
+    assert len(inserts) == 1
+
+
+# ── High#2: 이메일 validator allowlist (저장형 XSS 차단) ──
+@pytest.mark.parametrize("bad", [
+    "a');alert(1)//@b.com",
+    'a"@b.com',
+    "a;b@b.com",
+    "a(b)@b.com",
+    "a<b>@b.com",
+    "a b@b.com",
+    "noat.example.com",
+])
+def test_email_regex_rejects_unsafe(bad):
+    assert not sr._PORTAL_EMAIL_RE.match(bad)
+
+
+@pytest.mark.parametrize("good", [
+    "mj.kim+1@cnu.ac.kr",
+    "a_b-c%d@sub.domain.co",
+    "Prof123@univ.ac.kr",
+])
+def test_email_regex_accepts_normal(good):
+    assert sr._PORTAL_EMAIL_RE.match(good)
+
+
+# ── High#4: xlsx/업로드 안전 파싱 ──
+def test_rows_from_iter_row_cap():
+    """스트리밍 중 행상한 초과 시 즉시 거부(다 읽은 뒤가 아님)."""
+    def gen():
+        yield ("이름", "지위", "과목", "이메일")   # 헤더 — 스킵
+        for i in range(10):
+            yield (f"n{i}", "학생", "HST", f"u{i}@c.ac")
+    with pytest.raises(sr._RosterParseError):
+        sr._rows_from_iter(gen(), 3)
+
+
+def test_rows_from_iter_within_cap_ok():
+    def gen():
+        yield ("김", "학생", "HST", "a@c.ac")
+        yield ("이", "조교", "HST", "b@c.ac")
+    rows = sr._rows_from_iter(gen(), 2000)
+    assert len(rows) == 2
+
+
+def test_read_capped_rejects_oversize():
+    import io
+    big = io.BytesIO(b"x" * (1024 * 1024))   # 1MB
+    with pytest.raises(sr._RosterParseError):
+        sr._read_capped(big, 100 * 1024)        # 100KB 상한
+
+
+def test_read_capped_allows_small():
+    import io
+    data = sr._read_capped(io.BytesIO(b"hello"), 100 * 1024)
+    assert data == b"hello"
+
+
+def test_xlsx_zip_guard_rejects_many_entries():
+    import io, zipfile
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        for i in range(120):                 # > _PORTAL_XLSX_MAX_ENTRIES(100)
+            z.writestr(f"f{i}.xml", b"x")
+    with pytest.raises(sr._RosterParseError):
+        sr._xlsx_zip_guard(buf.getvalue())
+
+
+def test_xlsx_zip_guard_rejects_non_zip():
+    with pytest.raises(sr._RosterParseError):
+        sr._xlsx_zip_guard(b"this is not a zip file")
+
+
+def test_xlsx_zip_guard_passes_normal():
+    import io, zipfile
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("xl/worksheets/sheet1.xml", b"<x/>")
+    sr._xlsx_zip_guard(buf.getvalue())          # 예외 없이 통과

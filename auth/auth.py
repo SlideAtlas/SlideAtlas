@@ -494,15 +494,22 @@ def verify_email():
             )
             # roster는 (기관×과목×이메일) 독립 행(§6-2) — 인증된 해당 행만 표시.
             # (institution_id, email)만으로 갱신하면 다과목 명단을 일괄 over-mark(Codex WARN2).
-            #   [v3.4 결정#1] users.subject_code 기준 분기:
-            #     · NULL(순수 admin-only) → __ADMIN__ 행을 verified.
-            #     · 비NULL(viewer 또는 active subject 1건 캡처한 겸직 admin) → 그 subject 행을 verified.
-            #   (겸직에서 __ADMIN__ 행만 바뀌고 subject 행이 누락되는 일이 없도록.)
-            roster_subject = subject_code if subject_code else ADMIN_ROSTER_SUBJECT
+            #   [v3.9 Codex/Gemini Low#5] 겸직(__ADMIN__ + 과목 행)은 두 행을 모두 verified로 갱신한다 —
+            #   과거엔 캡처된 subject 행만 갱신돼 포털에서 '인증된 관리자'가 '대기'로 잘못 표시됐다(표시만, 권한 무관).
+            #   대상 = '캡처된 subject 행(있으면) + role=='admin'이면 __ADMIN__ 행'으로 한정한다.
+            #   ★ WARN2 취지 유지: '모든 과목 행 일괄 verified'가 아니라 두 특정 행만 — 타 과목 행은 미인증 유지.
+            verify_subjects = []
+            if subject_code:
+                verify_subjects.append(subject_code)
+            if role == "admin":
+                verify_subjects.append(ADMIN_ROSTER_SUBJECT)
+            if not verify_subjects:
+                # 방어(이론상 미도달): subject_code도 없고 admin도 아니면 위 D4b 게이트에서 이미 거부됨.
+                verify_subjects.append(ADMIN_ROSTER_SUBJECT)
             cur.execute(
                 "UPDATE institution_rosters SET is_verified = TRUE "
-                "WHERE institution_id = %s AND subject_code = %s AND lower(email) = %s",
-                (institution_id, roster_subject, email),
+                "WHERE institution_id = %s AND lower(email) = %s AND subject_code = ANY(%s)",
+                (institution_id, email, verify_subjects),
             )
         conn.commit()
         token = encode_token(payload)

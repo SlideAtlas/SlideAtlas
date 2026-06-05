@@ -31,6 +31,16 @@
 [2026-06-05][구현] templates/portal.html: 명단관리 탭 기능 구현(interceptor.js 로드=CSRF 자동주입, esc() XSS 방어, 추가/업로드/삭제/필터).
 [2026-06-05][test] tests/test_portal_p1.py 17건 신규(sync 4분기·seat_full·no_change·FOR UPDATE·제거 4종·D18·scope 3종). 전체 pytest 127 passed.
 
+### ════ v3.9 — Codex+Gemini 외부검증 반영(High2·Med3 필수) ════
+[2026-06-05][High#1 IDOR] _sync_member·_remove_member의 user 조회·UPDATE에 `AND institution_id=%s` 추가. 타 기관 이메일은 '현재 기관 user 없음'(분기 D)으로 취급 → 타 기관 user 변조/좌석 회수 차단(§9).
+[2026-06-05][High#2 저장형 XSS] (a) templates/portal.html: 삭제 inline onclick 제거 → data-subject/data-email + tbody 이벤트 위임. (b) server_render.py: 이메일 validator `[^@\s]+` → allowlist `[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}`(따옴표·괄호·세미콜론·제어문자 거부, 개별추가·업로드 공통).
+[2026-06-05][Med#3 seat_full] _sync_member 구조 변경: user 조회·좌석판정을 roster upsert '앞'으로. seat_full이면 roster 행도 user도 안 바뀜. 판정식은 register/verify 공통 헬퍼 재사용(§0).
+[2026-06-05][Med#4 xlsx 안전] _read_capped(실측 바이트 10MB), _xlsx_zip_guard(압축해제 50MB·entry 100 선검사), _rows_from_iter(스트리밍 행상한 2000+scan backstop). xlsx 포맷 유지(CSV 전용 전환 안 함). 업로드 라우트가 f.stream을 capped read 후 BytesIO로 파싱.
+[2026-06-05][Low#5 is_verified] auth/auth.py verify_email: 겸직(subject+__ADMIN__) 인증 시 두 행 모두 is_verified=TRUE (`subject_code = ANY(list)`). WARN2 유지(타 과목 행 미인증). 기존 테스트 2건 기대값 갱신.
+[2026-06-05][D21·D22] CLAUDE.md §18 신설(접근모델 이원화 / 좌석 mutex tie), D13 과목이동 2단계 명문화, v3.9 footer.
+[2026-06-05][test] test_portal_p1.py 신규(IDOR 스코프·seat_full roster 미생성·이메일 regex·파서 안전 7+) + test_auth.py 겸직 is_verified 2건 갱신. 전체 pytest 149 passed. 회귀 0.
+[2026-06-05][주의] test_auth가 importlib.reload(server_render) 호출 → test_portal_p1는 예외클래스/헬퍼를 `import server_render as sr`로 늦은 조회(by-name import는 reload 후 어긋남).
+
 
 
 ## 기관 관리자 등록 흐름 (admin roster onboarding) — 2026-06-01 구현 (Codex 외부검증 대기)
