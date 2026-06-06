@@ -51,14 +51,21 @@ def _mock_db():
 
 
 def _setup_report(mock_cur, *, subjects=(("HST", "조직학"),),
-                  by_position=(("학생", 10),), members=(8, 3, 1), max_seats=150,
-                  total_views=400, monthly=(("2026-05", 120),),
+                  by_position=(("학생", 10),), window_rows=(("HST", 150),),
+                  members=(8, 3, 1), total_views=400, monthly=(("2026-05", 120),),
                   top=(("SA-HST-001", "소장", "H&E", 90),),
                   ai_q=42, ai_monthly=(("2026-05", 20),)):
+    # v3.15(2R): 좌석은 window 구독 rows(subject_code, max_seats) fetchall 로 Python 합산.
+    #   members fetchone 은 window_codes 있을 때만.
     mock_cur.fetchall.side_effect = [
-        list(subjects), list(by_position), list(monthly), list(top), list(ai_monthly),
+        list(subjects), list(by_position), list(window_rows),
+        list(monthly), list(top), list(ai_monthly),
     ]
-    mock_cur.fetchone.side_effect = [members, (max_seats,), (total_views,), (ai_q,)]
+    fone = []
+    if window_rows:
+        fone.append(members)
+    fone += [(total_views,), (ai_q,)]
+    mock_cur.fetchone.side_effect = fone
 
 
 def _run(client, mock_conn, path, auth=None):
@@ -140,13 +147,13 @@ def test_active_count_matches_seat_definition(client):
 # 3. [Med] max_seats 합산 접근창 필터
 # ═════════════════════════════════════════════════════════════════
 def test_max_seats_sum_applies_access_window(client):
-    """SUM(max_seats)는 접근창(access_open_date<=today<=subscription_end) 내 구독만 합산."""
+    """좌석 정원은 접근창(access_open_date<=today<=subscription_end) 내 구독만 합산(today=_today_kst)."""
     mock_conn, mock_cur = _mock_db()
     _setup_report(mock_cur)
     with patch("server_render._today_kst", return_value=date(2026, 9, 1)):
         _run(client, mock_conn, "/portal/api/report?subject_code=HST")
     seat_sql = [(_norm(c.args[0]), c.args[1]) for c in mock_cur.execute.call_args_list
-                if "sum(max_seats)" in _norm(c.args[0])][0]
+                if "from subscriptions" in _norm(c.args[0]) and "access_open_date" in _norm(c.args[0])][0]
     assert "access_open_date <= %s" in seat_sql[0]
     assert "subscription_end >= %s" in seat_sql[0]
     assert date(2026, 9, 1) in seat_sql[1]      # today=_today_kst 가 파라미터로
@@ -217,3 +224,82 @@ def test_bad_period_falls_back_not_all(client):
     assert resp.get_json()["period"] == "3m"
     # 날짜 필터가 적용됐는지(=전체가 아님): access_logs 쿼리에 날짜 경계 존재
     assert all("accessed_at >= %s" in sql for sql in _access_sqls(mock_cur))
+
+
+# ═════════════════════════════════════════════════════════════════
+# 2R 재검증 반영 — is_special 좌석 정합 / 소진율 분자=분모 / top_slides LEFT JOIN
+# ═════════════════════════════════════════════════════════════════
+
+# ── 2R#1: 특별계정 승격 시 subject_code=NULL (좌석 비점유, active_seat_count 같은 집합) ──
+def test_special_promote_nulls_subject_code():
+    """특별계정 승격 경로(기존 user)가 subject_code=NULL(+position NULL)로 정리한다."""
+    import inspect
+    n = " ".join(inspect.getsource(sr.api_special_accounts_create).split()).lower()
+    assert "is_special = true" in n
+    assert "subject_code = null" in n          # 좌석 비점유로 정리
+    assert "position = null" in n
+
+
+def test_p3_user_aggregation_has_no_is_special_filter(client):
+    """P3 users 집계(등록·구성원)에 is_special 제외절이 없다 — 특별계정은 subject_code=NULL 로 자연 제외.
+    → active_seat_count(is_special 절 없음)와 '글자까지 같은 집합'(§0)."""
+    mock_conn, mock_cur = _mock_db()
+    _setup_report(mock_cur)
+    _run(client, mock_conn, "/portal/api/report?subject_code=HST")
+    user_sqls = [_norm(c.args[0]) for c in mock_cur.execute.call_args_list
+                 if "from users u" in _norm(c.args[0])]
+    assert user_sqls
+    for sql in user_sqls:
+        assert "is_special" not in sql
+
+
+def test_special_cleanup_migration_idempotent():
+    """기존 특별계정 정리 마이그레이션: 멱등·트랜잭션·subject_code=NULL."""
+    import os
+    p = os.path.join(os.path.dirname(__file__), "..", "db", "special_subject_code_cleanup_migration.sql")
+    sql = " ".join(open(p, encoding="utf-8").read().lower().split())
+    assert "begin;" in sql and "commit;" in sql
+    assert "set subject_code = null" in sql
+    assert "coalesce(is_special, false) = true" in sql
+
+
+# ── 2R#2: 소진율 분자(active_users)도 분모(max_seats)와 같은 접근창 집합(기준 A) ──
+def test_active_users_restricted_to_window_codes(client):
+    """구독은 HST·PATH지만 접근창 열린 건 HST뿐 → 구성원/활성(분자)이 window_codes(['HST'])만 본다(PATH 제외)."""
+    mock_conn, mock_cur = _mock_db()
+    _setup_report(mock_cur, subjects=(("HST", "조직학"), ("PATH", "병리학")),
+                  window_rows=(("HST", 150),), members=(8, 3, 1))
+    _run(client, mock_conn, "/portal/api/report?subject_code=all")
+    msql = [(_norm(c.args[0]), c.args[1]) for c in mock_cur.execute.call_args_list
+            if "filter (where u.status=" in _norm(c.args[0])][0]
+    assert ["HST"] in msql[1]                   # 분자 대상 = window_codes
+    flat = []
+    for x in msql[1]:
+        flat.extend(x) if isinstance(x, list) else flat.append(x)
+    assert "PATH" not in flat                   # 만료(접근창 닫힘) 과목은 분자에서 제외
+
+
+def test_expired_window_excludes_both_numerator_and_denominator(client):
+    """접근창 열린 구독 0(전부 만료/미래) → active_users·max_seats 둘 다 0, util 0(집계 제외).
+    분자 쿼리(members)도 실행되지 않아 '유령 active'가 0%로 왜곡되지 않는다(기준 A 검증)."""
+    mock_conn, mock_cur = _mock_db()
+    _setup_report(mock_cur, window_rows=(), total_views=50, monthly=(), top=(), ai_q=0, ai_monthly=())
+    resp = _run(client, mock_conn, "/portal/api/report?subject_code=HST")
+    d = resp.get_json()
+    assert d["active_users"] == 0 and d["max_seats"] == 0 and d["util_pct"] == 0
+    assert not any("filter (where u.status=" in _norm(c.args[0])
+                   for c in mock_cur.execute.call_args_list)   # 분자 쿼리 skip
+
+
+# ── 2R#4: top_slides LEFT JOIN + 제목 폴백(표시용 조인이 집계를 떨구지 않게) ──
+def test_top_slides_left_join_with_title_fallback(client):
+    mock_conn, mock_cur = _mock_db()
+    _setup_report(mock_cur, top=(("SA-HST-001", "소장", "H&E", 90),
+                                 ("SA-HST-099", "SA-HST-099", None, 5)))   # slide row 없음 → id 폴백
+    resp = _run(client, mock_conn, "/portal/api/report?subject_code=HST")
+    d = resp.get_json()
+    top_sql = [_norm(c.args[0]) for c in mock_cur.execute.call_args_list
+               if "left join slides s" in _norm(c.args[0])][0]
+    assert "group by al.slide_id" in top_sql
+    assert "coalesce(s.title_ko, al.slide_id)" in top_sql
+    assert "SA-HST-099" in [t["id"] for t in d["top_slides"]]   # 깨진 참조도 집계에 포함

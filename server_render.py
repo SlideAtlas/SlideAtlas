@@ -1620,11 +1620,12 @@ def _portal_report_data(cur, inst_id, subject_code, subjects, start, end):
         cl_date = "AND cl.created_at >= %s AND cl.created_at < %s + INTERVAL '1 day'"
         cl_dp = [start, end]
 
-    # 1) 등록 이용자(지위별) — status 무관, 미인증 포함, is_special 제외.
+    # 1) 등록 이용자(지위별) — 전체 구독 과목 기준(등록 명단 총원, 현재 접근창 무관).
+    #    [Codex 2R#1 §0] is_special 제외절 제거 — 특별계정은 승격 시 subject_code=NULL 이라 subject 필터
+    #    (u_filt)로 이미 빠진다. active_seat_count(is_special 절 없음)와 '같은 집합' 기준으로 정렬한다.
     cur.execute(f"""
         SELECT u.position, COUNT(*) FROM users u
         WHERE u.institution_id = %s {u_filt}
-          AND COALESCE(u.is_special, FALSE) = FALSE
         GROUP BY u.position
     """, [inst_id] + u_p)
     by_position, registered = {}, 0
@@ -1632,35 +1633,41 @@ def _portal_report_data(cur, inst_id, subject_code, subjects, start, end):
         by_position[pos or '기타'] = cnt
         registered += cnt
 
-    # 2) 구성원 활동(status 기반, CEO 확정): 활성=active / 미인증=pending / 비활성=그 외(NULL 포함).
-    #    [Codex Med#2 §0] 활성 = u.status='active' (NULL 제외) — active_seat_count(NULL 제외)와 정확히 일치.
-    #    COALESCE(status,'active') 로 NULL 을 활성 취급하면 P2 좌석(점유 N)과 P3 활성(N+1)이 모순(§0 위반).
-    #    NULL status 는 비활성(기타)으로 분류(IS DISTINCT FROM 으로 NULL 안전 비교).
-    cur.execute(f"""
-        SELECT
-          COUNT(*) FILTER (WHERE u.status='active'),
-          COUNT(*) FILTER (WHERE u.status='pending_verification'),
-          COUNT(*) FILTER (WHERE u.status IS DISTINCT FROM 'active'
-                             AND u.status IS DISTINCT FROM 'pending_verification')
-        FROM users u
-        WHERE u.institution_id = %s {u_filt}
-          AND COALESCE(u.is_special, FALSE) = FALSE
-    """, [inst_id] + u_p)
-    a, p, i = cur.fetchone()
-    members = {'active': a or 0, 'unverified': p or 0, 'inactive': i or 0}
-    active_users = members['active']
-
-    # 3) 최대 좌석(과목별 active 구독 합산 → 기관 롤업, §15-7). 소진율 0나눗셈 가드.
-    #    [Codex Med#3] 접근창 필터 추가 — status='active' 만 보면 미래 갱신 구독까지 합쳐(150+150=300)
-    #    소진율이 왜곡된다. active_window_subscription 과 동일한 창(access_open_date<=today<=subscription_end,
-    #    today=_today_kst)만 합산. ★ active_seat_count(사용자 점유 카운트)는 불변 — 여긴 정원(max_seats) 합산만.
+    # 2-A) 현재 접근창이 열린 active 구독(과목·정원) — 소진율 분자/분모의 '같은 행 집합'(기준 A).
+    #    [Codex 2R#2] 분모(max_seats)뿐 아니라 분자(active_users)도 이 창에 속한 과목만 본다.
+    #    만료 과목의 active 사용자는 _authenticate 가 이미 접근 차단한 유령 → 분자에서도 제외(현실 정합).
+    #    today=_today_kst(1R). ★ active_seat_count(P1·P2 점유 카운트)는 불변 — 여긴 리포트 소진율 산출만.
+    #    SUM 을 SQL 이 아니라 Python 에서 — window_codes(분자 대상 과목)와 정원 합을 한 쿼리로 동시 산출.
     today = _today_kst()
     cur.execute("""
-        SELECT COALESCE(SUM(max_seats),0) FROM subscriptions
+        SELECT subject_code, max_seats FROM subscriptions
         WHERE institution_id=%s AND subject_code = ANY(%s) AND status='active'
           AND access_open_date <= %s AND subscription_end >= %s
     """, [inst_id, seat_codes, today, today])
-    max_seats = cur.fetchone()[0] or 0
+    window_rows = cur.fetchall()
+    window_codes = sorted({r[0] for r in window_rows})        # 접근창 열린 과목(분자=분모 정합)
+    max_seats = sum(r[1] for r in window_rows if r[1] is not None)
+
+    # 2-B) 구성원 활동 + 활성 사용자 — 현재 접근창 과목(window_codes)만(분자=분모 같은 집합, §0).
+    #    [Codex 2R#1] is_special 제외절 없음: 특별계정은 subject_code=NULL 이라 window_codes ANY 필터로
+    #    자연 제외 → active_seat_count(status='active' AND subject_code=…)와 '글자까지 같은 집합'.
+    #    활성=status='active'(NULL 제외, 1R Med#2). 미인증=pending. 비활성=그 외(NULL 포함, IS DISTINCT FROM).
+    if window_codes:
+        cur.execute("""
+            SELECT
+              COUNT(*) FILTER (WHERE u.status='active'),
+              COUNT(*) FILTER (WHERE u.status='pending_verification'),
+              COUNT(*) FILTER (WHERE u.status IS DISTINCT FROM 'active'
+                                 AND u.status IS DISTINCT FROM 'pending_verification')
+            FROM users u
+            WHERE u.institution_id = %s AND u.subject_code = ANY(%s)
+        """, [inst_id, window_codes])
+        a, p, i = cur.fetchone()
+        members = {'active': a or 0, 'unverified': p or 0, 'inactive': i or 0}
+    else:
+        # 접근창 열린 구독 없음 → 좌석 집계 대상 없음(만료/미래만). 분자·분모 양쪽 0 = '집계 제외'.
+        members = {'active': 0, 'unverified': 0, 'inactive': 0}
+    active_users = members['active']
     util_pct = round(active_users / max_seats * 100) if max_seats > 0 else 0
 
     # 4) 총 슬라이드 조회수 — access_logs 스냅샷 기준(Codex High#1). users/slides 조인 불요.
@@ -1683,13 +1690,15 @@ def _portal_report_data(cur, inst_id, subject_code, subjects, start, end):
     for m in monthly_views:
         m['pct'] = round(m['count'] / mv_max * 100) if mv_max else 0
 
-    # 6) 인기 슬라이드 Top 10 — 스냅샷(al.subject_code)으로 필터, slides 조인은 제목·염색 표시용만(High#1).
+    # 6) 인기 슬라이드 Top 10 — 스냅샷(al.subject_code)으로 필터(High#1).
+    #    [Codex 2R#4] LEFT JOIN — slides 행이 없거나 깨진 참조여도 집계에서 떨구지 않게(total/monthly 와
+    #    같은 기준). 제목은 COALESCE(s.title_ko, al.slide_id) 폴백. 조인은 표시용, 필터는 al.* 만.
     cur.execute(f"""
-        SELECT s.id, s.title_ko, s.stain, COUNT(al.id) AS views
+        SELECT al.slide_id, COALESCE(s.title_ko, al.slide_id), s.stain, COUNT(al.id) AS views
         FROM access_logs al
-        JOIN slides s ON al.slide_id = s.id
+        LEFT JOIN slides s ON al.slide_id = s.id
         WHERE al.institution_id = %s {al_filt} {al_date}
-        GROUP BY s.id, s.title_ko, s.stain
+        GROUP BY al.slide_id, s.title_ko, s.stain
         ORDER BY views DESC LIMIT 10
     """, [inst_id] + al_p + al_dp)
     top_slides = [{'id': r[0], 'title': r[1] or '', 'stain': r[2] or '', 'views': r[3]}
@@ -3908,6 +3917,9 @@ def api_special_accounts_create():
                 cur.execute("SELECT id FROM users WHERE email = %s", (email,))
                 existing = cur.fetchone()
                 if existing:
+                    # [Codex 2R#1 §0] 특별계정은 좌석을 점유하지 않는다(CEO 결정) → 승격 시 subject_code=NULL
+                    #   로 정리해 active_seat_count(P2 좌석)·P3 active_users 양쪽에서 동일하게 빠지게 한다
+                    #   ('subject_code 있는 active 사용자'만 셈 → 같은 집합). position 도 함께 비운다.
                     cur.execute("""
                         UPDATE users SET
                             is_special         = TRUE,
@@ -3916,7 +3928,9 @@ def api_special_accounts_create():
                             special_review_at  = %s,
                             special_created_by = %s,
                             institution_id     = COALESCE(%s, institution_id),
-                            status             = 'active'
+                            status             = 'active',
+                            subject_code       = NULL,
+                            position           = NULL
                         WHERE id = %s
                     """, (purpose, expires_at, review_at,
                           g.admin_user_id, inst_id, existing[0]))

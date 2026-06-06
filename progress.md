@@ -526,3 +526,21 @@ python3 run_tests.py
 [2026-06-06][security-reviewer][결과] 내부 레드팀 5건 전부 PASS·FAIL 0·인접 신규결함 0 (§0·§8·§9·§15-7/D9·§16·D10 충족)
   - 메모(범위 밖): p05_logging_schema RDS 적용 전제(§20 인프라), status NOT NULL 마이그레이션 ACCESS EXCLUSIVE 락→CEO 트래픽 적은 시점 실행
 [2026-06-06][Lead Developer][대기] 외부 Codex+Gemini 재검증 1라운드(인접 경로 한정) + CEO 승인은 운영자 게이트 — push 후 운영자 실행
+
+---
+## 포털 P2+P3 재검증 2R(Codex) 반영 — 2026-06-06 (v3.15)
+[2026-06-06][Lead Developer][완료] #1 분기 확인: 라이브 RDS 조회 권한 없음(§12·§20) → 멱등 정리 마이그레이션으로 양쪽 분기 안전 커버
+[2026-06-06][Lead Developer][완료] #1 [필수] is_special 좌석 정합(§0 같은 집합)
+  - api_special_accounts_create 기존 user 승격 시 subject_code=NULL(+position NULL) 정리(좌석 비점유, CEO 결정). 신규 INSERT는 미지정(NULL)
+  - P3 users 집계(등록·구성원)의 is_special 제외절 제거 → subject_code=NULL로 자연 제외 → active_seat_count(is_special 절 없음)와 글자까지 같은 집합
+  - db/special_subject_code_cleanup_migration.sql(멱등·트랜잭션) 신설 — CEO 실행(D25b)
+[2026-06-06][Lead Developer][완료] #2 [필수] 소진율 분자=분모 기준 A 통일
+  - window_codes(접근창 열린 active 구독 과목) 산출 → active_users(분자)·max_seats(분모) 둘 다 window_codes만. 만료 과목 유령 active 양쪽 제외(0%/N명 왜곡 제거)
+  - window_codes 비면 members 쿼리 skip(active=0,max=0). active_seat_count(점유 카운트) 불변
+[2026-06-06][Lead Developer][완료] #4 [가벼움] top_slides LEFT JOIN slides + COALESCE(s.title_ko, al.slide_id), GROUP BY al.slide_id — 깨진 참조도 집계 포함
+[2026-06-06][Lead Developer][완료] #3·#5 [문서] §15-7 스냅샷 subject_code NULL 과거 로그 집계 제외 명문화 / §18 D26(슈퍼관리자 COALESCE 잔재) 추적 신설
+[2026-06-06][test-runner][결과] pytest 202 passed (196 회귀 0 + 2R 신규 6, 기존 P3 mock 시퀀스 갱신)
+[2026-06-06][security-reviewer][결과] 내부 레드팀 7/7 PASS·FAIL 0·인접 결함 0
+  - §0 같은 집합(승격 시 P2·P3 동시 -1), 분자=분모 window_codes, IDOR 없음, LEFT JOIN 정합, 마이그레이션 멱등, is_special subject_code=NULL이 _slide_access_allowed에 무영향(직교)
+  - 권고(차단 아님): SET NOT NULL 락은 트래픽 적은 시점 실행
+[2026-06-06][Lead Developer][대기] 좁은 Codex 재확인 1회 + CEO 승인 + 마이그레이션 2종 실행은 운영자 게이트

@@ -1,52 +1,55 @@
-# COMPLETION_REPORT — 포털 P2+P3 외부검증(Codex+Gemini) 반영 수정 5건 (2026-06-06 v3.14)
+# COMPLETION_REPORT — 포털 P2+P3 재검증 2R(Codex) 반영 (2026-06-06 v3.15)
 
-작업일: 2026-06-06 | 작업자: Lead Developer | 기준: CLAUDE.md §0·§8·§9·§15-7·§16·§18 D9·D10
-상태: **구현·신규 pytest·내부 레드팀(security-reviewer FAIL 0) 완료 — 외부 Codex+Gemini 재검증 1라운드 + CEO 승인은 운영자 게이트(아래 9)**
+작업일: 2026-06-06 | 작업자: Lead Developer | 기준: CLAUDE.md §0·§9·§15-7·§15-8·§16·§18 D9
+상태: **구현·신규 pytest·내부 레드팀(security-reviewer 7/7 PASS) 완료 — 좁은 Codex 재확인 + CEO 승인 + 마이그레이션 2종 실행은 운영자 게이트(아래 9)**
 
-## 0. ★ 1번 스키마 분기 결과 = (A) — Codex 지적 옳음
-- `db/p05_logging_schema.sql`·`db/reports_special_schema.sql`가 `access_logs`에 `institution_id`·`subject_code`를 추가하고, `_log_slide_view`(server_render.py:351)가 **열람 시점 스냅샷**(institution_id=`g.institution_id`, subject_code=슬라이드 과목)으로 INSERT함을 확인. → 분기 (A): 스냅샷 컬럼 존재 → 수정 진행. (B 아님.)
+## 0. ★ 1번 분기 처리 = 라이브 RDS 조회 불가 → 멱등 정리로 양쪽 커버
+- "is_special=TRUE인데 subject_code가 NULL이 아닌 기존 계정" 존재 여부는 **작업자가 라이브 RDS 조회 권한이 없어(§12·§20 — VPC 프라이빗·읽기전용) 확정 불가**. → 승격 코드 수정 + **멱등 정리 마이그레이션**(`db/special_subject_code_cleanup_migration.sql`, 잔존 0건이면 no-op)을 함께 제공해 (있음)/(없음) 양쪽 분기를 안전하게 커버. 잔존 건수 확인·실행은 CEO.
 
 ## 1. 범위
-- 외부검증(Codex depth + Gemini breadth) 확정 5건 + 마이그레이션 1건. **읽기 전용 집계·타임존·검증 로직만** 수정. §0 단일판정식(register/verify/active_seat_count) 불변.
-- 인증·좌석 쓰기·register/verify/_authenticate **미변경**. D21(granted-OR 이원화)은 추적 유지(코드 변경 없음, 별도 §12 세션).
+- Codex(depth) 2R 재검증 확정: 필수 2건(#1 is_special 좌석 정합, #2 소진율 분자/분모) + 가벼움 2건(#3 문서, #4 LEFT JOIN). Gemini #3은 "정상"으로 봤으나 Codex가 분자/분모 비대칭을 더 깊이 봐 버그 확정 → CEO 기준 A로 결정.
+- §0 단일판정식(register/verify/active_seat_count/P3 active 동일 집합) 유지. 인증·좌석 쓰기·register/verify/_authenticate 미변경. D21 추적 유지.
 
 ## 2. 수정 내역
-| # | 등급 | 내용 | 파일·근거 |
-|---|------|------|-----------|
-| 1 | High | 조회수(total_views·monthly_views·top_slides)를 access_logs 스냅샷(`al.institution_id`·`al.subject_code`) 기준으로 필터. 현재 `u.institution_id`·`s.subject_code` 재분류(시간축 오염) 제거. total/monthly는 users·slides 조인 제거, top_slides의 slides 조인은 제목·염색 **표시용만**(필터는 al). | `_portal_report_data` |
-| 2 | Med(§0) | P3 구성원활동 active = `u.status='active'`(NULL 제외) — `COALESCE(status,'active')` 제거 → `active_seat_count`와 정확히 일치(P2 좌석↔P3 활성 모순 제거). NULL은 `IS DISTINCT FROM`으로 비활성 분류. | `_portal_report_data` 멤버 쿼리 |
-| 3 | Med | `SUM(max_seats)`에 접근창 필터(`access_open_date<=today AND subscription_end>=today`, today=`_today_kst`) 추가 → 미래 갱신 구독 합산(150+150=300) 차단. **`active_seat_count`(점유)는 불변**, 정원 합산만. | `_portal_report_data` 좌석 쿼리 |
-| 4 | 타임존 | P2·P3 날짜연산 `_date.today()`→`_today_kst()` 4곳: `_sub_status`(P2 카드·관리자 목록 공유)·`portal_plans_list` D-day·`_portal_report_range`·관리자 `api_institutions_list` dday. 날짜 경계 half-open(`>=start AND <end+1day`). 새 헬퍼 없이 기존 `_today_kst` 재사용. | 4개 위치 |
-| 5 | Low | period allowlist `{'1m','3m','6m','all'}`(`_norm_report_period`) — 미허용값은 조용한 전체확장 대신 기본 '3m'. report·export 양쪽 적용. | `portal_report`·`portal_report_export` |
-| 6 | 마이그레이션 | `users.status NOT NULL` 근본해결(`db/users_status_notnull_migration.sql`, 멱등·트랜잭션: NULL 백필→DEFAULT→NOT NULL). **CEO가 EC2 psql 실행**(§12·§20). | 신규 .sql |
+| # | 등급 | 내용 | 위치 |
+|---|------|------|------|
+| 1 | 필수(§0) | 특별계정 승격 시 `subject_code=NULL`(+position NULL) — 좌석 비점유(CEO). P3 users 집계의 `is_special` 제외절 제거 → subject_code=NULL로 자연 제외 → `active_seat_count`(is_special 절 없음)와 '글자까지 같은 집합'. 승격 시 P2 used_seats·P3 active_users 동시 -1. | `api_special_accounts_create`, `_portal_report_data` |
+| 1 | 필수 | 기존 잔존 정리 멱등 마이그레이션(CEO 실행) | `db/special_subject_code_cleanup_migration.sql` |
+| 2 | 필수 | 소진율 분자(active_users)도 분모(max_seats)와 같은 `window_codes`(접근창 열린 active 구독 과목)만. 만료 과목 유령 active 양쪽 제외(N명/0석 0% 왜곡 제거). window_codes 비면 members skip(0/0). **`active_seat_count` 불변.** | `_portal_report_data` |
+| 3 | 문서 | 스냅샷 `al.subject_code` NULL 과거 로그는 의도적 집계 제외(과목 귀속 불명, 백필 안 함) 명문화 | CLAUDE.md §15-7 |
+| 4 | 가벼움 | top_slides `JOIN`→`LEFT JOIN slides` + `COALESCE(s.title_ko, al.slide_id)`, `GROUP BY al.slide_id` — 깨진 참조도 집계 포함(total/monthly와 정합) | `_portal_report_data` |
+| 5 | 추적 | D26 슈퍼관리자 COALESCE(status,'active') 잔재(L2232·L3528·L3723·L3842, 포털 무영향) — MD감사 세션 통일 검토 | CLAUDE.md §18 D26 |
 
-## 3. P2 점검 결과 (item 3 관련)
-- `portal_plans_list`는 구독 행을 **카드별 개별 표시**(SUM 없음) — 150+150 혼합 버그가 P2에는 없음. 각 카드는 `status_key`(active/upcoming/expired, 이제 KST)로 현재/미래/만료를 구분. 카드 목록에 접근창 필터를 걸면 미래·만료 카드가 사라져 오히려 의도(전체 구독 현황 표시) 위반 → **P2 카드 목록은 변경하지 않음**(item4 KST 치환만 적용). 좌석 윈도우 필터는 P3의 SUM에만 적용.
+## 3. 분자/분모 동작 (기준 A)
+- `window_codes` = 구독 과목 중 접근창 열린 active 구독(`access_open_date<=today<=subscription_end`, today=`_today_kst`)이 있는 과목.
+- active_users(분자)·max_seats(분모) 둘 다 `window_codes` 집합만. 만료/미래 과목은 양쪽에서 빠짐 → "집계 제외".
+- 구성원 활동(donut)도 window_codes 기준(active==active_users 정합). 등록 이용자(총원)는 전체 구독 과목 기준(별도 KPI).
 
 ## 4. 변경 파일
-- `server_render.py`: `_portal_report_data`(조회수 스냅샷·active 정의·좌석 윈도우·날짜 half-open), `_portal_report_range`(KST), `_norm_report_period`+상수 신설, `portal_report`·`portal_report_export`(period 정규화), `portal_plans_list`(KST dday), `_sub_status`(KST), `api_institutions_list`(KST dday).
-- `db/users_status_notnull_migration.sql`: 신규(CEO 실행 대기).
-- `tests/test_portal_review.py`: 신규 13건.
-- `CLAUDE.md`: §9 P3 외부검증 반영 블록, §18 D10 갱신·D25 신설, v3.14 헤더·이력.
+- `server_render.py`: `_portal_report_data`(window_codes 산출·members/active 분자 window 제한·max_seats Python 합산·is_special 제외절 제거·top_slides LEFT JOIN), `api_special_accounts_create`(승격 subject_code/position NULL).
+- `db/special_subject_code_cleanup_migration.sql`: 신규(CEO 실행).
+- `tests/test_portal_p3.py`·`tests/test_portal_review.py`: mock 시퀀스 갱신(window_rows 추가·max_seats fetchone 제거) + 2R 신규 6건.
+- `CLAUDE.md`: §9 P3 2R 블록, §15-7 스냅샷/기준A 명문화, §18 D25b·D26, v3.15 헤더·이력.
 
 ## 5. 테스트
-- `pytest 196 passed` (기존 183 회귀 0 + 신규 13). 신규는 조회수 스냅샷 필터·active NULL 제외·좌석 윈도우·_today_kst 사용·half-open 경계·period allowlist를 SQL 텍스트/파라미터 수준에서 검증.
-- openpyxl 로컬 설치(3.1.5), xlsx 테스트 `importorskip` 병행.
+- `pytest 202 passed` (기존 196 회귀 0 + 2R 신규 6). 신규: 승격 subject_code=NULL, P3 is_special 제외절 부재, 분자 window_codes 제한, 만료 시 분자·분모 동시 제외, top_slides LEFT JOIN+폴백, 정리 마이그레이션 멱등.
+- 기존 P3 테스트 mock 시퀀스 갱신(쿼리 구성 변경 반영).
 
-## 6. 내부 레드팀(security-reviewer, §12 내부 QA)
-- 5건 전부 **PASS, FAIL 0, 인접 신규 결함 0**. 멀티테넌시(al.institution_id=g.institution_id 스코프, 타 기관 로그 유출 차단), §0 단일판정식, IDOR 불가, 비구독 403, `_xlsx_safe` 유지, ANY(빈배열) 회피(`_empty_report` 분기), 파라미터 순서 일치 모두 확인.
+## 6. 내부 레드팀(security-reviewer, §12)
+- **7/7 PASS, FAIL 0, 인접 신규 결함 0.** §0 같은 집합(승격 시 P2·P3 동시 -1), 분자=분모 window_codes, IDOR 없음(전 쿼리 g.institution_id 스코프), LEFT JOIN 정합, 마이그레이션 멱등·트랜잭션, **특별계정 subject_code=NULL이 `_slide_access_allowed`(is_special 분기, subject 미참조)에 무영향(좌석↔접근 직교)** 확인. 바인딩 순서·ANY(빈배열) 회피·NULL max_seats 가드 모두 OK.
 
 ## 7. 한계·미완 (숨기지 않음, §13)
-- **마이그레이션 미적용**: `users.status NOT NULL`은 .sql만 작성, **CEO가 EC2 psql 실행**(§18 D25). 실행 전엔 잔존 NULL status 행이 P3에서 비활성으로 분류될 수 있음(좌석엔 영향 없음 — active만 점유). 운영 중 `SET NOT NULL`은 짧은 ACCESS EXCLUSIVE 락 → 트래픽 적은 시점 권장.
-- **스냅샷 무결성 전제**: 조회수 스냅샷 정확성은 `db/p05_logging_schema.sql`가 RDS에 적용돼 있어야 보장(코드 검증 사각, §20 인프라 점검 영역 — 사람 확인).
-- **라이브 스모크·실수치 미검증**: access_logs·chat_logs 실데이터 거의 없어 0/빈 차트가 정상. 실수치는 134종 입고·학생 e2e 후.
-- **외부검증 미실시(운영자 게이트)**: 본 세션은 구현 + 내부 레드팀까지. **Codex+Gemini 재검증 1라운드(이 5건·인접 경로 한정) + CEO 승인**은 §12 거버넌스상 운영자가 수행(Gemini는 본 에이전트 도구 부재). 그 통과 후 최종 승인.
+- **마이그레이션 2종 미적용**: `special_subject_code_cleanup_migration.sql`(D25b)·`users_status_notnull_migration.sql`(D25, 1R) 모두 .sql만 작성 — **CEO가 EC2 psql 실행**. 미실행 시: (D25b) 잔존 특별계정이 P2·P3 양쪽에 동일 계상(여전히 일치하나 좌석 1 과점유 가능). (D25) 잔존 NULL status는 P3 비활성 분류. `SET NOT NULL`은 짧은 ACCESS EXCLUSIVE 락 → 트래픽 적은 시점 권장.
+- **라이브 RDS 조회 불가**: 1번 잔존 건수 미확인(권한 없음) → 멱등 정리로 커버, 실제 정리·검증은 CEO.
+- **라이브 스모크·실수치 미검증**: 로그/사용자 실데이터 거의 없어 0/빈 차트가 정상. 134종 입고·학생 e2e 후.
+- **외부검증 미실시(운영자 게이트)**: 구현 + 내부 레드팀까지. 좁은 Codex 재확인(is_special 정리 후 P2=P3 같은 집합·소진율 분자/분모 같은 행집합) + CEO 승인은 운영자 수행.
+- **per_user_views**: total_views(전체 구독 과목)/active_users(window 과목) — 분모만 window라 약간 비대칭이나 소진율(핵심 KPI)은 정합. 추적.
 
 ## 8. 배포
-- 커밋·push origin/main 완료. **EC2 git pull + systemctl restart는 CEO**. **마이그레이션 `db/users_status_notnull_migration.sql`은 CEO가 EC2에서 psql 실행**(§12·§20).
+- 커밋·push origin/main 완료. **EC2 git pull + 재기동, 마이그레이션 2종 psql 실행은 CEO**.
 
 ## 9. 남은 게이트 (운영자)
-1. 외부 Codex+Gemini 재검증 1라운드(이번 5건·인접 경로 한정).
+1. 좁은 Codex 재확인 1회(이번 2R 수정·인접 경로 한정).
 2. CEO 최종 승인.
-3. `db/users_status_notnull_migration.sql` RDS 실행 + `db/p05_logging_schema.sql` 적용 여부 확인(§20).
+3. `db/special_subject_code_cleanup_migration.sql` + `db/users_status_notnull_migration.sql` RDS 실행(트래픽 적은 시점).
 4. EC2 git pull + 재기동.

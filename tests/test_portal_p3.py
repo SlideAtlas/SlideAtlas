@@ -56,24 +56,29 @@ def _mock_db():
 
 def _setup_report(mock_cur, *, subjects=(("HST", "조직학"),),
                   by_position=(("학생", 10), ("교수", 2)),
-                  members=(8, 3, 1), max_seats=150, total_views=400,
+                  window_rows=(("HST", 150),),   # 접근창 열린 active 구독 (subject_code, max_seats)
+                  members=(8, 3, 1), total_views=400,
                   monthly=(("2026-05", 120), ("2026-06", 280)),
                   top=(("SA-HST-001", "소장", "H&E", 90),),
                   ai_q=42, ai_monthly=(("2026-05", 20), ("2026-06", 22))):
-    """_subscribed_subjects + _portal_report_data 호출 순서대로 mock 적재."""
+    """_subscribed_subjects + _portal_report_data 호출 순서대로 mock 적재(v3.15 2R 반영).
+
+    v3.15 변경: 좌석은 window 구독 rows(subject_code, max_seats)를 fetchall 로 받아 Python 합산(max_seats
+    fetchone 제거). 구성원 쿼리는 window_codes 비어있지 않을 때만 fetchone 1회.
+    """
     mock_cur.fetchall.side_effect = [
-        list(subjects),       # _subscribed_subjects
+        list(subjects),       # _subscribed_subjects (route)
         list(by_position),    # 1) by_position
-        list(monthly),        # 5) monthly_views
-        list(top),            # 6) top_slides
-        list(ai_monthly),     # 7) ai_monthly
+        list(window_rows),    # 2-A) 접근창 active 구독 (분자=분모 정합)
+        list(monthly),        # monthly_views
+        list(top),            # top_slides
+        list(ai_monthly),     # ai_monthly
     ]
-    mock_cur.fetchone.side_effect = [
-        members,              # 2) members (active, unverified, inactive)
-        (max_seats,),         # 3) max_seats
-        (total_views,),       # 4) total_views
-        (ai_q,),              # 7) ai_questions
-    ]
+    fone = []
+    if window_rows:           # 2-B) members fetchone 은 window_codes 비어있지 않을 때만 호출됨
+        fone.append(members)
+    fone += [(total_views,), (ai_q,)]
+    mock_cur.fetchone.side_effect = fone
 
 
 def _run(client, mock_conn, path, auth=None):
@@ -181,15 +186,20 @@ def test_aggregation_subject_scoped(client):
     _setup_report(mock_cur)
     _run(client, mock_conn, "/portal/api/report?subject_code=HST")
     # users 집계(활성/지위)에 subject_code 필터
-    user_sqls = [(_norm(c.args[0]), c.args[1] if len(c.args) > 1 else [])
+    def _flat(params):
+        out = []
+        for x in (params or []):
+            out.extend(x) if isinstance(x, list) else out.append(x)
+        return out
+    user_sqls = [(_norm(c.args[0]), _flat(c.args[1]))
                  for c in mock_cur.execute.call_args_list if "from users u" in _norm(c.args[0])]
     assert user_sqls, "users 집계 쿼리가 있어야 함"
     for sql, params in user_sqls:
         assert "u.subject_code" in sql
-        assert "HST" in (params or [])
-    # max_seats 는 subscriptions 에서 과목 스코프(ANY([HST])) — _subscribed_subjects 와 구분(sum(max_seats))
+        assert "HST" in params
+    # 좌석: subscriptions 접근창 쿼리(subject_code ANY + access_open_date 윈도우), today 파라미터 포함
     seat_sql = [(_norm(c.args[0]), c.args[1]) for c in mock_cur.execute.call_args_list
-                if "sum(max_seats)" in _norm(c.args[0])][0]
+                if "from subscriptions" in _norm(c.args[0]) and "access_open_date" in _norm(c.args[0])][0]
     assert "subject_code = any(%s)" in seat_sql[0]
     assert ["HST"] in seat_sql[1]
     # 단일 진실: institutions 옛 구독 컬럼 미참조
@@ -203,7 +213,8 @@ def test_aggregation_subject_scoped(client):
 def test_empty_data_graceful_zeros(client):
     """구독 과목은 있으나 로그/사용자 0 → 0 나눗셈 없이 0·빈 배열."""
     mock_conn, mock_cur = _mock_db()
-    _setup_report(mock_cur, by_position=(), members=(0, 0, 0), max_seats=0,
+    # window_rows=() → 접근창 열린 구독 없음 → members 쿼리 skip, max_seats=0, active_users=0
+    _setup_report(mock_cur, by_position=(), window_rows=(),
                   total_views=0, monthly=(), top=(), ai_q=0, ai_monthly=())
     resp = _run(client, mock_conn, "/portal/api/report?subject_code=HST")
     assert resp.status_code == 200
@@ -231,9 +242,11 @@ def test_chat_logs_failure_graceful(client):
     mock_conn, mock_cur = _mock_db()
     # ai_questions 의 fetchone(4번째)에서 예외 → except 가 0/[] 로 처리
     mock_cur.fetchall.side_effect = [
-        [("HST", "조직학")], [("학생", 5)], [("2026-06", 10)], [("SA-HST-001", "소장", "H&E", 7)],
+        [("HST", "조직학")], [("학생", 5)], [("HST", 150)],   # subjects, by_position, window_rows
+        [("2026-06", 10)], [("SA-HST-001", "소장", "H&E", 7)],  # monthly, top (ai_monthly 미도달)
     ]
-    mock_cur.fetchone.side_effect = [(4, 1, 0), (150,), (10,), Exception("no chat_logs table")]
+    # fetchone: members, total_views, ai_questions(예외) → except 가 0/[] 처리
+    mock_cur.fetchone.side_effect = [(4, 1, 0), (10,), Exception("no chat_logs table")]
     resp = _run(client, mock_conn, "/portal/api/report?subject_code=HST")
     assert resp.status_code == 200
     d = resp.get_json()
@@ -250,13 +263,16 @@ def _export(client, slides_top, fmt="xlsx", subject="HST"):
     mock_cur.fetchall.side_effect = [
         [("HST", "조직학")],   # _subscribed_subjects
         [("학생", 5)],         # by_position
+        [("HST", 150)],        # 2-A) window 구독 (subject_code, max_seats)
         [("2026-06", 10)],     # monthly
         slides_top,            # top_slides
         [("2026-06", 3)],      # ai_monthly
     ]
     mock_cur.fetchone.side_effect = [
         ("충남대학교 의과대학",),   # institutions name_ko
-        (4, 1, 0), (150,), (10,), (3,),
+        (4, 1, 0),                  # members (window_codes 있음)
+        (10,),                      # total_views
+        (3,),                       # ai_questions
     ]
     return _run(client, mock_conn,
                 f"/portal/api/report/export?subject_code={subject}&period=3m&format={fmt}")
