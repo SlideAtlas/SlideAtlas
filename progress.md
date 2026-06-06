@@ -457,3 +457,17 @@ python3 run_tests.py
   - run_tests.py는 베이스라인부터 Werkzeug 3.x set_cookie 시그니처로 깨진 stale 복제 하네스 — 미수정(보고)
 [2026-05-31][Lead Developer][완료] grep: 인증·정원 경로 institutions.max_users/subscription_end 실참조 0건, subject_code IS NULL 폴백 0건
 [2026-05-31][Lead Developer][완료] git commit 17bb18a(D4)·ddfab51(정원)·c8c6143(docs) + push origin/main
+
+---
+## P1 라이브 스모크 — 2026-06-06 (EC2 배포본)
+[2026-06-06][Lead Developer][완료] 명단 추가 → DB 기록 → 화면 표시 통과
+[2026-06-06][Lead Developer][완료] 삭제 모달(좌석 반환·접근 차단 안내) + roster 행 제거 통과
+[2026-06-06][Lead Developer][완료] 분기 A 본인 전환 통과
+  - admin-only(mcmajo, subject_code NULL)를 HST 과목 명단에 추가 → users.subject_code NULL→HST 전환
+  - role='admin' 불변, position='조교' 적재, 포털 안 튕김(접근 유지)
+  - 접근창 열린 상태(access_open_date 2026-06-04 ~ subscription_end 2027-02-28)에서 DB 직접 확인
+[2026-06-06][Lead Developer][완료] 단일 게이트 라이선스 격리 통과
+  - SA-HST-0001(deploy_status=qc_pending)이 과목 일치에도 비노출
+[2026-06-06][Lead Developer][미실시] 다음 차수로 이월
+  - pending+active 일괄 업로드(#1 회귀), xlsx 업로드 오탐, 학생(viewer) e2e
+  - 학생 e2e는 HST 134종 입고(약 2026-06-16 예정) 후 실데이터로 수행
