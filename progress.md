@@ -488,3 +488,22 @@ python3 run_tests.py
   - 내부 QA 자체검증: (a)스코프격리 (b)/viewer 우회없음 (c)수식주입 방어 (+)전 slides 경로 과목격리(비구독 403) 통과
   - openpyxl 로컬 미설치 → xlsx 테스트는 importorskip(prod requirements 포함). 로컬 설치 후 실검증 완료
 [2026-06-06][Lead Developer][미실시] P3(이용 리포트)·라이브 스모크는 다음 차수. P2+P3 묶은 외부검증은 P3 완료 후 판단
+
+---
+## 포털 P3 — 이용 리포트 (읽기 전용) — 2026-06-06 (v3.13, 포털 3탭 완성)
+[2026-06-06][Lead Developer][완료] CEO 설계 1회 승인(구성원 활동=status 기반 확정) 후 착수
+[2026-06-06][Lead Developer][완료] 백엔드 읽기 래퍼 2개(server_render.py, 슈퍼관리자 reports 엔드포인트 직접 호출 없음·SQL만 재사용)
+  - GET /portal/api/report?period=&subject_code= — KPI(등록 이용자·지위별/총조회/AI호출/1인당 평균)+구성원활동(status)+월별조회+Top10+AI월별 통합 1응답
+  - GET /portal/api/report/export?...&format=xlsx — openpyxl + _xlsx_safe(4시트), PDF=client window.print()
+  - 헬퍼 _portal_report_range(1m/3m/6m/all)·_portal_report_data·_empty_report 추가. 전 경로 _portal_guard(scope=g.institution_id, 학교 드롭다운 없음, IDOR 불가)
+[2026-06-06][Lead Developer][완료] 집계 단일 진실·과목축 분리(§0·§18 D9)
+  - 원천 access_logs·chat_logs·users·subscriptions만. 활성=status='active'(active_seat_count 일치)
+  - active_users·max_seats·소진율 (기관×과목) 산출, all=과목별 합(SUM, 단일 user=단일 subject 중복없음)
+  - util_pct·per_user_views 0나눗셈 가드. all+구독0은 _empty_report로 ANY(빈배열) 회피. chat_logs 부재 시 AI만 0/[] 격리
+[2026-06-06][Lead Developer][완료] templates/portal.html #panel-report 구현(P1·P2와 동일 standalone+interceptor.js, esc XSS)
+  - 기간 세그먼트(1/3/6개월/전체)·과목 드롭다운(전체/특정)·KPI 그리드·CSS 막대차트·Top10(열람=/viewer/<id> 표준 게이트)·엑셀/인쇄
+  - 빈 데이터 시 "데이터 없음" graceful. 탭 진입 1회 지연 로드. Jinja 렌더 정합 확인
+[2026-06-06][test-runner][결과] pytest 183 passed (168 회귀 0 + P3 15 신규)
+  - 내부 QA 자체검증: (a)스코프격리(inst_id 쿼리 무시) (b)과목격리(비구독 403) (c)수식주입 방어 (d)집계 과목별→롤업 (+)빈데이터 graceful·chat_logs 격리 통과
+  - openpyxl 로컬 설치(3.1.5)로 xlsx 경로 실검증, prod requirements 포함(importorskip 병행)
+[2026-06-06][Lead Developer][미실시] 라이브 스모크·실수치 검증은 134종 입고·학생 e2e 후. P2+P3 묶은 외부검증(Codex/Gemini) 1회는 다음 단계 판단

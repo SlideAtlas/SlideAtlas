@@ -1,58 +1,59 @@
-# COMPLETION_REPORT — 기관 포털 P2(구독 플랜) (2026-06-06 v3.12)
+# COMPLETION_REPORT — 기관 포털 P3(이용 리포트) (2026-06-06 v3.13 · 포털 3탭 완성)
 
-작업일: 2026-06-06 | 작업자: Lead Developer | 기준: CLAUDE.md §0·§8·§9·§16·§17
-상태: **구현·내부 QA(a·b·c+과목격리) 통과·pytest 168 passed 완료 — 배포 push까지(EC2 pull·restart는 CEO)**
+작업일: 2026-06-06 | 작업자: Lead Developer | 기준: CLAUDE.md §0·§8·§9·§15-7·§18 D9·§17
+상태: **구현·내부 QA(a·b·c·d+빈데이터)·pytest 183 passed 완료 — 배포 push까지(EC2 pull·restart는 CEO)**
 
 ## 1. 범위
-- 포털 3탭 중 **P2(구독 플랜)만** 구현. **읽기 전용**(표시 + 내보내기), 인증·좌석·쓰기 게이트 신설 없음.
-- P1(명단)·인증·좌석·register/verify/_authenticate 로직 **일절 미변경**.
-- P3(이용 리포트)는 다음 세션.
+- 포털 3탭 중 **마지막 P3(이용 리포트)만** 구현. **읽기 전용**(집계 표시 + 내보내기), 인증·좌석·쓰기 게이트 신설 없음.
+- P1(명단)·P2(구독 플랜)·인증·좌석·register/verify/_authenticate **일절 미변경**.
+- **이로써 포털 3탭(명단·구독플랜·이용리포트) 완성.**
 
-## 2. CEO 확정 설계 (착수 전 1회 승인 + 보완 2개)
-- 슈퍼관리자 엔드포인트 직접 호출 금지 → **포털 전용 읽기 래퍼**(SQL·헬퍼만 재사용).
-- 단일 진실(§0): 구독 = `subscriptions`만, `institutions` 옛 컬럼 0건. 좌석 = `active_seat_count`, D-day = `_sub_status`/`_sem_dates` 재사용.
-- /viewer 게이트 우회 금지: 포털 "열람"도 표준 `_slide_access_allowed`.
-- **보완#1**: `/plans/slides/export` 에도 `_subscribed_subjects` allowlist 적용.
-- **보완#2**: 두 slides 경로 모두 비구독 `subject_code` → 빈 목록 아닌 **403**.
-- PDF는 서버 생성 금지(§13-1 한국어 폰트 한계) → 클라이언트 `window.print()`.
+## 2. CEO 확정 설계 (착수 전 1회 승인)
+- 슈퍼관리자 reports 엔드포인트 직접 호출 금지 → **포털 전용 읽기 래퍼**(SQL·집계 로직만 재사용). **학교 선택 드롭다운 없음**(자기 기관 고정).
+- 단일 진실(§0): 집계 원천 = `access_logs`·`chat_logs`·`users`·`subscriptions`. `institutions` 옛 컬럼 0건. 활성 정의 = `status='active'`(P1·P2·`active_seat_count` 일치).
+- 과목 격리: `subject_code`='all'(합산) 또는 `_subscribed_subjects` 중 하나, 비구독 → **403**.
+- 과목축 분리→기관 롤업(§18 D9): active_users·max_seats·소진율 (기관×과목) 산출, all은 합(SUM).
+- **구성원 활동(활성/비활성/미인증) = status 기반**(CEO 확정): 활성=active / 미인증=pending_verification / 비활성=그 외. 새 활동 판정식 도입 안 함.
+- PDF는 서버 생성 금지(§13-1) → 클라이언트 `window.print()`. 서버 export는 XLSX만.
 
 ## 3. 변경 파일
-- `server_render.py` (+약 175줄, 읽기 라우트만 추가):
-  - `_portal_subject_slides(cur, subject_code)` — 과목 배포(deployed) 슬라이드 메타(콘텐츠는 SA 단일채번이라 고객 기관 id 필터 안 함, 격리는 과목 구독).
-  - `GET /portal/api/plans` — 구독 카드(플랜·max_seats·시작학기·학기수·접근창·만료·구독료·status·D-day) + 좌석현황(`active_seat_count`, 소진율).
-  - `GET /portal/api/plans/slides?subject_code=` — 메타 목록, 비구독 403.
-  - `GET /portal/api/plans/slides/export?subject_code=&format=xlsx|csv` — `_xlsx_safe` 셀 방어, 비구독 403, bad format 400, openpyxl 부재 시 graceful 500.
-  - 전 라우트 `@login_required` + `_portal_guard`(scope=`g.institution_id`, inst_id 쿼리/바디 미참조).
-- `templates/portal.html`: `#panel-plan` 구현(P1과 동일 standalone+interceptor.js, `esc()` XSS). 플랜 카드(좌석바·소진율·상태뱃지·D-day·구독료), 카드 선택→슬라이드 테이블(검색·"열람"=`/viewer/<id>` 앵커), 내보내기 버튼(xlsx/csv=GET 다운로드, PDF=`window.print()`). 탭 진입 시 1회 지연 로드.
-- `tests/test_portal_p2.py`: 신규 16건.
-- `CLAUDE.md`: §9 포털 P2 블록 추가, v3.12 헤더·이력.
+- `server_render.py` (+약 290줄, 읽기 라우트만):
+  - `_portal_report_range(period)` — 1m/3m/6m=today-30/90/180d, all=무필터(날짜 필터일 뿐).
+  - `_empty_report()` — 구독 0 시 ANY(빈배열) 회피용 0 구조.
+  - `_portal_report_data(cur, inst_id, subject_code, subjects, start, end)` — KPI·구성원활동·월별조회·Top10·AI월별 1회 산출(JSON·export 공통). chat_logs 부재/오류는 마지막에 try로 격리(AI만 0/[], 나머지 보존).
+  - `GET /portal/api/report` — 통합 1응답(+subjects 드롭다운). 비구독 403, all+구독0 → _empty_report.
+  - `GET /portal/api/report/export?...&format=xlsx` — openpyxl 4시트(요약/월별조회/인기슬라이드/AI월별), 전 셀 `_xlsx_safe`. 비구독 403, xlsx 외 format 400, openpyxl 부재 graceful 500.
+  - 전 라우트 `@login_required`+`_portal_guard`(scope=`g.institution_id`, inst_id 쿼리/바디 미참조).
+- `templates/portal.html`: `#panel-report` 구현(P1·P2와 동일 standalone+interceptor.js, `esc()` XSS). 기간 세그먼트(1/3/6개월/전체)·과목 드롭다운(전체/특정)·KPI 그리드·CSS 막대차트(월별조회·AI·구성원활동)·Top10(클릭="열람"=`/viewer/<id>` 표준 게이트)·엑셀/인쇄. 탭 진입 1회 지연 로드. 빈 데이터 "데이터 없음".
+- `tests/test_portal_p3.py`: 신규 15건.
+- `CLAUDE.md`: §9 포털 P3 블록 추가(3탭 완성 표기), v3.13 헤더·이력.
 
 ## 4. 엔드포인트·게이트 요약
 | 라우트 | 메서드 | 게이트 | 과목 격리 |
 |--------|--------|--------|-----------|
-| /portal/api/plans | GET | login_required+_portal_guard | — (자기 기관 전 구독) |
-| /portal/api/plans/slides | GET | 동일 | _subscribed_subjects, 비구독 403 |
-| /portal/api/plans/slides/export | GET | 동일 | _subscribed_subjects, 비구독 403 |
+| /portal/api/report | GET | login_required+_portal_guard | all 또는 _subscribed_subjects, 비구독 403 |
+| /portal/api/report/export | GET | 동일 | 동일, format!=xlsx → 400 |
 
-- 모두 GET → CSRF 면제(쿠키 JWT 자동 전송), `<a download>`/`window.location` 다운로드 가능.
+- 모두 GET → CSRF 면제(쿠키 JWT 자동), `window.location` 다운로드.
 
 ## 5. 내부 QA 자체검증 (읽기라 §12 외부검증 대신 Claude Code 내부)
-- **(a) 스코프 격리**: 세 엔드포인트 `g.institution_id`만 사용, inst_id 쿼리 무시. `test_plans_no_inst_id_from_query`(SNU 줘도 CNU만) ✓
-- **(b) /viewer 게이트 우회 없음**: 포털 슬라이드 경로는 메타데이터만 반환·타일토큰 미발급. "열람"→/viewer→표준 게이트. `test_plan_slides_subscribed_returns_deployed_metadata`(SQL에 tile 없음) ✓
-- **(c) 내보내기 수식주입 방어**: xlsx·csv 모든 셀 `_xlsx_safe`. `test_export_xlsx/csv_formula_injection_defused`(`=…`→`'=…`) ✓
-- **(+) 전 slides 경로 과목 격리**: list·export 비구독 403. `test_plan_slides_non_subscribed_403`·`test_export_non_subscribed_403` ✓
-- **단일 진실**: subscriptions만·institutions deprecated 컬럼 미참조. `test_plans_scope_and_single_source`(`max_users`/`subscription_plan` 부재) ✓
+- **(a) 스코프 격리**: `g.institution_id`만, inst_id 쿼리 무시(학교 드롭다운 없음). `test_report_scope_uses_g_institution_not_query`(SNU 줘도 CNU만) ✓
+- **(b) 과목 격리**: 비구독 → 403(report·export). `test_report_non_subscribed_subject_403`·`test_export_non_subscribed_subject_403` ✓
+- **(c) 수식주입 방어**: XLSX 전 셀 `_xlsx_safe`(인기 슬라이드 제목 `=…`→`'=…`). `test_export_xlsx_formula_injection_defused` ✓
+- **(d) 집계 과목별 산출→롤업**: users·subscriptions 집계가 subject_code 스코프, max_seats=ANY([code]). `test_aggregation_subject_scoped`(institutions 옛 컬럼 미참조 동시 확인) ✓
+- **(+) 빈 데이터 graceful**: 0 나눗셈 가드(util/per_user=0), all+구독0 → _empty_report(본쿼리 미실행), chat_logs 오류 격리. `test_empty_data_graceful_zeros`·`test_all_subject_no_subscription_empty_report`·`test_chat_logs_failure_graceful` ✓
 
 ## 6. 테스트
-- `pytest 168 passed` (기존 152 회귀 0 + P2 16 신규).
-- openpyxl 로컬 미설치였으나 prod `requirements.txt`에 `openpyxl>=3.1.0` 포함 — xlsx 테스트는 `importorskip` 후 로컬 설치(3.1.5)로 실검증까지 완료.
+- `pytest 183 passed` (기존 168 회귀 0 + P3 15 신규).
+- openpyxl 로컬 설치(3.1.5)로 xlsx 실검증, prod `requirements.txt` 포함 — xlsx 테스트는 `importorskip` 병행(타 환경 portable).
 
 ## 7. 한계·미완 (숨기지 않음, §13)
-- **P3(이용 리포트) 미구현** — 다음 세션. P2+P3 묶은 외부검증(Codex/Gemini)은 P3 완료 후 판단.
-- **라이브 스모크 미실시** — 코드·pytest 레벨만. EC2 배포 후 실데이터 확인은 다음 차수(HST 134종 입고 약 2026-06-16 예정 후 학생 e2e와 함께).
-- **마이그레이션 없음** — 읽기 전용이라 스키마 변경 없음(.sql 없음). 기존 `subscriptions`/`subject_codes`/`slides`/`institution_rosters` 컬럼만 사용.
-- **`_sub_status`는 `_date.today()` 사용**(KST `_today_kst` 아님) — 기존 헬퍼 그대로 재사용(신규 계산식 금지 지침 준수). 좌석 카운트(`active_seat_count`)는 §0 단일판정식과 정확히 일치. 표시용 D-day의 경계 타임존 미세차는 §18 D10 잔여 추적 범위.
-- **콘텐츠 메타 노출 범위**: 구독 과목의 배포 슬라이드 ID·제목·염색을 포털 관리자에게 카탈로그로 노출(타일·토큰 없음). 그 기관이 구독한 과목에 한정 — §9 리포트 Top-N 슬라이드 노출과 동일 수준, 콘텐츠 접근 아님.
+- **라이브 스모크·실수치 미검증** — 코드·pytest 레벨만. CEO 지시대로 access_logs·chat_logs 실데이터가 거의 없어 현재 화면은 0/빈 차트가 정상. 실수치 검증은 HST 134종 입고·학생 e2e(약 2026-06-16 이후) 후로 미룸.
+- **외부검증 미실시** — P3는 읽기라 내부 QA만. **P2+P3 묶은 Codex/Gemini 외부검증 1회**는 다음 단계에서 판단(이번 세션 범위 밖).
+- **마이그레이션 없음** — 읽기 전용, 스키마 변경 없음(.sql 없음). 기존 `access_logs`/`chat_logs`(reports_special_schema, subject_code 포함)/`users`/`subscriptions`/`slides` 컬럼만 사용.
+- **기간 경계 타임존**: `_portal_report_range`는 `_date.today()` 사용(슈퍼관리자 `_reports_date_range`와 동일) — 리포트 기간은 §18 D10 '잔여 추적' 범위. 좌석/활성 판정은 §0 단일판정식과 일치.
+- **차트 폴리싱 보류**: 막대차트는 CSS div 기반, 구성원 활동은 도넛 대신 막대+퍼센트로 단순화. CEO 방침대로 디자인 폴리싱은 전체 기능 완성 후 일괄.
+- **per_user 정의**: '1인당 평균 조회수' = total_views/active_users(활성 기준). 슈퍼관리자 KPI의 per_user(ai/active)와 의미가 다르나 스펙(P3) 정의를 따름.
 
 ## 8. 배포
 - 커밋·push origin/main 완료. **EC2 git pull + systemctl restart는 CEO**(§12·§20). 마이그레이션 없음.

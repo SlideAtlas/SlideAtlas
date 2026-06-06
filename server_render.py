@@ -1545,6 +1545,315 @@ def portal_plan_slides_export():
                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 
+# ═════════════════════════════════════════════════════════════════════════════
+# 기관 포털 P3 — 이용 리포트 (읽기 전용, §9 멀티테넌시 / §0 단일 진실 / §15-7·§18 D9)
+#   포털 관리자가 자기 기관의 이용 집계(KPI·구성원활동·월별조회·Top10·AI)를 본다.
+#   · 슈퍼관리자 reports 엔드포인트 직접 호출 안 함 — SQL·집계 로직만 재사용한 포털 전용 래퍼.
+#   · scope 는 g.institution_id 강제(_portal_guard) — inst_id 를 body/쿼리로 안 받음(IDOR 불가, §9).
+#     슈퍼관리자엔 '학교 선택 드롭다운'이 있으나 포털엔 없다(자기 기관 고정).
+#   · 과목 격리: subject_code='all'(구독과목 합산) 또는 _subscribed_subjects 중 하나 — 비구독은 403(P2 동일).
+#   · 단일 진실(§0): 집계 원천 = access_logs·chat_logs·users·subscriptions 만(institutions 옛 컬럼 0건).
+#     '활성 사용자' = status='active'(P1·P2·active_seat_count 일치). util/per_user 0나눗셈 가드.
+#   · 과목축 분리→기관 롤업(§18 D9): active_users·max_seats·소진율은 (기관×과목) 산출, all 은 과목별 합(SUM).
+#     단일 사용자=단일 subject_code 라 합산 중복 없음. 과목축을 섞지 않는다.
+#   · 데이터 현실: access_logs·chat_logs 실데이터가 거의 없어 0/빈 차트가 정상 — graceful 표시.
+# ═════════════════════════════════════════════════════════════════════════════
+_PORTAL_REPORT_PERIODS = {'1m': 30, '3m': 90, '6m': 180}   # 'all' = 무필터(전체)
+
+
+def _portal_report_range(period):
+    """기간 코드 → (start_date, end_date) | (None, None). 날짜 필터일 뿐(집계식 신규 아님)."""
+    from datetime import timedelta
+    days = _PORTAL_REPORT_PERIODS.get(period)
+    if days is None:
+        return None, None        # 'all'/미지정 → 전체 기간
+    today = _date.today()
+    return today - timedelta(days=days), today
+
+
+def _empty_report():
+    """구독 과목이 하나도 없을 때(또는 빈 데이터) 반환할 0 구조 — ANY(빈배열) 회피."""
+    return {
+        'registered_users': 0, 'by_position': {},
+        'members': {'active': 0, 'unverified': 0, 'inactive': 0},
+        'active_users': 0, 'max_seats': 0, 'util_pct': 0,
+        'total_views': 0, 'ai_questions': 0, 'per_user_views': 0,
+        'monthly_views': [], 'top_slides': [], 'ai_monthly': [],
+    }
+
+
+def _portal_report_data(cur, inst_id, subject_code, subjects, start, end):
+    """이용 리포트 집계 1회 산출(JSON·export 공통). 모든 쿼리는 inst_id 로 스코프(§9).
+
+    과목 필터: 'all'→구독과목 ANY(codes), 특정과목→= code. 날짜: access=accessed_at, chat=created_at.
+    chat_logs 는 구버전 DB 부재 가능 → 마지막에 try 로 감싸 graceful 0/[] (다른 집계 보호).
+    """
+    if subject_code == 'all':
+        codes = list(subjects.keys())
+        u_filt, u_p = "AND u.subject_code = ANY(%s)", [codes]
+        s_filt, s_p = "AND s.subject_code = ANY(%s)", [codes]
+        c_filt, c_p = "AND cl.subject_code = ANY(%s)", [codes]
+        seat_codes = codes
+    else:
+        u_filt, u_p = "AND u.subject_code = %s", [subject_code]
+        s_filt, s_p = "AND s.subject_code = %s", [subject_code]
+        c_filt, c_p = "AND cl.subject_code = %s", [subject_code]
+        seat_codes = [subject_code]
+
+    al_date, al_dp, cl_date, cl_dp = "", [], "", []
+    if start and end:
+        al_date = "AND al.accessed_at BETWEEN %s AND %s + INTERVAL '1 day'"
+        al_dp = [start, end]
+        cl_date = "AND cl.created_at BETWEEN %s AND %s + INTERVAL '1 day'"
+        cl_dp = [start, end]
+
+    # 1) 등록 이용자(지위별) — status 무관, 미인증 포함, is_special 제외.
+    cur.execute(f"""
+        SELECT u.position, COUNT(*) FROM users u
+        WHERE u.institution_id = %s {u_filt}
+          AND COALESCE(u.is_special, FALSE) = FALSE
+        GROUP BY u.position
+    """, [inst_id] + u_p)
+    by_position, registered = {}, 0
+    for pos, cnt in cur.fetchall():
+        by_position[pos or '기타'] = cnt
+        registered += cnt
+
+    # 2) 구성원 활동(status 기반, CEO 확정): 활성=active / 미인증=pending / 비활성=그 외.
+    cur.execute(f"""
+        SELECT
+          COUNT(*) FILTER (WHERE COALESCE(u.status,'active')='active'),
+          COUNT(*) FILTER (WHERE u.status='pending_verification'),
+          COUNT(*) FILTER (WHERE COALESCE(u.status,'active') NOT IN ('active','pending_verification'))
+        FROM users u
+        WHERE u.institution_id = %s {u_filt}
+          AND COALESCE(u.is_special, FALSE) = FALSE
+    """, [inst_id] + u_p)
+    a, p, i = cur.fetchone()
+    members = {'active': a or 0, 'unverified': p or 0, 'inactive': i or 0}
+    active_users = members['active']
+
+    # 3) 최대 좌석(과목별 active 구독 합산 → 기관 롤업, §15-7). 소진율 0나눗셈 가드.
+    cur.execute("""
+        SELECT COALESCE(SUM(max_seats),0) FROM subscriptions
+        WHERE institution_id=%s AND subject_code = ANY(%s) AND status='active'
+    """, [inst_id, seat_codes])
+    max_seats = cur.fetchone()[0] or 0
+    util_pct = round(active_users / max_seats * 100) if max_seats > 0 else 0
+
+    # 4) 총 슬라이드 조회수(슬라이드 과목 기준).
+    cur.execute(f"""
+        SELECT COUNT(al.id) FROM access_logs al
+        JOIN users u ON al.user_id = u.id
+        JOIN slides s ON al.slide_id = s.id
+        WHERE u.institution_id = %s {s_filt} {al_date}
+    """, [inst_id] + s_p + al_dp)
+    total_views = cur.fetchone()[0] or 0
+    per_user_views = round(total_views / active_users, 1) if active_users > 0 else 0
+
+    # 5) 월별 슬라이드 조회수(최근 12개월).
+    cur.execute(f"""
+        SELECT TO_CHAR(DATE_TRUNC('month', al.accessed_at),'YYYY-MM'), COUNT(al.id)
+        FROM access_logs al
+        JOIN users u ON al.user_id = u.id
+        JOIN slides s ON al.slide_id = s.id
+        WHERE u.institution_id = %s {s_filt} {al_date}
+        GROUP BY 1 ORDER BY 1 LIMIT 12
+    """, [inst_id] + s_p + al_dp)
+    monthly_views = [{'label': r[0], 'count': r[1]} for r in cur.fetchall()]
+    mv_max = max((m['count'] for m in monthly_views), default=0)
+    for m in monthly_views:
+        m['pct'] = round(m['count'] / mv_max * 100) if mv_max else 0
+
+    # 6) 인기 슬라이드 Top 10.
+    cur.execute(f"""
+        SELECT s.id, s.title_ko, s.stain, COUNT(al.id) AS views
+        FROM access_logs al
+        JOIN users u ON al.user_id = u.id
+        JOIN slides s ON al.slide_id = s.id
+        WHERE u.institution_id = %s {s_filt} {al_date}
+        GROUP BY s.id, s.title_ko, s.stain
+        ORDER BY views DESC LIMIT 10
+    """, [inst_id] + s_p + al_dp)
+    top_slides = [{'id': r[0], 'title': r[1] or '', 'stain': r[2] or '', 'views': r[3]}
+                  for r in cur.fetchall()]
+    ts_max = top_slides[0]['views'] if top_slides else 0
+    for t in top_slides:
+        t['pct'] = round(t['views'] / ts_max * 100) if ts_max else 0
+
+    # 7) AI 튜터(호출수·월별) — chat_logs 부재/오류 시 graceful 0/[] (다른 집계 보호 위해 마지막).
+    ai_questions, ai_monthly = 0, []
+    try:
+        cur.execute(f"""
+            SELECT COUNT(cl.id) FROM chat_logs cl
+            WHERE cl.institution_id = %s {c_filt} {cl_date}
+        """, [inst_id] + c_p + cl_dp)
+        ai_questions = cur.fetchone()[0] or 0
+        cur.execute(f"""
+            SELECT TO_CHAR(DATE_TRUNC('month', cl.created_at),'YYYY-MM'), COUNT(cl.id)
+            FROM chat_logs cl
+            WHERE cl.institution_id = %s {c_filt} {cl_date}
+            GROUP BY 1 ORDER BY 1 LIMIT 12
+        """, [inst_id] + c_p + cl_dp)
+        ai_monthly = [{'label': r[0], 'count': r[1]} for r in cur.fetchall()]
+        am_max = max((x['count'] for x in ai_monthly), default=0)
+        for x in ai_monthly:
+            x['pct'] = round(x['count'] / am_max * 100) if am_max else 0
+    except Exception:
+        try:
+            cur.connection.rollback()
+        except Exception:
+            pass
+        ai_questions, ai_monthly = 0, []
+
+    return {
+        'registered_users': registered, 'by_position': by_position,
+        'members': members,
+        'active_users': active_users, 'max_seats': max_seats, 'util_pct': util_pct,
+        'total_views': total_views, 'ai_questions': ai_questions,
+        'per_user_views': per_user_views,
+        'monthly_views': monthly_views, 'top_slides': top_slides, 'ai_monthly': ai_monthly,
+    }
+
+
+@app.route('/portal/api/report', methods=['GET'])
+@login_required
+def portal_report():
+    inst_id, err = _portal_guard()
+    if err:
+        return err
+    period = (request.args.get('period') or '3m').strip()
+    subject_code = (request.args.get('subject_code') or 'all').strip()
+    conn = get_db_conn()
+    try:
+        with conn.cursor() as cur:
+            subjects = _subscribed_subjects(cur, inst_id)
+            if subject_code != 'all' and subject_code not in subjects:
+                # 비구독 과목 = 명시적 거부(빈 결과 아님, P2 동일 §9).
+                return jsonify({'success': False, 'error': 'SUBJECT_NOT_SUBSCRIBED',
+                                'message': '구독하지 않은 과목입니다'}), 403
+            start, end = _portal_report_range(period)
+            if subject_code == 'all' and not subjects:
+                data = _empty_report()
+            else:
+                data = _portal_report_data(cur, inst_id, subject_code, subjects, start, end)
+        return jsonify({'success': True, 'institution_id': inst_id,
+                        'period': period, 'subject_code': subject_code,
+                        'subjects': [{'code': c, 'name_ko': n} for c, n in subjects.items()],
+                        **data})
+    finally:
+        release_db_conn(conn)
+
+
+@app.route('/portal/api/report/export', methods=['GET'])
+@login_required
+def portal_report_export():
+    inst_id, err = _portal_guard()
+    if err:
+        return err
+    period = (request.args.get('period') or '3m').strip()
+    subject_code = (request.args.get('subject_code') or 'all').strip()
+    fmt = (request.args.get('format') or 'xlsx').strip().lower()
+    if fmt != 'xlsx':
+        # PDF 는 클라이언트 window.print() (서버 PDF 생성 금지 §13-1 한국어 폰트 한계).
+        return jsonify({'success': False, 'error': 'BAD_FORMAT',
+                        'message': 'xlsx만 지원합니다(PDF는 인쇄/PDF 저장 사용)'}), 400
+    conn = get_db_conn()
+    try:
+        with conn.cursor() as cur:
+            subjects = _subscribed_subjects(cur, inst_id)
+            if subject_code != 'all' and subject_code not in subjects:
+                return jsonify({'success': False, 'error': 'SUBJECT_NOT_SUBSCRIBED',
+                                'message': '구독하지 않은 과목입니다'}), 403
+            inst_name = inst_id
+            cur.execute("SELECT name_ko FROM institutions WHERE id = %s", (inst_id,))
+            row = cur.fetchone()
+            if row and row[0]:
+                inst_name = row[0]
+            start, end = _portal_report_range(period)
+            data = (_empty_report() if (subject_code == 'all' and not subjects)
+                    else _portal_report_data(cur, inst_id, subject_code, subjects, start, end))
+    finally:
+        release_db_conn(conn)
+
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill
+    except ImportError:
+        return jsonify({'success': False, 'error': 'NO_OPENPYXL', 'message': 'openpyxl 미설치'}), 500
+
+    import io
+    from flask import send_file as _sf
+    period_label = {'1m': '최근 1개월', '3m': '최근 3개월', '6m': '최근 6개월',
+                    'all': '전체 기간'}.get(period, period)
+    subj_label = '전체 과목' if subject_code == 'all' else f"{subjects.get(subject_code, subject_code)}({subject_code})"
+    HDR = Font(bold=True, color='FFFFFF')
+    FILL = PatternFill('solid', fgColor='1A2238')
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = '요약'
+    ws.append([_xlsx_safe(f'{inst_name} 이용 리포트')])
+    ws['A1'].font = Font(bold=True, size=13)
+    ws.append([_xlsx_safe(f'기간: {period_label}  /  과목: {subj_label}')])
+    ws.append([])
+    ws.append(['지표', '수치'])
+    for cell in ws[4]:
+        cell.font = HDR
+        cell.fill = FILL
+    pos = data['by_position']
+    pos_txt = ' · '.join(f'{k} {v}' for k, v in pos.items()) if pos else '—'
+    ws.append(['등록 이용자', data['registered_users']])
+    ws.append(['  지위별', _xlsx_safe(pos_txt)])
+    ws.append(['활성 사용자', data['active_users']])
+    ws.append(['최대 좌석', data['max_seats']])
+    ws.append(['좌석 소진율 (%)', data['util_pct']])
+    ws.append(['구성원 — 활성/미인증/비활성',
+               _xlsx_safe(f"{data['members']['active']} / {data['members']['unverified']} / {data['members']['inactive']}")])
+    ws.append(['슬라이드 총 조회수', data['total_views']])
+    ws.append(['1인당 평균 조회수', data['per_user_views']])
+    ws.append(['AI 튜터 호출수', data['ai_questions']])
+    ws.column_dimensions['A'].width = 26
+    ws.column_dimensions['B'].width = 22
+
+    ws2 = wb.create_sheet('월별 조회수')
+    ws2.append(['월', '조회수'])
+    for cell in ws2[1]:
+        cell.font = HDR
+        cell.fill = FILL
+    for m in data['monthly_views']:
+        ws2.append([_xlsx_safe(m['label']), m['count']])
+    ws2.column_dimensions['A'].width = 12
+    ws2.column_dimensions['B'].width = 12
+
+    ws3 = wb.create_sheet('인기 슬라이드')
+    ws3.append(['슬라이드 ID', '제목', '염색', '조회수'])
+    for cell in ws3[1]:
+        cell.font = HDR
+        cell.fill = FILL
+    for t in data['top_slides']:
+        ws3.append([_xlsx_safe(t['id']), _xlsx_safe(t['title']), _xlsx_safe(t['stain']), t['views']])
+    for col, wdt in zip('ABCD', (20, 32, 12, 10)):
+        ws3.column_dimensions[col].width = wdt
+
+    ws4 = wb.create_sheet('AI 월별 호출')
+    ws4.append(['월', '호출수'])
+    for cell in ws4[1]:
+        cell.font = HDR
+        cell.fill = FILL
+    for x in data['ai_monthly']:
+        ws4.append([_xlsx_safe(x['label']), x['count']])
+    ws4.column_dimensions['A'].width = 12
+    ws4.column_dimensions['B'].width = 12
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    fname = f'SlideAtlas_report_{inst_id}_{subject_code}_{period}.xlsx'
+    return _sf(buf, as_attachment=True, download_name=fname,
+               mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
 @app.route('/api/chat', methods=['POST'])
 @login_required
 def api_chat():

@@ -54,6 +54,28 @@
     .seatbar.warn > div { background:#c0392b; }
     .badge.exp { background:#fdecec; color:#c0392b; }
     .badge.up { background:#eaf1fb; color:#2a5298; }
+    .seg { display:inline-flex; border:1px solid #cdd2dc; border-radius:6px; overflow:hidden; }
+    .seg button { border:none; background:#fff; padding:7px 12px; font-size:13px; cursor:pointer;
+                  color:#5a6478; border-left:1px solid #e3e6ec; }
+    .seg button:first-child { border-left:none; }
+    .seg button.on { background:#1a2238; color:#fff; }
+    .kpi-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:18px; }
+    .kpi { background:#fff; border:1px solid #e3e6ec; border-radius:8px; padding:14px 16px; }
+    .kpi .k-label { font-size:12px; color:#7a8294; margin-bottom:6px; }
+    .kpi .k-val { font-size:24px; font-weight:700; }
+    .kpi .k-sub { margin-top:4px; }
+    .barrow { display:flex; align-items:center; gap:10px; margin:6px 0; font-size:13px; }
+    .barrow .blabel { width:120px; flex-shrink:0; color:#5a6478; }
+    .barrow .btrack { flex:1; height:14px; background:#eef0f4; border-radius:7px; overflow:hidden; }
+    .barrow .btrack > div { height:100%; background:#1a2238; }
+    .barrow .bval { width:64px; text-align:right; flex-shrink:0; color:#5a6478; }
+    .rankrow { display:flex; align-items:center; gap:10px; margin:5px 0; font-size:13px; }
+    .rankrow .rnum { width:22px; color:#7a8294; font-weight:700; }
+    .rankrow a { color:#1a2238; text-decoration:none; flex:1; min-width:0;
+                 overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .rankrow a:hover { text-decoration:underline; }
+    .rankrow .rv { color:#7a8294; flex-shrink:0; }
+    @media (max-width:720px) { .kpi-grid { grid-template-columns:repeat(2,1fr); } }
     #toast { position:fixed; bottom:20px; right:20px; background:#1a2238; color:#fff;
              padding:11px 16px; border-radius:8px; font-size:13px; opacity:0;
              transition:opacity .25s; pointer-events:none; max-width:360px; }
@@ -148,8 +170,55 @@
         </table>
       </div>
     </div>
+    <!-- ══ 이용 리포트 (P3) ══ -->
     <div class="panel" id="panel-report">
-      <div class="note">이용 리포트 화면은 준비 중입니다(P3).</div>
+      <div class="card">
+        <div class="row" style="justify-content:space-between">
+          <h2 style="margin:0">이용 리포트 <span class="muted">(집계는 과목별 산출 → 기관 합산)</span></h2>
+          <button class="act ghost" onclick="window.print()">PDF/인쇄</button>
+        </div>
+        <div class="row" style="margin-top:12px">
+          <select id="rep-subject" onchange="loadReport()">
+            <option value="all">전체 과목 (기관 합산)</option>
+          </select>
+          <span class="seg" id="rep-period">
+            <button data-p="1m">최근 1개월</button>
+            <button data-p="3m" class="on">최근 3개월</button>
+            <button data-p="6m">최근 6개월</button>
+            <button data-p="all">전체</button>
+          </span>
+          <button class="act ghost" id="rep-xlsx" style="margin-left:auto">엑셀(.xlsx)</button>
+        </div>
+      </div>
+
+      <div id="rep-body" style="display:none">
+        <div class="kpi-grid">
+          <div class="kpi"><div class="k-label">등록 이용자</div><div class="k-val" id="k-reg">—</div><div class="k-sub muted" id="k-reg-sub"></div></div>
+          <div class="kpi"><div class="k-label">슬라이드 총 조회수</div><div class="k-val" id="k-views">—</div><div class="k-sub muted">좌석 소진율 <span id="k-util">—</span></div></div>
+          <div class="kpi"><div class="k-label">AI 튜터 호출수</div><div class="k-val" id="k-ai">—</div><div class="k-sub muted">기간 누적</div></div>
+          <div class="kpi"><div class="k-label">1인당 평균 조회수</div><div class="k-val" id="k-avg">—</div><div class="k-sub muted">활성 <span id="k-active">0</span>명 기준</div></div>
+        </div>
+
+        <div class="card">
+          <h2>구성원 활동 현황 <span class="muted">(계정 상태 기준)</span></h2>
+          <div id="member-bars"></div>
+        </div>
+
+        <div class="card">
+          <h2>월별 슬라이드 조회수</h2>
+          <div id="views-chart"></div>
+        </div>
+
+        <div class="card">
+          <h2>인기 슬라이드 Top 10 <span class="muted">(클릭 시 열람)</span></h2>
+          <div id="rank-list"></div>
+        </div>
+
+        <div class="card">
+          <h2>AI 튜터 월별 호출</h2>
+          <div id="ai-chart"></div>
+        </div>
+      </div>
     </div>
   </main>
   <div id="toast"></div>
@@ -383,6 +452,113 @@
     document.querySelectorAll('.tabs button').forEach(function(b){
       b.addEventListener('click', function(){
         if (b.dataset.tab === 'plan' && !planLoaded) { planLoaded = true; loadPlans(); }
+      });
+    });
+
+    // ══ 이용 리포트 (P3) ══
+    var REP_PERIOD = '3m', repLoaded = false;
+
+    function nfmt(n) { return Number(n || 0).toLocaleString('ko-KR'); }
+
+    function fillReportSubjects() {
+      // SUBJECTS 는 loadRoster 가 채우므로 매번 재구성하되 현재 선택값을 보존한다.
+      var sel = document.getElementById('rep-subject');
+      var cur = sel.value || 'all';
+      var opts = SUBJECTS.map(function(s){
+        return '<option value="' + esc(s.code) + '">' + esc(s.name_ko) + '</option>';
+      }).join('');
+      sel.innerHTML = '<option value="all">전체 과목 (기관 합산)</option>' + opts;
+      sel.value = cur;
+      if (!sel.value) sel.value = 'all';
+    }
+
+    function barRows(items, labelKey, valSuffix) {
+      if (!items || !items.length) return '<div class="muted">데이터 없음</div>';
+      return items.map(function(it){
+        return '<div class="barrow"><span class="blabel">' + esc(it[labelKey]) + '</span>'
+          + '<span class="btrack"><div style="width:' + (it.pct || 0) + '%"></div></span>'
+          + '<span class="bval">' + nfmt(it.count) + (valSuffix || '') + '</span></div>';
+      }).join('');
+    }
+
+    async function loadReport() {
+      fillReportSubjects();
+      var subject = document.getElementById('rep-subject').value || 'all';
+      try {
+        var r = await fetch('/portal/api/report?period=' + encodeURIComponent(REP_PERIOD)
+                            + '&subject_code=' + encodeURIComponent(subject));
+        var d = await r.json();
+        if (!d.success) { toast(d.message || '리포트를 불러오지 못했습니다'); return; }
+        renderReport(d);
+      } catch (e) { toast('네트워크 오류'); }
+    }
+
+    function renderReport(d) {
+      document.getElementById('rep-body').style.display = 'block';
+      // KPI
+      document.getElementById('k-reg').textContent = nfmt(d.registered_users) + '명';
+      var bp = d.by_position || {};
+      var sub = Object.keys(bp).map(function(k){ return k + ' ' + bp[k]; }).join(' · ');
+      document.getElementById('k-reg-sub').textContent = sub || '—';
+      document.getElementById('k-views').textContent = nfmt(d.total_views) + '회';
+      document.getElementById('k-util').textContent = (d.util_pct || 0) + '%'
+        + ' (' + nfmt(d.active_users) + '/' + nfmt(d.max_seats) + ')';
+      document.getElementById('k-ai').textContent = nfmt(d.ai_questions) + '회';
+      document.getElementById('k-avg').textContent = (d.per_user_views || 0) + '회';
+      document.getElementById('k-active').textContent = nfmt(d.active_users);
+
+      // 구성원 활동(상태 기반)
+      var m = d.members || {active:0, unverified:0, inactive:0};
+      var mtot = (m.active + m.unverified + m.inactive) || 0;
+      function mpct(v){ return mtot ? Math.round(v / mtot * 100) : 0; }
+      var membersData = [
+        {blabel:'활성', count:m.active, pct:mpct(m.active)},
+        {blabel:'미인증', count:m.unverified, pct:mpct(m.unverified)},
+        {blabel:'비활성', count:m.inactive, pct:mpct(m.inactive)}
+      ];
+      document.getElementById('member-bars').innerHTML = mtot
+        ? membersData.map(function(it){
+            return '<div class="barrow"><span class="blabel">' + it.blabel + '</span>'
+              + '<span class="btrack"><div style="width:' + it.pct + '%"></div></span>'
+              + '<span class="bval">' + nfmt(it.count) + '명 · ' + it.pct + '%</span></div>';
+          }).join('')
+        : '<div class="muted">데이터 없음</div>';
+
+      // 월별 조회수 / AI 월별
+      document.getElementById('views-chart').innerHTML = barRows(d.monthly_views, 'label', '회');
+      document.getElementById('ai-chart').innerHTML = barRows(d.ai_monthly, 'label', '회');
+
+      // 인기 슬라이드 Top 10 — "열람"은 /viewer/<id> 표준 게이트
+      var ts = d.top_slides || [];
+      document.getElementById('rank-list').innerHTML = ts.length
+        ? ts.map(function(t, i){
+            var title = (t.title || t.id) + (t.stain ? ' · ' + t.stain : '');
+            return '<div class="rankrow"><span class="rnum">' + (i+1) + '</span>'
+              + '<a href="/viewer/' + encodeURIComponent(t.id) + '">' + esc(title) + '</a>'
+              + '<span class="rv">' + nfmt(t.views) + '회</span></div>';
+          }).join('')
+        : '<div class="muted">데이터 없음</div>';
+    }
+
+    document.getElementById('rep-period').addEventListener('click', function(e){
+      var b = e.target.closest('button[data-p]');
+      if (!b) return;
+      REP_PERIOD = b.dataset.p;
+      this.querySelectorAll('button').forEach(function(x){ x.classList.remove('on'); });
+      b.classList.add('on');
+      loadReport();
+    });
+
+    document.getElementById('rep-xlsx').addEventListener('click', function(){
+      var subject = document.getElementById('rep-subject').value || 'all';
+      window.location.href = '/portal/api/report/export?period=' + encodeURIComponent(REP_PERIOD)
+        + '&subject_code=' + encodeURIComponent(subject) + '&format=xlsx';
+    });
+
+    // 탭 전환 시 리포트 1회 지연 로드(SUBJECTS 는 loadRoster 에서 채워짐).
+    document.querySelectorAll('.tabs button').forEach(function(b){
+      b.addEventListener('click', function(){
+        if (b.dataset.tab === 'report' && !repLoaded) { repLoaded = true; loadReport(); }
       });
     });
 
