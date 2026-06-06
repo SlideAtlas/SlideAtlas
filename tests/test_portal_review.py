@@ -303,3 +303,38 @@ def test_top_slides_left_join_with_title_fallback(client):
     assert "group by al.slide_id" in top_sql
     assert "coalesce(s.title_ko, al.slide_id)" in top_sql
     assert "SA-HST-099" in [t["id"] for t in d["top_slides"]]   # 깨진 참조도 집계에 포함
+
+
+# ═════════════════════════════════════════════════════════════════
+# 3R 재검증 반영 — P3 소진율 분모 과목별 권위 row 정규화(겹치는 구독 §0 정합)
+# ═════════════════════════════════════════════════════════════════
+def test_seat_denominator_distinct_on_subject(client):
+    """분모(max_seats)는 과목별 권위 row 1개(DISTINCT ON + subscription_end DESC)로 정규화 — 중복 합산 금지."""
+    mock_conn, mock_cur = _mock_db()
+    _setup_report(mock_cur, window_rows=(("HST", 150),))   # DB(DISTINCT ON)가 과목당 1행 반환
+    _run(client, mock_conn, "/portal/api/report?subject_code=HST")
+    seat_sql = [_norm(c.args[0]) for c in mock_cur.execute.call_args_list
+                if "from subscriptions" in _norm(c.args[0]) and "access_open_date" in _norm(c.args[0])][0]
+    assert "distinct on (subject_code)" in seat_sql
+    assert "order by subject_code, subscription_end desc" in seat_sql
+
+
+def test_seat_denominator_reuses_auth_gate_ordering():
+    """P3 분모 정규화가 인증 게이트(active_window_subscription)와 같은 행 선택 규칙(subscription_end DESC) 재사용(§0)."""
+    import inspect
+    from auth.auth import active_window_subscription
+    gate = " ".join(inspect.getsource(active_window_subscription).split()).lower()
+    assert "order by subscription_end desc" in gate                 # 게이트: 과목당 DESC LIMIT 1
+    p3 = " ".join(inspect.getsource(sr._portal_report_data).split()).lower()
+    assert "distinct on (subject_code)" in p3                       # P3 분모: 과목별 권위 row
+    assert "order by subject_code, subscription_end desc" in p3     # 동일 DESC 규칙
+
+
+def test_seat_denominator_not_double_counted(client):
+    """권위 row 1개(150) → 분모 150(겹치는 구독이 300으로 중복 합산되지 않음). util=active/150."""
+    mock_conn, mock_cur = _mock_db()
+    _setup_report(mock_cur, window_rows=(("HST", 150),), members=(30, 0, 0))
+    resp = _run(client, mock_conn, "/portal/api/report?subject_code=HST")
+    d = resp.get_json()
+    assert d["max_seats"] == 150
+    assert d["util_pct"] == 20      # round(30/150*100) — 300 합산이면 10%로 왜곡됐을 것

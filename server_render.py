@@ -1637,14 +1637,19 @@ def _portal_report_data(cur, inst_id, subject_code, subjects, start, end):
     #    [Codex 2R#2] 분모(max_seats)뿐 아니라 분자(active_users)도 이 창에 속한 과목만 본다.
     #    만료 과목의 active 사용자는 _authenticate 가 이미 접근 차단한 유령 → 분자에서도 제외(현실 정합).
     #    today=_today_kst(1R). ★ active_seat_count(P1·P2 점유 카운트)는 불변 — 여긴 리포트 소진율 산출만.
-    #    SUM 을 SQL 이 아니라 Python 에서 — window_codes(분자 대상 과목)와 정원 합을 한 쿼리로 동시 산출.
+    #    [Codex 3R §0] 과목별 '권위 row 1개'로 정규화 — 같은 (기관,과목)에 접근창 겹치는 active 구독이
+    #    2개+이면 SUM 이 중복 합산(150+150=300)해 인증 게이트(active_window_subscription: 과목당
+    #    ORDER BY subscription_end DESC LIMIT 1, auth/auth.py)보다 분모가 커진다(§0 위반). 새 규칙을 만들지
+    #    않고 게이트와 동일한 선택을 DISTINCT ON 으로 따른다 → 분모의 과목집합·과목별 정원 = 분자(window_codes)
+    #    = 인증 게이트가 보는 권위 구독, 셋이 같은 행 집합. (동률 subscription_end 코너는 D22 추적 유지.)
     today = _today_kst()
     cur.execute("""
-        SELECT subject_code, max_seats FROM subscriptions
+        SELECT DISTINCT ON (subject_code) subject_code, max_seats FROM subscriptions
         WHERE institution_id=%s AND subject_code = ANY(%s) AND status='active'
           AND access_open_date <= %s AND subscription_end >= %s
+        ORDER BY subject_code, subscription_end DESC
     """, [inst_id, seat_codes, today, today])
-    window_rows = cur.fetchall()
+    window_rows = cur.fetchall()                              # 과목당 1행(권위 row = 인증 게이트와 동일 선택)
     window_codes = sorted({r[0] for r in window_rows})        # 접근창 열린 과목(분자=분모 정합)
     max_seats = sum(r[1] for r in window_rows if r[1] is not None)
 

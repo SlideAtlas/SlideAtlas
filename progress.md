@@ -544,3 +544,18 @@ python3 run_tests.py
   - §0 같은 집합(승격 시 P2·P3 동시 -1), 분자=분모 window_codes, IDOR 없음, LEFT JOIN 정합, 마이그레이션 멱등, is_special subject_code=NULL이 _slide_access_allowed에 무영향(직교)
   - 권고(차단 아님): SET NOT NULL 락은 트래픽 적은 시점 실행
 [2026-06-06][Lead Developer][대기] 좁은 Codex 재확인 1회 + CEO 승인 + 마이그레이션 2종 실행은 운영자 게이트
+
+---
+## 포털 P3 재검증 3R(Codex) 반영 — 2026-06-06 (v3.16)
+[2026-06-06][Lead Developer][완료] #1 [필수 §0] 소진율 분모 과목별 권위 row 정규화
+  - _portal_report_data 분모 쿼리: SELECT DISTINCT ON (subject_code) ... ORDER BY subject_code, subscription_end DESC
+  - 인증 게이트 active_window_subscription(과목당 subscription_end DESC LIMIT 1) 규칙 재사용 — 새 규칙 없음
+  - 겹치는 active 구독 중복 합산(150+150=300) 제거 → 분모=과목당 권위 row 1개(150). 분자(window_codes)=분모=인증 셋 같은 행집합
+  - ★ active_seat_count(P1·P2 점유 카운트) 불변. 이용량 KPI SQL 무변경(item2 문서만)
+[2026-06-06][Lead Developer][완료] #2 [문서] 이용량 KPI vs 소진율 과목 집합 비대칭 = 설계 의도 명문화(§15-7, 코드 불변)
+  - 이용량(조회수·AI)=구독 보유 과목 전체(만료 포함, 과거 기록 의미) / 소진율=현재 접근창 과목만(현재 정원 대비)
+[2026-06-06][test-runner][결과] pytest 205 passed (202 회귀 0 + 3R 신규 3)
+[2026-06-06][security-reviewer][결과] 내부 레드팀 6/6 OK·FAIL 0
+  - §0 권위 row 일치(분모 WHERE 술어+subscription_end DESC = 게이트), 분자=분모=인증 같은 집합, active_seat_count 불변, DISTINCT ON↔ORDER BY 정합, 멀티테넌시·바인딩·NULL·0가드·KPI SQL 유지
+  - 잔존(범위 밖): subscription_end 동률 시 양쪽 비결정적 1행 선택(D22 추적) — 이번 수정이 신규 불일치 안 만듦. 개선안: 양쪽에 공통 secondary sort(예: , id DESC) — 인증 게이트 변경 수반이라 별건
+[2026-06-06][Lead Developer][대기] 좁은 Codex 재확인 + CEO 승인 = 운영자 게이트. 신규 마이그레이션 없음(직전 D25·D25b 2종은 여전히 CEO 실행 대기)
