@@ -1421,7 +1421,7 @@ def portal_plans_list():
                 (inst_id,),
             )
             rows = cur.fetchall()
-            today = _date.today()
+            today = _today_kst()    # [item4] 대시보드 날짜도 게이트와 동일 KST 기준(§18 D10)
             plans = []
             for (sid, subj, plan, max_seats, start_term, term_count,
                  open_d, end_d, fee, pay, status, subj_name) in rows:
@@ -1559,6 +1559,13 @@ def portal_plan_slides_export():
 #   · 데이터 현실: access_logs·chat_logs 실데이터가 거의 없어 0/빈 차트가 정상 — graceful 표시.
 # ═════════════════════════════════════════════════════════════════════════════
 _PORTAL_REPORT_PERIODS = {'1m': 30, '3m': 90, '6m': 180}   # 'all' = 무필터(전체)
+_VALID_REPORT_PERIODS = {'1m', '3m', '6m', 'all'}          # [Codex Low item5] allowlist
+_DEFAULT_REPORT_PERIOD = '3m'
+
+
+def _norm_report_period(period):
+    """[item5] 허용값 외 period 는 조용히 '전체'로 확장되지 않게 기본값('3m')으로 고정."""
+    return period if period in _VALID_REPORT_PERIODS else _DEFAULT_REPORT_PERIOD
 
 
 def _portal_report_range(period):
@@ -1567,7 +1574,7 @@ def _portal_report_range(period):
     days = _PORTAL_REPORT_PERIODS.get(period)
     if days is None:
         return None, None        # 'all'/미지정 → 전체 기간
-    today = _date.today()
+    today = _today_kst()         # [item4] 리포트 기간 경계도 KST 기준(게이트와 일관, §18 D10)
     return today - timedelta(days=days), today
 
 
@@ -1588,23 +1595,29 @@ def _portal_report_data(cur, inst_id, subject_code, subjects, start, end):
     과목 필터: 'all'→구독과목 ANY(codes), 특정과목→= code. 날짜: access=accessed_at, chat=created_at.
     chat_logs 는 구버전 DB 부재 가능 → 마지막에 try 로 감싸 graceful 0/[] (다른 집계 보호).
     """
+    # [Codex High#1] 조회수 계열은 access_logs 스냅샷(al.institution_id·al.subject_code)으로 필터한다.
+    #   JOIN users/slides 의 '현재값'(u.institution_id·s.subject_code)으로 거르면 사용자 과목·기관 이동이나
+    #   슬라이드 과목 변경 시 과거 로그가 현재 기준으로 재분류돼 타 기관/타 과목 리포트에 섞인다(시간축 오염).
+    #   → al_filt = 로그 스냅샷 과목(조회수 집계용), u_filt = users 현재 상태(등록/활성 집계용, 정상),
+    #     c_filt = chat_logs 스냅샷(AI 호출, 이미 스냅샷 사용 중이라 정상).
     if subject_code == 'all':
         codes = list(subjects.keys())
         u_filt, u_p = "AND u.subject_code = ANY(%s)", [codes]
-        s_filt, s_p = "AND s.subject_code = ANY(%s)", [codes]
+        al_filt, al_p = "AND al.subject_code = ANY(%s)", [codes]
         c_filt, c_p = "AND cl.subject_code = ANY(%s)", [codes]
         seat_codes = codes
     else:
         u_filt, u_p = "AND u.subject_code = %s", [subject_code]
-        s_filt, s_p = "AND s.subject_code = %s", [subject_code]
+        al_filt, al_p = "AND al.subject_code = %s", [subject_code]
         c_filt, c_p = "AND cl.subject_code = %s", [subject_code]
         seat_codes = [subject_code]
 
+    # [Codex 타임존 item4] 날짜 경계는 KST(_today_kst) 기준 [start, end] — '>= start AND < end+1day'.
     al_date, al_dp, cl_date, cl_dp = "", [], "", []
     if start and end:
-        al_date = "AND al.accessed_at BETWEEN %s AND %s + INTERVAL '1 day'"
+        al_date = "AND al.accessed_at >= %s AND al.accessed_at < %s + INTERVAL '1 day'"
         al_dp = [start, end]
-        cl_date = "AND cl.created_at BETWEEN %s AND %s + INTERVAL '1 day'"
+        cl_date = "AND cl.created_at >= %s AND cl.created_at < %s + INTERVAL '1 day'"
         cl_dp = [start, end]
 
     # 1) 등록 이용자(지위별) — status 무관, 미인증 포함, is_special 제외.
@@ -1619,12 +1632,16 @@ def _portal_report_data(cur, inst_id, subject_code, subjects, start, end):
         by_position[pos or '기타'] = cnt
         registered += cnt
 
-    # 2) 구성원 활동(status 기반, CEO 확정): 활성=active / 미인증=pending / 비활성=그 외.
+    # 2) 구성원 활동(status 기반, CEO 확정): 활성=active / 미인증=pending / 비활성=그 외(NULL 포함).
+    #    [Codex Med#2 §0] 활성 = u.status='active' (NULL 제외) — active_seat_count(NULL 제외)와 정확히 일치.
+    #    COALESCE(status,'active') 로 NULL 을 활성 취급하면 P2 좌석(점유 N)과 P3 활성(N+1)이 모순(§0 위반).
+    #    NULL status 는 비활성(기타)으로 분류(IS DISTINCT FROM 으로 NULL 안전 비교).
     cur.execute(f"""
         SELECT
-          COUNT(*) FILTER (WHERE COALESCE(u.status,'active')='active'),
+          COUNT(*) FILTER (WHERE u.status='active'),
           COUNT(*) FILTER (WHERE u.status='pending_verification'),
-          COUNT(*) FILTER (WHERE COALESCE(u.status,'active') NOT IN ('active','pending_verification'))
+          COUNT(*) FILTER (WHERE u.status IS DISTINCT FROM 'active'
+                             AND u.status IS DISTINCT FROM 'pending_verification')
         FROM users u
         WHERE u.institution_id = %s {u_filt}
           AND COALESCE(u.is_special, FALSE) = FALSE
@@ -1634,47 +1651,47 @@ def _portal_report_data(cur, inst_id, subject_code, subjects, start, end):
     active_users = members['active']
 
     # 3) 최대 좌석(과목별 active 구독 합산 → 기관 롤업, §15-7). 소진율 0나눗셈 가드.
+    #    [Codex Med#3] 접근창 필터 추가 — status='active' 만 보면 미래 갱신 구독까지 합쳐(150+150=300)
+    #    소진율이 왜곡된다. active_window_subscription 과 동일한 창(access_open_date<=today<=subscription_end,
+    #    today=_today_kst)만 합산. ★ active_seat_count(사용자 점유 카운트)는 불변 — 여긴 정원(max_seats) 합산만.
+    today = _today_kst()
     cur.execute("""
         SELECT COALESCE(SUM(max_seats),0) FROM subscriptions
         WHERE institution_id=%s AND subject_code = ANY(%s) AND status='active'
-    """, [inst_id, seat_codes])
+          AND access_open_date <= %s AND subscription_end >= %s
+    """, [inst_id, seat_codes, today, today])
     max_seats = cur.fetchone()[0] or 0
     util_pct = round(active_users / max_seats * 100) if max_seats > 0 else 0
 
-    # 4) 총 슬라이드 조회수(슬라이드 과목 기준).
+    # 4) 총 슬라이드 조회수 — access_logs 스냅샷 기준(Codex High#1). users/slides 조인 불요.
     cur.execute(f"""
         SELECT COUNT(al.id) FROM access_logs al
-        JOIN users u ON al.user_id = u.id
-        JOIN slides s ON al.slide_id = s.id
-        WHERE u.institution_id = %s {s_filt} {al_date}
-    """, [inst_id] + s_p + al_dp)
+        WHERE al.institution_id = %s {al_filt} {al_date}
+    """, [inst_id] + al_p + al_dp)
     total_views = cur.fetchone()[0] or 0
     per_user_views = round(total_views / active_users, 1) if active_users > 0 else 0
 
-    # 5) 월별 슬라이드 조회수(최근 12개월).
+    # 5) 월별 슬라이드 조회수(최근 12개월) — 스냅샷 기준.
     cur.execute(f"""
         SELECT TO_CHAR(DATE_TRUNC('month', al.accessed_at),'YYYY-MM'), COUNT(al.id)
         FROM access_logs al
-        JOIN users u ON al.user_id = u.id
-        JOIN slides s ON al.slide_id = s.id
-        WHERE u.institution_id = %s {s_filt} {al_date}
+        WHERE al.institution_id = %s {al_filt} {al_date}
         GROUP BY 1 ORDER BY 1 LIMIT 12
-    """, [inst_id] + s_p + al_dp)
+    """, [inst_id] + al_p + al_dp)
     monthly_views = [{'label': r[0], 'count': r[1]} for r in cur.fetchall()]
     mv_max = max((m['count'] for m in monthly_views), default=0)
     for m in monthly_views:
         m['pct'] = round(m['count'] / mv_max * 100) if mv_max else 0
 
-    # 6) 인기 슬라이드 Top 10.
+    # 6) 인기 슬라이드 Top 10 — 스냅샷(al.subject_code)으로 필터, slides 조인은 제목·염색 표시용만(High#1).
     cur.execute(f"""
         SELECT s.id, s.title_ko, s.stain, COUNT(al.id) AS views
         FROM access_logs al
-        JOIN users u ON al.user_id = u.id
         JOIN slides s ON al.slide_id = s.id
-        WHERE u.institution_id = %s {s_filt} {al_date}
+        WHERE al.institution_id = %s {al_filt} {al_date}
         GROUP BY s.id, s.title_ko, s.stain
         ORDER BY views DESC LIMIT 10
-    """, [inst_id] + s_p + al_dp)
+    """, [inst_id] + al_p + al_dp)
     top_slides = [{'id': r[0], 'title': r[1] or '', 'stain': r[2] or '', 'views': r[3]}
                   for r in cur.fetchall()]
     ts_max = top_slides[0]['views'] if top_slides else 0
@@ -1722,7 +1739,7 @@ def portal_report():
     inst_id, err = _portal_guard()
     if err:
         return err
-    period = (request.args.get('period') or '3m').strip()
+    period = _norm_report_period((request.args.get('period') or _DEFAULT_REPORT_PERIOD).strip())
     subject_code = (request.args.get('subject_code') or 'all').strip()
     conn = get_db_conn()
     try:
@@ -1751,7 +1768,7 @@ def portal_report_export():
     inst_id, err = _portal_guard()
     if err:
         return err
-    period = (request.args.get('period') or '3m').strip()
+    period = _norm_report_period((request.args.get('period') or _DEFAULT_REPORT_PERIOD).strip())
     subject_code = (request.args.get('subject_code') or 'all').strip()
     fmt = (request.args.get('format') or 'xlsx').strip().lower()
     if fmt != 'xlsx':
@@ -2738,7 +2755,9 @@ def _sem_dates(term: str):
 
 
 def _sub_status(open_date, end_date):
-    today = _date.today()
+    # [item4] 구독 상태(대시보드 표시)도 게이트와 동일 KST 기준 — 자정~오전9시 하루 어긋남 제거(§18 D10).
+    #   P2 포털 구독카드·슈퍼관리자 기관목록이 공유하는 단일 상태 함수.
+    today = _today_kst()
     if end_date < today:
         return 'expired', '만료'
     if open_date <= today:
@@ -2915,7 +2934,7 @@ def api_institutions_list():
                     sub = dict(zip(scols, row))
                     open_d = sub['access_open_date']
                     end_d = sub['subscription_end']
-                    today = _date.today()
+                    today = _today_kst()    # [item4] _sub_status(KST)와 D-day 기준일 일치(어긋남 방지)
                     status_key, status_label = _sub_status(open_d, end_d)
                     if status_key == 'active':
                         dday = f'D-{(end_d - today).days} 만료'

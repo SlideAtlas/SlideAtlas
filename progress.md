@@ -507,3 +507,22 @@ python3 run_tests.py
   - 내부 QA 자체검증: (a)스코프격리(inst_id 쿼리 무시) (b)과목격리(비구독 403) (c)수식주입 방어 (d)집계 과목별→롤업 (+)빈데이터 graceful·chat_logs 격리 통과
   - openpyxl 로컬 설치(3.1.5)로 xlsx 경로 실검증, prod requirements 포함(importorskip 병행)
 [2026-06-06][Lead Developer][미실시] 라이브 스모크·실수치 검증은 134종 입고·학생 e2e 후. P2+P3 묶은 외부검증(Codex/Gemini) 1회는 다음 단계 판단
+
+---
+## 포털 P2+P3 외부검증(Codex+Gemini) 반영 수정 5건 — 2026-06-06 (v3.14)
+[2026-06-06][Lead Developer][완료] 1번 스키마 분기 = (A) 확정
+  - db/p05_logging_schema.sql·reports_special_schema.sql + _log_slide_view(server_render.py:351)에서
+    access_logs.institution_id(=g.institution_id)·subject_code(=슬라이드 과목)가 열람 시점 스냅샷으로 저장 확인 → Codex 지적 옳음
+[2026-06-06][Lead Developer][완료] #1 High: 조회수(total_views·monthly·top_slides) access_logs 스냅샷 기준 전환
+  - al.institution_id·al.subject_code 필터, total/monthly는 users/slides 조인 제거, top_slides slides 조인은 제목·염색 표시용만(필터는 al)
+[2026-06-06][Lead Developer][완료] #2 Med §0: P3 active=status='active'(NULL 제외)로 active_seat_count 일치
+  - COALESCE 제거, NULL은 IS DISTINCT FROM으로 비활성 분류. 마이그레이션 db/users_status_notnull_migration.sql(멱등·트랜잭션) 작성 — CEO 실행(D25)
+[2026-06-06][Lead Developer][완료] #3 Med: SUM(max_seats) 접근창 필터(access_open_date<=today<=subscription_end, today=_today_kst)
+  - 미래 갱신 구독 합산(150+150) 차단. active_seat_count 불변. P2 카드는 구독행 개별표시(SUM 없음)라 변경 불요
+[2026-06-06][Lead Developer][완료] #4 타임존: _date.today()→_today_kst() 4곳(_sub_status·portal_plans dday·_portal_report_range·관리자 dday) + half-open 경계(>=start AND <end+1day)
+[2026-06-06][Lead Developer][완료] #5 Low: period allowlist(_norm_report_period) — 미허용값→기본 '3m'(report·export 양쪽)
+[2026-06-06][Lead Developer][유지] #6 D21 추적: granted-OR 이원화 코드 변경 없음(별도 §12 세션)
+[2026-06-06][test-runner][결과] pytest 196 passed (183 회귀 0 + 신규 13건 test_portal_review.py)
+[2026-06-06][security-reviewer][결과] 내부 레드팀 5건 전부 PASS·FAIL 0·인접 신규결함 0 (§0·§8·§9·§15-7/D9·§16·D10 충족)
+  - 메모(범위 밖): p05_logging_schema RDS 적용 전제(§20 인프라), status NOT NULL 마이그레이션 ACCESS EXCLUSIVE 락→CEO 트래픽 적은 시점 실행
+[2026-06-06][Lead Developer][대기] 외부 Codex+Gemini 재검증 1라운드(인접 경로 한정) + CEO 승인은 운영자 게이트 — push 후 운영자 실행
