@@ -1,185 +1,58 @@
-# COMPLETION_REPORT — 기관 포털 P1(명단 관리) + D18 (2026-06-05 v3.8)
+# COMPLETION_REPORT — 기관 포털 P2(구독 플랜) (2026-06-06 v3.12)
 
-작업일: 2026-06-05 | 작업자: Lead Developer | 기준: CLAUDE.md §0·§3·§8·§9·§18 D17·D18
-상태: **구현·내부 QA(security-reviewer FAIL 0건)·pytest 127 passed 완료 — Codex/Gemini 외부검증 대기**
+작업일: 2026-06-06 | 작업자: Lead Developer | 기준: CLAUDE.md §0·§8·§9·§16·§17
+상태: **구현·내부 QA(a·b·c+과목격리) 통과·pytest 168 passed 완료 — 배포 push까지(EC2 pull·restart는 CEO)**
 
 ## 1. 범위
-- 포털 3탭 중 **P1(명단 관리)만** 구현. P2(구독 플랜)·P3(이용 리포트)는 다음 세션.
-- D18(가입 드롭다운 기준) 함께 처리.
+- 포털 3탭 중 **P2(구독 플랜)만** 구현. **읽기 전용**(표시 + 내보내기), 인증·좌석·쓰기 게이트 신설 없음.
+- P1(명단)·인증·좌석·register/verify/_authenticate 로직 **일절 미변경**.
+- P3(이용 리포트)는 다음 세션.
 
-## 2. CEO 확정 설계
-- __ADMIN__(기관 관리자) 행 = **포털에서 읽기 전용 표시**(추가/삭제는 슈퍼관리자 기관수정 관할).
-- 멤버 과목 입력 = **구독 보유 과목으로 제한**(구독행 존재 = subscribable, D18과 정합).
+## 2. CEO 확정 설계 (착수 전 1회 승인 + 보완 2개)
+- 슈퍼관리자 엔드포인트 직접 호출 금지 → **포털 전용 읽기 래퍼**(SQL·헬퍼만 재사용).
+- 단일 진실(§0): 구독 = `subscriptions`만, `institutions` 옛 컬럼 0건. 좌석 = `active_seat_count`, D-day = `_sub_status`/`_sem_dates` 재사용.
+- /viewer 게이트 우회 금지: 포털 "열람"도 표준 `_slide_access_allowed`.
+- **보완#1**: `/plans/slides/export` 에도 `_subscribed_subjects` allowlist 적용.
+- **보완#2**: 두 slides 경로 모두 비구독 `subject_code` → 빈 목록 아닌 **403**.
+- PDF는 서버 생성 금지(§13-1 한국어 폰트 한계) → 클라이언트 `window.print()`.
 
 ## 3. 변경 파일
-- `auth/auth.py`: `active_window_subscription`·`active_seat_count` **공통 헬퍼 추출**, register()/verify_email()가 재사용(§0 단일진실). 판정식 무변경(리팩터만), pytest 110 회귀 없음.
-- `server_render.py`:
-  - D18: `api_public_institutions()` → `SELECT DISTINCT i.id,i.name_ko FROM institutions i JOIN subscriptions s ON s.institution_id=i.id`. is_subscribable 의존 제거(코드 참조 0건). 상단 `import re` 추가.
-  - 포털 P1 API: `_portal_guard`(scope=g.institution_id, _is_institution_admin 재확인), `_subscribed_subjects`, `_sync_member`(4분기+seat_full+no_change), `_remove_member`(회수/보호), `_parse_xlsx_roster`/`_parse_csv_roster`, 라우트 GET/POST/DELETE `/portal/api/roster` + POST `/portal/api/roster/upload`(content-length 5MB 상한).
-- `templates/portal.html`: 명단 관리 탭 기능 구현(interceptor.js CSRF 자동주입, esc() XSS, 추가/업로드/삭제/필터, 관리자 읽기전용 표시).
-- `tests/test_portal_p1.py`: 신규 17건.
+- `server_render.py` (+약 175줄, 읽기 라우트만 추가):
+  - `_portal_subject_slides(cur, subject_code)` — 과목 배포(deployed) 슬라이드 메타(콘텐츠는 SA 단일채번이라 고객 기관 id 필터 안 함, 격리는 과목 구독).
+  - `GET /portal/api/plans` — 구독 카드(플랜·max_seats·시작학기·학기수·접근창·만료·구독료·status·D-day) + 좌석현황(`active_seat_count`, 소진율).
+  - `GET /portal/api/plans/slides?subject_code=` — 메타 목록, 비구독 403.
+  - `GET /portal/api/plans/slides/export?subject_code=&format=xlsx|csv` — `_xlsx_safe` 셀 방어, 비구독 403, bad format 400, openpyxl 부재 시 graceful 500.
+  - 전 라우트 `@login_required` + `_portal_guard`(scope=`g.institution_id`, inst_id 쿼리/바디 미참조).
+- `templates/portal.html`: `#panel-plan` 구현(P1과 동일 standalone+interceptor.js, `esc()` XSS). 플랜 카드(좌석바·소진율·상태뱃지·D-day·구독료), 카드 선택→슬라이드 테이블(검색·"열람"=`/viewer/<id>` 앵커), 내보내기 버튼(xlsx/csv=GET 다운로드, PDF=`window.print()`). 탭 진입 시 1회 지연 로드.
+- `tests/test_portal_p2.py`: 신규 16건.
+- `CLAUDE.md`: §9 포털 P2 블록 추가, v3.12 헤더·이력.
 
-## 4. sync 로직(§3 D17 해결) — 판정식은 register와 단일화(§0)
-| 분기 | 조건 | 동작 | outcome |
-|------|------|------|---------|
-| A | admin-only(subject NULL) + 접근창 열림 + 좌석 여유 | NULL→과목 전환(FOR UPDATE 좌석) + position 갱신 | synced |
-| A' | 위 + 좌석 소진 | skip(전환 안 함), 전체 롤백 아님 | seat_full |
-| B | 기존 user 이미 다른 과목 active | 보류(덮어쓰지 않음, D12) | multi_subject_hold |
-| C | 접근창 닫힘/구독 없음 | admin-only 유지(fail-closed) | pending_window |
-| D | 기존 user 없음 | roster 행만 추가(가입 시 채번) | added_no_user |
-| — | 이미 같은 과목 active | position만 동기화 | no_change |
-- **role 불변**: 어떤 sync UPDATE도 users.role 미변경(겸직 admin 보존).
-- **제거 회수**: active 과목 행 삭제 → subject_code·position NULL(좌석 반환+접근 차단), 계정·role 보존. __ADMIN__ 보호.
+## 4. 엔드포인트·게이트 요약
+| 라우트 | 메서드 | 게이트 | 과목 격리 |
+|--------|--------|--------|-----------|
+| /portal/api/plans | GET | login_required+_portal_guard | — (자기 기관 전 구독) |
+| /portal/api/plans/slides | GET | 동일 | _subscribed_subjects, 비구독 403 |
+| /portal/api/plans/slides/export | GET | 동일 | _subscribed_subjects, 비구독 403 |
 
-## 5. 테스트 — pytest 127 passed (기존 110 + 신규 17)
-sync 4분기·seat_full·no_change·seat_cache 직렬화·FOR UPDATE / 제거 4종(active reclaim·겸직 보존·__ADMIN__ 보호·not_found·roster-only) / D18 JOIN / scope 격리(인증필요·비관리자 403·자기기관 scope).
+- 모두 GET → CSRF 면제(쿠키 JWT 자동 전송), `<a download>`/`window.location` 다운로드 가능.
 
-## 6. 내부 보안 검증(security-reviewer) — FAIL 0건
-A~J 항목 PASS. 주의 2건: ① 업로드 크기 상한 → **content-length 5MB 가드 추가로 반영**(전역 MAX_CONTENT_LENGTH는 어드민 슬라이드 GB 업로드를 깨므로 국소 적용). ② granted-OR vs active-only 분기 차이 = 의도된 설계(온보딩 정합), 추적.
+## 5. 내부 QA 자체검증 (읽기라 §12 외부검증 대신 Claude Code 내부)
+- **(a) 스코프 격리**: 세 엔드포인트 `g.institution_id`만 사용, inst_id 쿼리 무시. `test_plans_no_inst_id_from_query`(SNU 줘도 CNU만) ✓
+- **(b) /viewer 게이트 우회 없음**: 포털 슬라이드 경로는 메타데이터만 반환·타일토큰 미발급. "열람"→/viewer→표준 게이트. `test_plan_slides_subscribed_returns_deployed_metadata`(SQL에 tile 없음) ✓
+- **(c) 내보내기 수식주입 방어**: xlsx·csv 모든 셀 `_xlsx_safe`. `test_export_xlsx/csv_formula_injection_defused`(`=…`→`'=…`) ✓
+- **(+) 전 slides 경로 과목 격리**: list·export 비구독 403. `test_plan_slides_non_subscribed_403`·`test_export_non_subscribed_403` ✓
+- **단일 진실**: subscriptions만·institutions deprecated 컬럼 미참조. `test_plans_scope_and_single_source`(`max_users`/`subscription_plan` 부재) ✓
 
-## 7. 미완/한계(숨기지 않음)
-- **다과목 동시 active(D12)**: 분기 B는 보류만 — 한 계정이 여러 과목을 동시에 여는 건 v1.5.
-- **DB는 mock 테스트**(로컬 RDS 접속 불가, §19) — 라이브 동작은 EC2 배포 후 스모크 필요.
-- **외부검증 미완**: §12 풀 거버넌스상 Codex 자유탐색+체크리스트 → Gemini → CEO 승인 남음.
-- is_subscribable 컬럼 DROP·suppliers 분리는 v1.5(D18 잔여).
+## 6. 테스트
+- `pytest 168 passed` (기존 152 회귀 0 + P2 16 신규).
+- openpyxl 로컬 미설치였으나 prod `requirements.txt`에 `openpyxl>=3.1.0` 포함 — xlsx 테스트는 `importorskip` 후 로컬 설치(3.1.5)로 실검증까지 완료.
+
+## 7. 한계·미완 (숨기지 않음, §13)
+- **P3(이용 리포트) 미구현** — 다음 세션. P2+P3 묶은 외부검증(Codex/Gemini)은 P3 완료 후 판단.
+- **라이브 스모크 미실시** — 코드·pytest 레벨만. EC2 배포 후 실데이터 확인은 다음 차수(HST 134종 입고 약 2026-06-16 예정 후 학생 e2e와 함께).
+- **마이그레이션 없음** — 읽기 전용이라 스키마 변경 없음(.sql 없음). 기존 `subscriptions`/`subject_codes`/`slides`/`institution_rosters` 컬럼만 사용.
+- **`_sub_status`는 `_date.today()` 사용**(KST `_today_kst` 아님) — 기존 헬퍼 그대로 재사용(신규 계산식 금지 지침 준수). 좌석 카운트(`active_seat_count`)는 §0 단일판정식과 정확히 일치. 표시용 D-day의 경계 타임존 미세차는 §18 D10 잔여 추적 범위.
+- **콘텐츠 메타 노출 범위**: 구독 과목의 배포 슬라이드 ID·제목·염색을 포털 관리자에게 카탈로그로 노출(타일·토큰 없음). 그 기관이 구독한 과목에 한정 — §9 리포트 Top-N 슬라이드 노출과 동일 수준, 콘텐츠 접근 아님.
 
 ## 8. 배포
-push까지. EC2 git pull + `systemctl restart slideatlas`는 CEO 직접(§12·§20). 마이그레이션 불요(D18 쿼리 교체, 신규 컬럼 없음).
-
----
-
-## 9. v3.9 — Codex+Gemini 외부검증 반영 (2026-06-05)
-외부검증(Codex 정밀추적 / Gemini 구조)에서 나온 확정 수정분. 전체 pytest **149 passed**, 내부 보안 재검증 완료.
-
-| # | 등급 | 항목 | 수정 |
-|---|------|------|------|
-| 1 | High | 타 기관 IDOR | `_sync_member`·`_remove_member`의 user 조회·UPDATE에 `AND institution_id=%s` 스코프. 타 기관 이메일은 분기 D(roster-only)로 취급 → 타 기관 user의 subject_code/position/좌석 변조 불가(§9). |
-| 2 | High | 포털 명단 저장형 XSS | (a) 템플릿 inline onclick 제거 → `data-*` + tbody 이벤트 위임. (b) 이메일 validator allowlist 강화(따옴표·괄호·세미콜론·제어문자 거부). 개별추가·업로드 공통. |
-| 3 | Med | seat_full인데 roster 커밋 | `_sync_member` 재구조화: user조회·좌석판정을 roster upsert **앞**으로. seat_full이면 roster 행·user 모두 불변. 판정식은 register/verify 공통 헬퍼 재사용(§0). |
-| 4 | Med | xlsx 압축폭탄/대용량 | ★xlsx 포맷 유지. `_read_capped`(실측 바이트 10MB, Content-Length 비신뢰), `_xlsx_zip_guard`(load 전 압축해제 50MB·entry 100 선검사), `_rows_from_iter`(스트리밍 행상한 2000 + scan backstop). |
-| 5 | Low | 겸직 is_verified 표시 | verify_email: 겸직(subject+__ADMIN__) 인증 시 두 행 모두 verified(`subject_code = ANY(list)`). ★WARN2 유지(타 과목 행 미인증). |
-
-**CLAUDE.md**: §18 D21(접근모델 이원화 granted-OR vs 구독, v1.5/별건)·D22(좌석 mutex tie, D14 Locust) 신설, D13 과목이동 2단계 명문화, v3.9 footer.
-
-**신규 테스트**: IDOR 스코프(sync/remove user 조회·UPDATE) / seat_full roster 미생성 / 이메일 regex allowlist / 파서 안전(_read_capped·_xlsx_zip_guard·_rows_from_iter). test_auth 겸직 is_verified 2건 기대값 갱신.
-
-**한계·미완(숨기지 않음)**:
-- DB는 여전히 mock 단위검증 — 라이브 IDOR/업로드 동작은 EC2 배포 후 스모크 필요.
-- D21(접근모델 이원화)·D22(좌석 tie)는 이번 범위 밖(추적만). D12 다과목은 v1.5.
-- **외부검증 재라운드 미완**: §12상 Codex+Gemini 재검증 1라운드 → CEO 승인 → 머지 남음.
-
-## 10. v3.9 2차 — Codex 2차 재검증 반영 (2026-06-05)
-| # | 등급 | 항목 | 수정 |
-|---|------|------|------|
-| 1 | Med | 좌석 캐시 §0 불일치 | `_sync_member` user 조회에 `status` 포함. 메모리 seat_cache 증분·seat_full 게이트를 **status='active' 전환에만** 적용 → `active_seat_count`(status='active')와 카운트 기준 정확히 일치. pending admin-only 승격은 좌석 미점유(verify_email FOR UPDATE가 활성화 시점 정원 집행). 버그: pending도 +1해 빈 좌석인데 후속 active 행이 seat_full 오거부되던 것 해소. |
-| 2 | Low | xlsx entry 상한 오탐 | `_PORTAL_XLSX_MAX_ENTRIES` 100→1000. 시트·이미지·로고·스타일 다수의 정상 업무 xlsx 오탐 방지. 핵심 방어(압축해제 50MB·실측 10MB·행 2000·셀 512)는 유지. |
-
-**Codex 2차 재확인 결과**: #1·#2(좌석 캐시 active 기준 일치 / pending 미점유·verify FOR UPDATE 권위) **OK**. #3은 register의 '접근창 subject 후보 산정'이 헬퍼 아닌 inline EXISTS라는 **문자 수준 §0 지적**(조건식은 동일, 쿼리 형태가 본질적으로 달라 헬퍼 직접 사용 불가) — register에 "술어 변경 시 헬퍼와 동기화" 주석 추가로 마킹(리팩터는 hot-path 위험 대비 효용 낮아 보류, 추적).
-
-**테스트**: sync 픽스처 status 3-튜플 갱신 + pending user 2건(좌석 미점유 / seat_full 미차단) + 정상 업무파일 통과 신규. 전체 **pytest 152 passed**.
-
-**다음**: CEO 승인 → 머지. (Gemini는 2건이 라인 이슈라 재검 불요 — 지시.)
-
----
-
-# COMPLETION_REPORT — 기관 관리자 등록 흐름 (admin roster onboarding)
-
-작업일: 2026-06-01 | 작업자: Lead Developer | 기준: CLAUDE.md §9·§18 D12·D15·§13-2
-브랜치: `feature/admin-roster-onboarding-2026-06` | 상태: 구현·내부테스트 완료, **Codex 외부검증 대기**
-
-## 0. 문제
-기관 추가 시 `admin_contacts`는 `institutions.admin_contacts`(JSONB)에만 저장되고
-명단 등록(`institution_rosters`)·포털 안내 메일이 **모두 끊겨 있었다**. 또한 기존 `/register`·
-`verify_email`·`login`·`_authenticate`는 학생 전용(과목 subject_code + 접근창 active 구독 + 좌석)
-게이트로, 관리자(role='admin')는 가입 자체가 거부되는 구조였다. `/portal` 라우트는 부재(D15).
-
-## 1. 설계 (CEO 확정)
-- roster는 (institution_id, subject_code, email) 독립 행. 관리자 행은 센티넬 `subject_code='__ADMIN__'`,
-  과목 행은 'HST' 등 → 같은 이메일이 충돌 없이 공존.
-- users 계정은 이메일당 1개. role(시스템 권한, 'admin'=포털 접근)과 position(교수/조교 등, 표시용)은 별개.
-- register/verify는 관리자 등록만 있어도 통과(과목·구독·좌석 게이트 면제). 슬라이드 접근 게이트는 불변
-  (과목 좌석 안에 있어야 열람) — admin의 `__ADMIN__`은 어떤 슬라이드 과목과도 불일치하므로 콘텐츠 비노출.
-
-## 2. 변경 내역
-| 파일 | 변경 |
-|---|---|
-| auth/decorators.py | `ADMIN_ROSTER_SUBJECT='__ADMIN__'`. `_authenticate` 구독 게이트에 `role=='admin'` 면제(elif) — 반환 shape 무변경 |
-| auth/auth.py | `register`(subject 누락 면제+센티넬 채번, 구독·좌석 skip)·`verify_email`(동일)·`login`(구독 게이트 admin 면제 elif) |
-| server_render.py | `_send_portal_invite_email`(Gmail SMTP stub, 실패 비치명)·`_upsert_admin_roster`·`api_institution_create`(roster+메일)·`api_institution_update`(추가INSERT / 제거는 __ADMIN__ 행만 DELETE=포털 권한만 회수)·`/portal`+`_is_institution_admin` |
-| templates/portal.html | 최소 포털(scope·3탭 placeholder). 본화면 D15 |
-| db/admin_roster_schema.sql (신규) | 멱등: position·subject_code 컬럼 + UNIQUE(institution_id,subject_code,email) 정식화(D12) |
-| db/auth_schema.sql | fresh install 정합(컬럼·UNIQUE) |
-| tests/test_auth.py | +7건 |
-
-## 3. 테스트 결과 (pytest 74/74 통과, 기존 65 + 신규 9)
-| 요구 | 테스트 | 결과 |
-|---|---|---|
-| ① 기관추가→roster(role='admin',position,'__ADMIN__') 등록 | test_institution_create_registers_admin_roster | ✅ |
-| ② 그 이메일 /register 허용 | test_register_admin_only_allowed / _skips_subscription_even_if_none | ✅ |
-| ③ 인증완료→users.role='admin' 생성 | test_verify_email_admin_creates_admin_role | ✅ |
-| ④ /portal 진입 가능 | test_portal_admin_access (+ 학생 차단 test_portal_non_admin_redirected) | ✅ |
-| (PUT) 제거=__ADMIN__ 행만 DELETE, suspend/계정삭제 금지 | test_institution_update_syncs_admin_roster | ✅ |
-| 겸직자 제거 → 포털 차단 | test_moonlighter_admin_removed_portal_blocked | ✅ |
-| 겸직자 제거 → 조직학 슬라이드 열람 유지(503) | test_moonlighter_admin_removed_slides_kept | ✅ |
-
-## 4. 마이그레이션 (EC2, CEO 승인 후 — §12, 코드 작업자 RDS 직접 변경 금지)
-`psql ... -f db/admin_roster_schema.sql` (멱등). 실행 전 신 UNIQUE 위반 0건 확인 쿼리 포함.
-
-## 5. 잔여·주의
-- **Codex 외부검증 대상**(인증 코어 4경로 수정). 통과 전 main 병합 금지(§12).
-- 겸직(admin+학생) 단일 이메일 동시 권한은 D12 UNIQUE 마이그레이션 전제.
-- **관리/열람 분리(CEO 확정)**: 관리자 제거 = __ADMIN__ roster 행만 DELETE(포털 권한 회수). users 계정·다른
-  과목 roster 행은 불가침 → 겸직자는 슬라이드 열람 유지, 순수 관리자는 포털 접근만 사라짐(계정 정지 아님).
-  (suspend·users 변경 코드 제거됨, 테스트로 회귀 방지.)
-- 메일은 Gmail SMTP stub(D2 SES 전환 시 `_send_portal_invite_email`만 교체).
-
----
-
-# COMPLETION_REPORT — D4 subject_code 채번 + 정원 max_seats 이전
-
-작업일: 2026-05-31 | 작업자: Lead Developer | 기준: CLAUDE.md v3.0 (§0·§6-2·§8·§13-2·§16·§18)
-
-## 1. 범위
-직전 세션에서 코드 레벨로 끝난 M2(구독 만료 subscriptions 이전)의 미완 2건을 닫아
-과목 축(subject_code)을 v1.0부터 정식 작동시킴.
-
-- **D4** users.subject_code 가입 시 채번 (§6-2, §18 D4)
-- **Q2** 좌석 정원 검사 subscriptions.max_seats 이전 (§13-2, §16)
-
-## 2. 변경 내역
-
-### D4 — commit 17bb18a
-| 항목 | 변경 | 파일 |
-|---|---|---|
-| (a) register | roster `SELECT subject_code … ORDER BY subject_code LIMIT 1`로 매칭 과목 캡처 → users INSERT에 subject_code 채번. EMAIL_EXISTS를 (기관×과목×이메일) 단위로 정렬. roster 과목 공란 시 ROSTER_SUBJECT_MISSING(403) | auth/auth.py |
-| (b) verify_email | user SELECT에 subject_code 추가, active 전환 전 공란이면 SUBJECT_CODE_MISSING(409)+로그 거부(임의 기본값 금지, §0-3) | auth/auth.py |
-| (c) 폴백 제거 | login()·_authenticate()의 `(u.subject_code IS NULL OR s.subject_code=u.subject_code)` → `s.subject_code=u.subject_code` 단일화. 만료 검사를 (institution_id, subject_code) 양축으로 정식화 | auth/auth.py, auth/decorators.py |
-
-### Q2 정원 — commit ddfab51
-| 항목 | 변경 | 파일 |
-|---|---|---|
-| register 사전검사 | `SELECT max_users FROM institutions` → `SELECT max_seats FROM subscriptions WHERE (institution_id, subject_code) AND status='active' ORDER BY subscription_end DESC LIMIT 1`. active 카운트도 과목별 | auth/auth.py |
-| verify 재검사(동시성) | institutions row 잠금 → 해당 (기관×과목) 구독 행 `FOR UPDATE` 잠금(과목 단위 직렬화) | auth/auth.py |
-
-### 문서 — commit c8c6143
-- CLAUDE.md §18 D4 → ✅ 완료 처리.
-
-## 3. 완료 기준 대조
-- ✅ pytest **45/45** (각 커밋 독립 green: D4-only 중간상태, 최종상태 모두 확인)
-- ✅ 인증·정원 경로 `institutions.max_users`/`subscription_end` **실참조 0건** (auth/ 잔존은 "참조 안 함" 설명 주석뿐)
-- ✅ `subject_code IS NULL` 폴백 **0건**
-- ✅ NULL subject_code user 0건 전제: 코드/시드 `INSERT INTO users` 0건 + §18 D4 'v1.0 사용자 0' → 폴백 제거 진행
-- ✅ §18 D4 "완료" 갱신
-
-## 4. 설계 판단·근거
-1. **다중 과목 이메일**: DB UNIQUE(institution_id, subject_code, email)·과목별 카운트로 *구조*는 과목별 독립 레코드를 지원. 단 register/verify/login은 이메일 키 단일 레코드 모델이라, 본 작업은 매칭된 과목 1건을 채번(v1.0 HST 단일에서 정확). 완전한 N-레코드/과목별 가입은 이메일 키 조회를 subject-aware로 바꾸는 별도 큰 변경 — 본 작업 범위 밖, 구조는 마련됨.
-2. **특별계정(server_render.py:2349)**: is_special·만료 면제·과목 축 우회 정책(§15-8)상 subject_code NULL이 설계상 정상. 폴백 제거는 `not is_special` 게이트로 영향 없음 → D4 대상 아님(변경하지 않음).
-3. **폴백 제거 안전 방향**: subscription_end가 NULL이면 만료 검사 skip(기존 동작). 즉 제거는 lock-out이 아니라 "과목 매칭 시에만 만료 enforce"로 *조이는* 방향 → v1.0 로그인 회귀 위험 없음.
-4. **구독 없음 → max_seats 미설정(허용)**: 기존 `max_users is None` 무제한 의미 보존(로스터 업로드가 구독 설정보다 앞설 수 있는 온보딩 보호).
-
-## 5. 미결·CEO 영역 (실행 안 함)
-- **라이브 DB의 NULL subject_code user 0건 최종 확인**: `SELECT COUNT(*) FROM users WHERE subject_code IS NULL`은 RDS(EC2 전용 VPC) 접속 필요 → §12·§19로 코드 작업자 금지. 코드/문서 근거상 0이나, 출시 전 CEO/EC2에서 1회 확인 권장.
-- **run_tests.py**: 베이스라인부터 Werkzeug 3.x `set_cookie()` 시그니처 변경으로 깨진 stale 복제 하네스(정식 스위트는 tests/test_auth.py). 본 작업과 무관, 미수정.
-
-## 6. 다음 단계
-Codex 외부 검증 → CEO 최종 승인.
+- 커밋·push origin/main 완료. **EC2 git pull + systemctl restart는 CEO**(§12·§20). 마이그레이션 없음.

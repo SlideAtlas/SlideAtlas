@@ -471,3 +471,20 @@ python3 run_tests.py
 [2026-06-06][Lead Developer][미실시] 다음 차수로 이월
   - pending+active 일괄 업로드(#1 회귀), xlsx 업로드 오탐, 학생(viewer) e2e
   - 학생 e2e는 HST 134종 입고(약 2026-06-16 예정) 후 실데이터로 수행
+
+---
+## 포털 P2 — 구독 플랜 (읽기 전용) — 2026-06-06 (v3.12)
+[2026-06-06][Lead Developer][완료] CEO 설계 1회 승인 + 보완 2개 반영 후 착수
+  - 보완#1: export 에도 _subscribed_subjects allowlist 적용 / 보완#2: 비구독 subject_code 는 빈 목록 아닌 403
+[2026-06-06][Lead Developer][완료] 백엔드 읽기 래퍼 3개(server_render.py, 슈퍼관리자 엔드포인트 직접 호출 없음)
+  - GET /portal/api/plans — subscriptions(기관×과목) 카드 + 좌석현황(active_seat_count, §0) + _sub_status/_sem_dates D-day 재사용
+  - GET /portal/api/plans/slides?subject_code= — 과목 배포(deployed) 슬라이드 메타(타일·토큰 없음), 비구독 403
+  - GET /portal/api/plans/slides/export?format=xlsx|csv — _xlsx_safe 수식주입 방어, 비구독 403, bad format 400
+  - 헬퍼 _portal_subject_slides 추가. 전 경로 _portal_guard(scope=g.institution_id, IDOR 불가)
+[2026-06-06][Lead Developer][완료] templates/portal.html #panel-plan 구현(P1과 동일 standalone+interceptor.js, esc XSS)
+  - 플랜 카드(좌석바·소진율·상태뱃지·D-day·구독료) → 선택 시 슬라이드 테이블(검색·열람링크) → 내보내기(xlsx/csv/print)
+  - "열람" = <a href=/viewer/<id>> → 표준 _slide_access_allowed 게이트 판정(우회 없음)
+[2026-06-06][test-runner][결과] pytest 168 passed (152 회귀 0 + P2 16 신규)
+  - 내부 QA 자체검증: (a)스코프격리 (b)/viewer 우회없음 (c)수식주입 방어 (+)전 slides 경로 과목격리(비구독 403) 통과
+  - openpyxl 로컬 미설치 → xlsx 테스트는 importorskip(prod requirements 포함). 로컬 설치 후 실검증 완료
+[2026-06-06][Lead Developer][미실시] P3(이용 리포트)·라이브 스모크는 다음 차수. P2+P3 묶은 외부검증은 P3 완료 후 판단

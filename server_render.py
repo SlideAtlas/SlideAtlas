@@ -1369,6 +1369,182 @@ def portal_roster_upload():
     return jsonify({'success': True, 'total': len(results), 'counts': counts, 'results': results})
 
 
+# ═════════════════════════════════════════════════════════════════════════════
+# 기관 포털 P2 — 구독 플랜 (읽기 전용, §9 멀티테넌시 / §0 단일 진실 / §16)
+#   포털 관리자가 자기 기관의 (기관×과목) 구독 카드·좌석 현황·과목별 배포 슬라이드 목록을 본다.
+#   · 슈퍼관리자 엔드포인트(api_institution_detail 등) 직접 호출 금지 — 포털 전용 읽기 래퍼.
+#   · scope 는 g.institution_id 강제(_portal_guard) — inst_id 를 body/쿼리로 받지 않음(IDOR 불가, §9).
+#   · 구독 데이터 원천은 subscriptions(기관×과목)만 — institutions 옛 구독 컬럼 참조 0건(§0).
+#   · 좌석 현황 = active_seat_count(status='active') — P1·리포트와 동일 단일판정식(§0, pending 미점유).
+#   · 접근창·만료·D-day = 기존 _sub_status/_sem_dates 재사용(새 계산식 금지).
+#   · 슬라이드 목록은 '배포 메타데이터 카탈로그'(타일 없음). "열람"은 /viewer/<id> → 표준
+#     _slide_access_allowed 게이트 판정(관리자도 과목 좌석 필요). 포털이 게이트를 우회하지 않는다.
+#   · 모든 slides 경로(목록·export)는 _subscribed_subjects allowlist 로 과목 격리 —
+#     비구독 subject_code 는 빈 목록이 아니라 403(명시적 거부, CEO 확정).
+# ═════════════════════════════════════════════════════════════════════════════
+def _portal_subject_slides(cur, subject_code):
+    """그 과목의 배포(deploy_status='deployed') 슬라이드 메타데이터(읽기).
+
+    콘텐츠는 institution_id='SA' 단일 채번이며 접근 격리는 과목 구독으로 한다(§6-1·§8) —
+    고객 기관 id 로 필터하지 않는다. 과목 격리(비구독 거부)는 호출 측 allowlist 검사에서.
+    """
+    cur.execute(
+        """SELECT id, title_ko, subject_code, stain
+             FROM slides
+            WHERE subject_code = %s AND deploy_status = 'deployed'
+            ORDER BY id""",
+        (subject_code,),
+    )
+    return [{'id': r[0], 'title_ko': r[1] or '', 'subject_code': r[2],
+             'stain': r[3] or ''} for r in cur.fetchall()]
+
+
+@app.route('/portal/api/plans', methods=['GET'])
+@login_required
+def portal_plans_list():
+    inst_id, err = _portal_guard()
+    if err:
+        return err
+    conn = get_db_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT s.id, s.subject_code, s.plan, s.max_seats,
+                          s.start_term, s.term_count,
+                          s.access_open_date, s.subscription_end,
+                          s.fee, s.payment_method, s.status,
+                          COALESCE(sc.name_ko, s.subject_code)
+                     FROM subscriptions s
+                     LEFT JOIN subject_codes sc ON sc.code = s.subject_code
+                    WHERE s.institution_id = %s
+                    ORDER BY s.subscription_end DESC""",
+                (inst_id,),
+            )
+            rows = cur.fetchall()
+            today = _date.today()
+            plans = []
+            for (sid, subj, plan, max_seats, start_term, term_count,
+                 open_d, end_d, fee, pay, status, subj_name) in rows:
+                # 좌석 현황: register/verify/P1 과 동일한 active_seat_count(§0 단일판정식).
+                used = active_seat_count(cur, inst_id, subj)
+                status_key, status_label = _sub_status(open_d, end_d)
+                if status_key == 'active':
+                    dday = f'D-{(end_d - today).days} 만료'
+                elif status_key in ('upcoming', 'pending'):
+                    dday = f'D-{(open_d - today).days} 오픈'
+                else:
+                    dday = f'D+{(today - end_d).days} 만료'
+                plans.append({
+                    'id': sid, 'subject_code': subj, 'subject_name': subj_name,
+                    'plan': plan, 'max_seats': max_seats, 'used_seats': used,
+                    'seat_rate': round(used / max_seats * 100) if max_seats else 0,
+                    'start_term': start_term, 'term_count': term_count,
+                    'access_open_date': str(open_d) if open_d else None,
+                    'subscription_end': str(end_d) if end_d else None,
+                    'fee': fee, 'payment_method': pay,
+                    'status': status, 'status_key': status_key,
+                    'status_label': status_label, 'dday': dday,
+                })
+        return jsonify({'success': True, 'institution_id': inst_id, 'plans': plans})
+    finally:
+        release_db_conn(conn)
+
+
+@app.route('/portal/api/plans/slides', methods=['GET'])
+@login_required
+def portal_plan_slides():
+    inst_id, err = _portal_guard()
+    if err:
+        return err
+    subject_code = (request.args.get('subject_code') or '').strip()
+    conn = get_db_conn()
+    try:
+        with conn.cursor() as cur:
+            subjects = _subscribed_subjects(cur, inst_id)
+            if subject_code not in subjects:
+                # 비구독 과목 = 명시적 거부(빈 목록 아님, CEO 확정). 과목 격리(§8·§9).
+                return jsonify({'success': False, 'error': 'SUBJECT_NOT_SUBSCRIBED',
+                                'message': '구독하지 않은 과목입니다'}), 403
+            slides = _portal_subject_slides(cur, subject_code)
+        return jsonify({'success': True, 'subject_code': subject_code,
+                        'subject_name': subjects.get(subject_code, subject_code),
+                        'slides': slides})
+    finally:
+        release_db_conn(conn)
+
+
+@app.route('/portal/api/plans/slides/export', methods=['GET'])
+@login_required
+def portal_plan_slides_export():
+    inst_id, err = _portal_guard()
+    if err:
+        return err
+    subject_code = (request.args.get('subject_code') or '').strip()
+    fmt = (request.args.get('format') or 'xlsx').strip().lower()
+    if fmt not in ('xlsx', 'csv'):
+        return jsonify({'success': False, 'error': 'BAD_FORMAT',
+                        'message': 'xlsx 또는 csv만 지원합니다'}), 400
+    conn = get_db_conn()
+    try:
+        with conn.cursor() as cur:
+            subjects = _subscribed_subjects(cur, inst_id)
+            if subject_code not in subjects:
+                # export 도 동일 allowlist — 비구독 과목 403(CEO 보완 #1·#2).
+                return jsonify({'success': False, 'error': 'SUBJECT_NOT_SUBSCRIBED',
+                                'message': '구독하지 않은 과목입니다'}), 403
+            subj_name = subjects.get(subject_code, subject_code)
+            slides = _portal_subject_slides(cur, subject_code)
+    finally:
+        release_db_conn(conn)
+
+    import io
+    from flask import send_file as _sf
+    headers = ['슬라이드 ID', '제목', '과목', '염색']
+    fname_base = f'SlideAtlas_{inst_id}_{subject_code}_slides'
+    # 수식 주입 방어: 모든 셀 _xlsx_safe 재사용(§8·§18 D9). CSV·XLSX 공통.
+    if fmt == 'csv':
+        import csv as _csv
+        buf = io.StringIO()
+        buf.write('﻿')   # BOM — Excel 한글 깨짐 방지
+        w = _csv.writer(buf)
+        w.writerow(headers)
+        for s in slides:
+            w.writerow([_xlsx_safe(s['id']), _xlsx_safe(s['title_ko']),
+                        _xlsx_safe(subject_code), _xlsx_safe(s['stain'])])
+        data = buf.getvalue().encode('utf-8')
+        return _sf(io.BytesIO(data), as_attachment=True,
+                   download_name=f'{fname_base}.csv', mimetype='text/csv; charset=utf-8')
+    # xlsx
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill
+    except ImportError:
+        return jsonify({'success': False, 'error': 'NO_OPENPYXL',
+                        'message': 'openpyxl 미설치'}), 500
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = '슬라이드 목록'
+    ws.append([_xlsx_safe(f'{subj_name} 슬라이드 목록')])
+    ws['A1'].font = Font(bold=True, size=13)
+    ws.append([])
+    ws.append(headers)
+    HDR = Font(bold=True, color='FFFFFF')
+    FILL = PatternFill('solid', fgColor='1A2238')
+    for cell in ws[3]:
+        cell.font = HDR
+        cell.fill = FILL
+    for s in slides:
+        ws.append([_xlsx_safe(s['id']), _xlsx_safe(s['title_ko']),
+                   _xlsx_safe(subject_code), _xlsx_safe(s['stain'])])
+    for col, wdt in zip('ABCD', (20, 36, 10, 16)):
+        ws.column_dimensions[col].width = wdt
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return _sf(buf, as_attachment=True, download_name=f'{fname_base}.xlsx',
+               mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
 @app.route('/api/chat', methods=['POST'])
 @login_required
 def api_chat():

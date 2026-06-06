@@ -41,6 +41,19 @@
     .badge.wait { background:#fdf0e3; color:#9a6418; }
     .del { background:none; border:none; color:#c0392b; cursor:pointer; font-size:13px; }
     .muted { color:#7a8294; font-size:12px; }
+    .plan-card { display:flex; align-items:center; gap:16px; border:1.5px solid #e3e6ec;
+                 border-radius:10px; padding:14px 18px; margin-bottom:10px; cursor:pointer; }
+    .plan-card:hover, .plan-card.on { border-color:#1a2238; background:#f7f9fc; }
+    .plan-card .pc-main { flex:1; min-width:0; }
+    .plan-card .pc-name { font-size:14px; font-weight:700; margin-bottom:3px; }
+    .plan-card .pc-meta { font-size:12px; color:#7a8294; }
+    .plan-card .pc-seat { text-align:right; font-size:13px; white-space:nowrap; }
+    .plan-card .pc-seat b { font-size:15px; }
+    .seatbar { height:6px; border-radius:3px; background:#eef0f4; margin-top:5px; overflow:hidden; }
+    .seatbar > div { height:100%; background:#1c7a4d; }
+    .seatbar.warn > div { background:#c0392b; }
+    .badge.exp { background:#fdecec; color:#c0392b; }
+    .badge.up { background:#eaf1fb; color:#2a5298; }
     #toast { position:fixed; bottom:20px; right:20px; background:#1a2238; color:#fff;
              padding:11px 16px; border-radius:8px; font-size:13px; opacity:0;
              transition:opacity .25s; pointer-events:none; max-width:360px; }
@@ -109,9 +122,31 @@
       </div>
     </div>
 
-    <!-- ══ 구독 플랜 / 이용 리포트 (다음 세션) ══ -->
+    <!-- ══ 구독 플랜 (P2) ══ -->
     <div class="panel" id="panel-plan">
-      <div class="note">구독 플랜 화면은 준비 중입니다(P2).</div>
+      <div class="card">
+        <h2>구독 플랜 <span class="muted">(기관 × 과목 단위 · 과목별 좌석·학기·만료 독립)</span></h2>
+        <div id="plan-list"></div>
+      </div>
+
+      <div class="card" id="slide-panel" style="display:none">
+        <div class="row" style="justify-content:space-between">
+          <h2 id="slide-panel-title" style="margin:0">슬라이드 목록</h2>
+          <div class="row">
+            <button class="act ghost" id="btn-xlsx">엑셀(.xlsx)</button>
+            <button class="act ghost" id="btn-csv">CSV</button>
+            <button class="act ghost" onclick="window.print()">PDF/인쇄</button>
+          </div>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <input id="slide-search" placeholder="슬라이드명·ID 검색" style="width:240px" oninput="renderPlanSlides()">
+          <span class="muted" id="slide-count" style="margin-left:auto"></span>
+        </div>
+        <table>
+          <thead><tr><th>ID</th><th>제목</th><th>과목</th><th>염색</th><th></th></tr></thead>
+          <tbody id="slide-tbody"></tbody>
+        </table>
+      </div>
     </div>
     <div class="panel" id="panel-report">
       <div class="note">이용 리포트 화면은 준비 중입니다(P3).</div>
@@ -244,6 +279,111 @@
       var btn = e.target.closest('button.del');
       if (!btn) return;
       delMember(btn.dataset.subject, btn.dataset.email);
+    });
+
+    // ══ 구독 플랜 (P2) ══
+    var PLANS = [], CUR_SUBJECT = null, CUR_SLIDES = [], planLoaded = false;
+
+    function won(v) {
+      if (v == null || v === '') return '—';
+      return Number(v).toLocaleString('ko-KR') + '원';
+    }
+    function statusBadge(key, label) {
+      var cls = key === 'active' ? 'ok' : (key === 'expired' ? 'exp'
+              : (key === 'upcoming' || key === 'pending' ? 'up' : 'wait'));
+      return '<span class="badge ' + cls + '">' + esc(label) + '</span>';
+    }
+
+    async function loadPlans() {
+      try {
+        var r = await fetch('/portal/api/plans');
+        var d = await r.json();
+        if (!d.success) { toast(d.message || '구독 정보를 불러오지 못했습니다'); return; }
+        PLANS = d.plans || [];
+        renderPlans();
+      } catch (e) { toast('네트워크 오류'); }
+    }
+
+    function renderPlans() {
+      var el = document.getElementById('plan-list');
+      if (!PLANS.length) {
+        el.innerHTML = '<div class="muted">등록된 구독이 없습니다. 구독 계약·플랜 설정은 SlideAtlas 운영팀에 문의하세요.</div>';
+        return;
+      }
+      el.innerHTML = PLANS.map(function(p, i) {
+        var used = p.used_seats, max = p.max_seats;
+        var rate = p.seat_rate, over = (max != null && used >= max);
+        var seatTxt = (max == null) ? (used + ' / 무제한')
+                    : ('<b>' + used + '</b> / ' + max + '석');
+        var bar = (max == null) ? '' :
+          '<div class="seatbar' + (over ? ' warn' : '') + '"><div style="width:' + Math.min(rate, 100) + '%"></div></div>';
+        var term = esc(p.start_term || '') + (p.term_count > 1 ? (' 외 ' + (p.term_count - 1) + '학기') : '');
+        var window_ = (p.access_open_date || '?') + ' ~ ' + (p.subscription_end || '?');
+        return '<div class="plan-card" data-idx="' + i + '">'
+          + '<div class="pc-main">'
+          +   '<div class="pc-name">' + esc(p.subject_name || p.subject_code) + ' · ' + esc(p.plan || '') + ' '
+          +     statusBadge(p.status_key, p.status_label) + '</div>'
+          +   '<div class="pc-meta">' + esc(term) + ' · 접근창 ' + esc(window_)
+          +     ' · ' + esc(p.dday || '') + ' · 구독료 ' + won(p.fee) + '</div>'
+          + '</div>'
+          + '<div class="pc-seat">' + seatTxt + (max != null ? (' · ' + rate + '%') : '') + bar + '</div>'
+          + '</div>';
+      }).join('');
+    }
+
+    document.getElementById('plan-list').addEventListener('click', function(e) {
+      var card = e.target.closest('.plan-card');
+      if (!card) return;
+      document.querySelectorAll('#plan-list .plan-card').forEach(function(c){ c.classList.remove('on'); });
+      card.classList.add('on');
+      var p = PLANS[+card.dataset.idx];
+      selectPlanSubject(p);
+    });
+
+    async function selectPlanSubject(p) {
+      CUR_SUBJECT = p.subject_code;
+      document.getElementById('slide-search').value = '';
+      try {
+        var r = await fetch('/portal/api/plans/slides?subject_code=' + encodeURIComponent(p.subject_code));
+        var d = await r.json();
+        if (!d.success) { toast(d.message || '슬라이드 목록을 불러오지 못했습니다'); return; }
+        CUR_SLIDES = d.slides || [];
+        document.getElementById('slide-panel-title').textContent =
+          (d.subject_name || p.subject_code) + ' · 배포 슬라이드';
+        document.getElementById('slide-panel').style.display = 'block';
+        renderPlanSlides();
+      } catch (e) { toast('네트워크 오류'); }
+    }
+
+    function renderPlanSlides() {
+      var q = (document.getElementById('slide-search').value || '').trim().toLowerCase();
+      var rows = CUR_SLIDES.filter(function(s) {
+        return !q || (s.id + ' ' + (s.title_ko || '')).toLowerCase().indexOf(q) >= 0;
+      });
+      document.getElementById('slide-count').textContent = rows.length + '종';
+      document.getElementById('slide-tbody').innerHTML = rows.map(function(s) {
+        // "열람"은 /viewer/<id> 이동 — 표준 _slide_access_allowed 게이트가 접근을 판정한다.
+        return '<tr><td>' + esc(s.id) + '</td><td>' + esc(s.title_ko) + '</td>'
+          + '<td>' + esc(s.subject_code) + '</td><td>' + esc(s.stain || '') + '</td>'
+          + '<td><a class="act ghost" style="text-decoration:none;padding:4px 10px" '
+          +   'href="/viewer/' + encodeURIComponent(s.id) + '">열람</a></td></tr>';
+      }).join('') || '<tr><td colspan="5" class="muted">배포된 슬라이드가 없습니다.</td></tr>';
+    }
+
+    function exportSlides(fmt) {
+      if (!CUR_SUBJECT) { toast('과목을 먼저 선택하세요'); return; }
+      // GET 다운로드: 쿠키 JWT 자동 전송, GET 은 CSRF 면제. 새 탭/네비게이션으로 첨부 다운로드.
+      window.location.href = '/portal/api/plans/slides/export?subject_code='
+        + encodeURIComponent(CUR_SUBJECT) + '&format=' + fmt;
+    }
+    document.getElementById('btn-xlsx').addEventListener('click', function(){ exportSlides('xlsx'); });
+    document.getElementById('btn-csv').addEventListener('click', function(){ exportSlides('csv'); });
+
+    // 탭 전환 시 플랜 1회 지연 로드.
+    document.querySelectorAll('.tabs button').forEach(function(b){
+      b.addEventListener('click', function(){
+        if (b.dataset.tab === 'plan' && !planLoaded) { planLoaded = true; loadPlans(); }
+      });
     });
 
     loadRoster();
