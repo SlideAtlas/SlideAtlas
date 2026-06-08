@@ -1946,9 +1946,14 @@ def _course_owner_or_assistant(cur, course_id):
     """course 편집 권한 판정(매 요청 DB 재조회). 반환 (ok, role_in_course, err).
 
     - course가 g.institution_id·g.subject_code 소속이 아니면 403(scope 격리·IDOR 차단, §9).
-    - 현재 user가 교수(courses.professor_user_id 일치) → ('professor'),
-      또는 위임 조교(course_assistants 행 존재) → ('assistant'). 아니면 403.
+    - 현재 user가 교수(courses.professor_user_id 일치 AND users.position=='교수') → ('professor'),
+      또는 위임 조교(course_assistants 행 존재 AND users.position=='조교') → ('assistant'). 아니면 403.
     err 는 (json_response, status) 튜플 또는 None.
+
+    ★ [외부검증 수정1] 현재 users.position 을 같은 cursor(같은 트랜잭션)에서 재조회해 교차 검증한다.
+      소유/위임 행이 남아 있어도 지위가 강등(교수→학생, 조교 박탈)되면 즉시 차단 — 인증 DB 권위 원칙(§8)과
+      정합. 상태변경 라우트는 autocommit=False 트랜잭션 안에서 이 판정 후 같은 conn 으로 UPDATE/DELETE 하므로
+      권한 SELECT~변경 사이 TOCTOU 창이 줄어든다(완전 제거는 아님 — 아래 보고 참조).
     """
     cur.execute(
         "SELECT institution_id, subject_code, professor_user_id FROM courses WHERE id = %s",
@@ -1963,11 +1968,15 @@ def _course_owner_or_assistant(cur, course_id):
     if c_inst != getattr(g, 'institution_id', None) or c_subj != getattr(g, 'subject_code', None):
         return False, None, (jsonify({'success': False, 'error': 'FORBIDDEN',
                                       'message': '권한이 없습니다'}), 403)
-    if prof_id is not None and str(prof_id) == str(g.user_id):
+    # 현재 지위 재조회(권위) — 강등 즉시 반영.
+    pos = _course_position(cur, g.user_id)
+    # 교수: professor_user_id 일치 + 현재 position=='교수'.
+    if prof_id is not None and str(prof_id) == str(g.user_id) and pos == '교수':
         return True, 'professor', None
+    # 조교: course_assistants 위임 행 존재 + 현재 position=='조교'.
     cur.execute("SELECT 1 FROM course_assistants WHERE course_id = %s AND user_id = %s",
                 (course_id, g.user_id))
-    if cur.fetchone():
+    if cur.fetchone() and pos == '조교':
         return True, 'assistant', None
     return False, None, (jsonify({'success': False, 'error': 'FORBIDDEN',
                                   'message': '권한이 없습니다'}), 403)
@@ -2533,7 +2542,10 @@ def api_courses_enrolled():
 @app.route('/api/courses/<int:cid>/enroll', methods=['POST'])
 @login_required
 def api_course_enroll(cid):
-    """수강 등록 — 자유(승인 불필요), 같은 기관·과목 수업만. 중복 등록은 멱등(§21-5)."""
+    """수강 등록 — 자유(승인 불필요), 같은 기관·과목 수업만. 중복 등록은 멱등(§21-5).
+
+    ★ [외부검증 수정4] 등록은 콘텐츠 소비 지위(position∈{학생,조교})만 허용. 교수·행정직원·position NULL 거부.
+      (해지 DELETE 는 기등록분 정리를 위해 position 무관 허용.)"""
     conn = get_db_conn()
     try:
         conn.autocommit = False
@@ -2541,6 +2553,11 @@ def api_course_enroll(cid):
             if _course_in_scope(cur, cid) is None:
                 conn.rollback()
                 return jsonify({'success': False, 'error': 'NOT_FOUND', 'message': '수업을 찾을 수 없습니다'}), 404
+            pos = _course_position(cur, g.user_id)
+            if pos not in ('학생', '조교'):
+                conn.rollback()
+                return jsonify({'success': False, 'error': 'ENROLL_NOT_ALLOWED',
+                                'message': '수강 등록은 학생·조교만 가능합니다'}), 403
             cur.execute(
                 """INSERT INTO course_enrollments (course_id, user_id) VALUES (%s, %s)
                    ON CONFLICT (course_id, user_id) DO NOTHING""",
@@ -2562,11 +2579,17 @@ def api_course_enroll(cid):
 @app.route('/api/courses/<int:cid>/enroll', methods=['DELETE'])
 @login_required
 def api_course_unenroll(cid):
-    """수강 해지 — 멱등(이미 미등록이어도 성공)."""
+    """수강 해지 — 멱등(이미 미등록이어도 성공).
+
+    ★ [외부검증 수정2] 삭제 전 cid 가 현재 scope(g.institution_id·g.subject_code) 소속인지 확인 —
+      cross-scope 수강행 삭제 차단(POST /enroll 와 동일하게 비소속이면 404). position 무관(기등록 정리)."""
     conn = get_db_conn()
     try:
         conn.autocommit = False
         with conn.cursor() as cur:
+            if _course_in_scope(cur, cid) is None:
+                conn.rollback()
+                return jsonify({'success': False, 'error': 'NOT_FOUND', 'message': '수업을 찾을 수 없습니다'}), 404
             cur.execute("DELETE FROM course_enrollments WHERE course_id = %s AND user_id = %s",
                         (cid, g.user_id))
         conn.commit()
@@ -2601,11 +2624,17 @@ def api_course_detail(cid):
                         (cid, g.user_id))
             enrolled = cur.fetchone() is not None
             # 주차 + 배치 슬라이드 메타(타일·토큰 발급 없음 — 카탈로그 메타만).
+            # ★ [외부검증 수정3] deploy_status='deployed' 슬라이드만 결과에 포함(_visible_slides 필터 원칙).
+            #   배치(course_week_slides)는 남아 있어도 qc_pending/rejected 등 미배포 슬라이드의 메타데이터는
+            #   노출하지 않는다. 미배포 배치는 cws LEFT JOIN 의 ON 절에서 제외해 '빈 주차'로 표시되게 한다
+            #   (주차 행 자체는 유지). 일반 사용자 경로는 무조건 deployed 만(편집자 미배포 표시는 3단계).
             cur.execute(
                 """SELECT cw.id, cw.week_number, cw.title, cw.empty_reason,
                           cws.id, cws.slide_id, cws.display_order, s.title_ko, s.stain
                      FROM course_weeks cw
-                     LEFT JOIN course_week_slides cws ON cws.course_week_id = cw.id
+                     LEFT JOIN course_week_slides cws
+                            ON cws.course_week_id = cw.id
+                           AND cws.slide_id IN (SELECT id FROM slides WHERE deploy_status = 'deployed')
                      LEFT JOIN slides s ON s.id = cws.slide_id
                     WHERE cw.course_id = %s
                     ORDER BY cw.week_number, cws.display_order, cws.id""",

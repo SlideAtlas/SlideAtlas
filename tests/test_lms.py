@@ -103,8 +103,8 @@ def test_professor_can_create_course(client):
 # ── ② 위임 없는 조교 편집 → 403 ───────────────────────────────────────────────
 
 def test_assistant_without_delegation_cannot_edit(client):
-    # course 소속 OK(CNU/HST)지만 교수(99)≠나(5), course_assistants 없음 → 403
-    conn, cur = _mk_conn(fetchone=[("CNU", "HST", 99), None])
+    # course 소속 OK(CNU/HST)지만 교수(99)≠나(5), 위임 없음(조교지만 미위임) → 403
+    conn, cur = _mk_conn(fetchone=[("CNU", "HST", 99), ("조교",), None])
     with _stack(conn, _fake_auth(uid="5", subject="HST")):
         resp = client.put("/api/courses/1", json={"title": "변경"})
     assert resp.status_code == 403
@@ -113,7 +113,7 @@ def test_assistant_without_delegation_cannot_edit(client):
 
 def test_delegated_assistant_can_edit(client):
     # 교수≠나(5)지만 course_assistants 위임 행 존재 → 편집 허용
-    conn, cur = _mk_conn(fetchone=[("CNU", "HST", 99), (1,)])
+    conn, cur = _mk_conn(fetchone=[("CNU", "HST", 99), ("조교",), (1,)])
     with _stack(conn, _fake_auth(uid="5", subject="HST")):
         resp = client.put("/api/courses/1", json={"title": "변경"})
     assert resp.status_code == 200
@@ -123,7 +123,7 @@ def test_delegated_assistant_can_edit(client):
 
 def test_place_slide_blocked_by_access_gate(client):
     # _course_owner_or_assistant: professor OK → 주차 존재 → _slide_access_allowed=False → 403
-    conn, cur = _mk_conn(fetchone=[("CNU", "HST", 5), (1,)])
+    conn, cur = _mk_conn(fetchone=[("CNU", "HST", 5), ("교수",), (1,)])
     extra = [patch("server_render._slide_access_allowed", return_value=(False, None))]
     with _stack(conn, _fake_auth(uid="5", subject="HST"), extra):
         resp = client.post("/api/courses/1/weeks/2/slides", json={"slide_id": "SA-PATH-001"})
@@ -132,7 +132,7 @@ def test_place_slide_blocked_by_access_gate(client):
 
 
 def test_place_slide_allowed_when_gate_passes(client):
-    conn, cur = _mk_conn(fetchone=[("CNU", "HST", 5), (1,), (10,)])
+    conn, cur = _mk_conn(fetchone=[("CNU", "HST", 5), ("교수",), (1,), (10,)])
     extra = [patch("server_render._slide_access_allowed", return_value=(True, None))]
     with _stack(conn, _fake_auth(uid="5", subject="HST"), extra):
         resp = client.post("/api/courses/1/weeks/2/slides",
@@ -161,7 +161,7 @@ def test_other_subject_course_idor(client):
 
 def test_delete_course_assistant_forbidden(client):
     # 위임 조교(편집은 가능)라도 수업 삭제는 교수만 → 403
-    conn, cur = _mk_conn(fetchone=[("CNU", "HST", 99), (1,)])   # assistant 위임 존재
+    conn, cur = _mk_conn(fetchone=[("CNU", "HST", 99), ("조교",), (1,)])   # assistant 위임 존재
     with _stack(conn, _fake_auth(uid="5", subject="HST")):
         resp = client.delete("/api/courses/1")
     assert resp.status_code == 403
@@ -171,9 +171,9 @@ def test_delete_course_assistant_forbidden(client):
 # ── ⑤ 자유 수강등록 + 중복 멱등 ───────────────────────────────────────────────
 
 def test_enroll_free_and_idempotent(client):
-    # _course_in_scope → 수업 존재(2회분), INSERT ON CONFLICT DO NOTHING
-    conn, cur = _mk_conn(fetchone=[(1, "조직학", "2026-fall", 5),
-                                   (1, "조직학", "2026-fall", 5)])
+    # 각 POST: _course_in_scope(수업 존재) → _course_position(학생) → INSERT ON CONFLICT DO NOTHING
+    conn, cur = _mk_conn(fetchone=[(1, "조직학", "2026-fall", 5), ("학생",),
+                                   (1, "조직학", "2026-fall", 5), ("학생",)])
     with _stack(conn, _fake_auth(role="viewer", subject="HST")):
         r1 = client.post("/api/courses/1/enroll")
         r2 = client.post("/api/courses/1/enroll")   # 중복 — 멱등
@@ -216,8 +216,8 @@ def test_detail_other_scope_404(client):
 # ── ⑦ roster/stats 권한 — 학생·타기관·미위임 조교 → 403 ──────────────────────
 
 def test_roster_forbidden_for_student(client):
-    # 교수(99)≠나(5), 위임 없음 → 403
-    conn, cur = _mk_conn(fetchone=[("CNU", "HST", 99), None])
+    # 교수(99)≠나(5), 위임 없음(지위 학생) → 403
+    conn, cur = _mk_conn(fetchone=[("CNU", "HST", 99), ("학생",), None])
     with _stack(conn, _fake_auth(uid="5", subject="HST")):
         resp = client.get("/api/courses/1/roster")
     assert resp.status_code == 403
@@ -231,7 +231,7 @@ def test_roster_forbidden_other_institution(client):
 
 
 def test_stats_forbidden_for_nondelegated_assistant(client):
-    conn, cur = _mk_conn(fetchone=[("CNU", "HST", 99), None])
+    conn, cur = _mk_conn(fetchone=[("CNU", "HST", 99), ("조교",), None])
     with _stack(conn, _fake_auth(uid="5", subject="HST")):
         resp = client.get("/api/courses/1/stats")
     assert resp.status_code == 403
@@ -240,7 +240,7 @@ def test_stats_forbidden_for_nondelegated_assistant(client):
 def test_roster_ok_for_professor_no_activity_fields(client):
     # 교수 본인 → 명단 반환. 활동/접속 컬럼이 응답에 없어야 함(이름·이메일·등록일만).
     conn, cur = _mk_conn(
-        fetchone=[("CNU", "HST", 5)],
+        fetchone=[("CNU", "HST", 5), ("교수",)],
         fetchall=[[("김민준", "mj@cnu.ac.kr", None), ("이서연", "sy@cnu.ac.kr", None)]],
     )
     with _stack(conn, _fake_auth(uid="5", subject="HST")):
@@ -256,7 +256,7 @@ def test_roster_ok_for_professor_no_activity_fields(client):
 
 def test_stats_anonymous_aggregate_only(client):
     # 교수 OK → enrolled=3 → (active=2,inactive=1) → (placed=4,viewed=2)
-    conn, cur = _mk_conn(fetchone=[("CNU", "HST", 5), (3,), (2, 1), (4, 2)])
+    conn, cur = _mk_conn(fetchone=[("CNU", "HST", 5), ("교수",), (3,), (2, 1), (4, 2)])
     with _stack(conn, _fake_auth(uid="5", subject="HST")):
         resp = client.get("/api/courses/1/stats")
     assert resp.status_code == 200
@@ -278,7 +278,7 @@ def test_stats_anonymous_aggregate_only(client):
 
 def test_stats_zero_guard(client):
     # 등록 0·배치 0 → 0나눗셈 가드(slide_view_rate=0)
-    conn, cur = _mk_conn(fetchone=[("CNU", "HST", 5), (0,), (0, 0), (0, 0)])
+    conn, cur = _mk_conn(fetchone=[("CNU", "HST", 5), ("교수",), (0,), (0, 0), (0, 0)])
     with _stack(conn, _fake_auth(uid="5", subject="HST")):
         resp = client.get("/api/courses/1/stats")
     assert resp.status_code == 200
@@ -289,7 +289,7 @@ def test_stats_zero_guard(client):
 
 def test_assign_assistant_validates_target_position(client):
     # 교수 OK → 대상이 같은 과목 조교가 아님(None) → 400 INVALID_TARGET
-    conn, cur = _mk_conn(fetchone=[("CNU", "HST", 5), None])
+    conn, cur = _mk_conn(fetchone=[("CNU", "HST", 5), ("교수",), None])
     with _stack(conn, _fake_auth(uid="5", subject="HST")):
         resp = client.post("/api/courses/1/assistants", json={"user_id": 42})
     assert resp.status_code == 400
@@ -298,7 +298,140 @@ def test_assign_assistant_validates_target_position(client):
 
 def test_assign_assistant_forbidden_for_assistant(client):
     # 위임 조교(편집 가능)라도 조교 지정은 교수만 → 403
-    conn, cur = _mk_conn(fetchone=[("CNU", "HST", 99), (1,)])
+    conn, cur = _mk_conn(fetchone=[("CNU", "HST", 99), ("조교",), (1,)])
     with _stack(conn, _fake_auth(uid="5", subject="HST")):
         resp = client.post("/api/courses/1/assistants", json={"user_id": 42})
     assert resp.status_code == 403
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 외부검증 반영 수정 — 회귀 방지
+#   1) 동적 position 재검증(강등 즉시 차단)  2) DELETE /enroll scope 재검증
+#   3) 상세 미배포 슬라이드 필터          4) enroll position 가드
+# ═════════════════════════════════════════════════════════════════════════════
+
+# ── 수정1: 교수→학생 강등 후 소유 행 남아도 편집/삭제/주차/배치 전부 403 ──────
+
+def test_demoted_professor_cannot_update(client):
+    # professor_user_id(5)는 그대로지만 현재 position='학생'(강등) → 403
+    conn, cur = _mk_conn(fetchone=[("CNU", "HST", 5), ("학생",), None])  # courses·position·assistant없음
+    with _stack(conn, _fake_auth(uid="5", subject="HST")):
+        resp = client.put("/api/courses/1", json={"title": "변경"})
+    assert resp.status_code == 403
+    assert resp.get_json()["error"] == "FORBIDDEN"
+
+
+def test_demoted_professor_cannot_delete(client):
+    conn, cur = _mk_conn(fetchone=[("CNU", "HST", 5), ("학생",), None])
+    with _stack(conn, _fake_auth(uid="5", subject="HST")):
+        resp = client.delete("/api/courses/1")
+    assert resp.status_code == 403
+
+
+def test_demoted_professor_cannot_add_week(client):
+    conn, cur = _mk_conn(fetchone=[("CNU", "HST", 5), ("학생",), None])
+    with _stack(conn, _fake_auth(uid="5", subject="HST")):
+        resp = client.post("/api/courses/1/weeks", json={"week_number": 1, "title": "1주차"})
+    assert resp.status_code == 403
+
+
+def test_demoted_professor_cannot_place_slide(client):
+    # 강등이면 게이트(_slide_access_allowed) 도달 전에 권한에서 차단 → 403, slide gate 미호출
+    conn, cur = _mk_conn(fetchone=[("CNU", "HST", 5), ("학생",), None])
+    called = {"gate": False}
+
+    def _gate(_sid):
+        called["gate"] = True
+        return (True, None)
+
+    extra = [patch("server_render._slide_access_allowed", side_effect=_gate)]
+    with _stack(conn, _fake_auth(uid="5", subject="HST"), extra):
+        resp = client.post("/api/courses/1/weeks/2/slides", json={"slide_id": "SA-HST-001"})
+    assert resp.status_code == 403
+    assert called["gate"] is False   # 권한 실패가 게이트보다 먼저
+
+
+def test_stripped_assistant_cannot_edit(client):
+    # course_assistants 위임 행은 남아 있으나(=(1,)) 현재 position='학생'(조교 박탈) → 403
+    conn, cur = _mk_conn(fetchone=[("CNU", "HST", 99), ("학생",), (1,)])
+    with _stack(conn, _fake_auth(uid="5", subject="HST")):
+        resp = client.put("/api/courses/1", json={"title": "변경"})
+    assert resp.status_code == 403
+    assert resp.get_json()["error"] == "FORBIDDEN"
+
+
+# ── 수정2: DELETE /enroll cross-scope cid 차단 ───────────────────────────────
+
+def test_unenroll_cross_scope_blocked(client):
+    conn, cur = _mk_conn(fetchone=[None])   # _course_in_scope → 없음(타기관/타과목)
+    with _stack(conn, _fake_auth(role="viewer", subject="HST")):
+        resp = client.delete("/api/courses/99/enroll")
+    assert resp.status_code == 404
+    # scope 미통과 시 DELETE 문이 실행되지 않았는지(삭제 차단)
+    deletes = [c for c in cur.execute.call_args_list
+               if "delete from course_enrollments" in " ".join(str(c.args[0]).split()).lower()]
+    assert deletes == []
+
+
+def test_unenroll_in_scope_ok(client):
+    conn, cur = _mk_conn(fetchone=[(1, "조직학", "2026-fall", 5)])   # scope OK
+    with _stack(conn, _fake_auth(role="viewer", subject="HST")):
+        resp = client.delete("/api/courses/1/enroll")
+    assert resp.status_code == 200
+    deletes = [c for c in cur.execute.call_args_list
+               if "delete from course_enrollments" in " ".join(str(c.args[0]).split()).lower()]
+    assert len(deletes) == 1   # 해지는 position 무관 허용
+
+
+# ── 수정3: 상세 응답에 미배포(qc_pending·rejected) 슬라이드 메타 미포함 ───────
+
+def test_detail_excludes_undeployed_slides(client):
+    # SQL ON 절이 deploy_status='deployed' 만 조인하므로, 미배포 슬라이드는 행 자체가 안 옴.
+    #   여기선 1주차=배포 슬라이드 1개, 2주차=미배포만 배치돼 빈 주차로 내려오는 상황을 모킹.
+    rows = [
+        # (cw.id, week_number, title, empty_reason, cws.id, slide_id, display_order, title_ko, stain)
+        (10, 1, "1주차", None, 100, "SA-HST-001", 0, "위 점막", "H&E"),   # 배포 슬라이드
+        (20, 2, "2주차", None, None, None, None, None, None),             # 미배포만 → 빈 주차
+    ]
+    conn, cur = _mk_conn(fetchone=[(1, "조직학", "2026-fall", 5), None], fetchall=[rows])
+    with _stack(conn, _fake_auth(role="viewer", subject="HST")):
+        resp = client.get("/api/courses/1")
+    assert resp.status_code == 200
+    weeks = resp.get_json()["course"]["weeks"]
+    assert len(weeks) == 2
+    wk1 = next(w for w in weeks if w["week_number"] == 1)
+    wk2 = next(w for w in weeks if w["week_number"] == 2)
+    assert [s["slide_id"] for s in wk1["slides"]] == ["SA-HST-001"]
+    assert wk2["slides"] == []   # 미배포 배치는 노출 안 됨
+    # 상세 SQL 이 deploy_status='deployed' 필터를 포함하는지(원천 차단 확인)
+    sels = [" ".join(str(c.args[0]).split()).lower() for c in cur.execute.call_args_list]
+    assert any("course_weeks" in s and "deploy_status = 'deployed'" in s for s in sels)
+    # 응답 어디에도 qc_pending/rejected 슬라이드 ID 가 없음
+    raw = resp.get_data(as_text=True)
+    assert "SA-HST-001" in raw   # 배포본만 노출
+
+
+# ── 수정4: enroll position 가드(학생·조교만, 교수·행정직원 거부) ──────────────
+
+@pytest.mark.parametrize("pos", ["학생", "조교"])
+def test_enroll_allowed_for_student_and_assistant(client, pos):
+    conn, cur = _mk_conn(fetchone=[(1, "조직학", "2026-fall", 5), (pos,)])
+    with _stack(conn, _fake_auth(role="viewer", subject="HST")):
+        resp = client.post("/api/courses/1/enroll")
+    assert resp.status_code == 200
+    inserts = [c for c in cur.execute.call_args_list
+               if "insert into course_enrollments" in " ".join(str(c.args[0]).split()).lower()]
+    assert len(inserts) == 1
+
+
+@pytest.mark.parametrize("pos", ["교수", None])
+def test_enroll_denied_for_professor_and_staff(client, pos):
+    # 교수·행정직원(position NULL=admin-only/행정직원) → ENROLL_NOT_ALLOWED, INSERT 미실행
+    conn, cur = _mk_conn(fetchone=[(1, "조직학", "2026-fall", 5), (pos,)])
+    with _stack(conn, _fake_auth(role="viewer", subject="HST")):
+        resp = client.post("/api/courses/1/enroll")
+    assert resp.status_code == 403
+    assert resp.get_json()["error"] == "ENROLL_NOT_ALLOWED"
+    inserts = [c for c in cur.execute.call_args_list
+               if "insert into course_enrollments" in " ".join(str(c.args[0]).split()).lower()]
+    assert inserts == []

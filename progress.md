@@ -589,3 +589,18 @@ python3 run_tests.py
   - 라우트 17개: courses(POST)·mine·PUT·DELETE·weeks(POST)·weeks/DELETE·weeks/slides(POST)·slides/DELETE·assistants(POST)·assistants/DELETE·roster·stats·available·enrolled·enroll(POST/DELETE)·detail(GET)
 [2026-06-08][Lead Developer][불변] _slide_access_allowed·_visible_slides·auth 무수정(git diff 확인, 순수 additive 1 hunk)
 [2026-06-08][test-runner][결과] tests/test_lms.py 22 passed(①~⑧ 전부) + 전수 pytest 227 passed(205→227, 회귀 0)
+
+---
+## LMS 2단계 외부검증 반영 수정 — 2026-06-08
+[2026-06-08][Lead Developer][완료] 수정1 동적 position 재검증 (_course_owner_or_assistant, server_render.py:1945)
+  - owner 통과조건에 현재 position=='교수', assistant 통과조건에 position=='조교' 추가(_course_position 재사용, 같은 cursor/트랜잭션)
+  - 교수→학생 강등·조교 박탈 시 소유/위임 행 남아도 즉시 403(인증 DB 권위 §8 정합)
+[2026-06-08][Lead Developer][완료] 수정2 DELETE /enroll scope 재검증 (api_course_unenroll, server_render.py:2578)
+  - 삭제 전 _course_in_scope(cur,cid)로 cid가 g.inst·g.subject 소속인지 확인, 비소속 404(cross-scope 수강행 삭제 차단). position 무관
+[2026-06-08][Lead Developer][완료] 수정3 상세 미배포 슬라이드 필터 (api_course_detail, server_render.py:2627)
+  - 주차 슬라이드 LEFT JOIN ON 절에 cws.slide_id IN (SELECT id FROM slides WHERE deploy_status='deployed') — 미배포(qc_pending/rejected) 배치는 빈 주차로, 메타 미노출(_visible_slides 필터 원칙)
+[2026-06-08][Lead Developer][완료] 수정4 enroll position 가드 (api_course_enroll, server_render.py:2549)
+  - position∈{학생,조교}만 등록 허용, 교수·행정직원·NULL → 403 ENROLL_NOT_ALLOWED. 해지(DELETE)는 position 무관
+[2026-06-08][Lead Developer][불변] _slide_access_allowed·_visible_slides·auth 무수정(git diff 확인). .sql·CLAUDE.md 미수정
+[2026-06-08][test-runner][결과] tests/test_lms.py 34 passed(기존 22 시퀀스 갱신 + 신규 12) / 전수 pytest 239 passed(227→239, 회귀 0)
+[2026-06-08][Lead Developer][평가] TOCTOU: 수정1 재검증이 상태변경과 같은 트랜잭션(autocommit=False)이라 권한 SELECT~UPDATE/DELETE 사이 커밋경계 없음 → 창 대폭 축소. 완전제거는 아님(users 행 FOR UPDATE/SERIALIZABLE 미적용 — position SELECT 직후~mutation 직전 마이크로초 강등은 구 스냅샷이라 미포착). 잔여 위험 낮음(드문 동시 강등), v1.5 Locust 시 재검토

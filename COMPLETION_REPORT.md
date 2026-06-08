@@ -1,71 +1,48 @@
-# COMPLETION_REPORT — LMS 백엔드 2단계(라우트·API·권한 로직) (2026-06-08)
+# COMPLETION_REPORT — LMS 2단계 외부검증 반영 수정 (2026-06-08)
 
 작업일: 2026-06-08 | 작업자: Lead Developer | 기준: CLAUDE.md §8·§9·§15-7·§21
-상태: **구현·LMS pytest 22·전수 227 passed(회귀 0)·내부 QA 완료.** 프론트/템플릿은 3단계.
+상태: **구현·tests/test_lms.py 34·전수 239 passed(회귀 0)·내부 QA 완료.** 변경 파일 = `server_render.py`(LMS만) + `tests/test_lms.py`.
 
-## 1. 범위
-교수 수업 페이지(LMS) 백엔드 — 라우트·API·권한 로직만. `server_render.py`에 `/api/chat` 직전 **순수 additive 710줄**(1 hunk). 프론트 미구현(3단계).
+## 1. 범위 / 불변
+LMS 라우트·헬퍼의 외부검증(Codex/Gemini) 4건 반영. `_slide_access_allowed`·`_visible_slides`·auth 인증 로직 **무수정**(git diff: 보호 def 변경 0). `.sql` 마이그레이션·`CLAUDE.md` **미수정**.
 
-**불변 보장**: `_slide_access_allowed`(server_render.py:431)·`_visible_slides`(:472)·auth 인증 로직 **무수정**(git diff: 보호 def 변경 0, 단일 additive hunk). 슬라이드 접근 정책 미변경 — LMS는 기존 게이트를 **호출만** 한다.
+## 2. 수정 내역 (파일:라인)
 
-## 2. 신규 라우트 (17개, 전부 `/api/courses*`)
-| 메서드·경로 | 권한 | 비고 |
-|---|---|---|
-| POST `/api/courses` | position=='교수'만 | 개설. subject_code=g.subject_code·professor_user_id=g.user_id 고정 |
-| GET `/api/courses/mine` | 교수·위임조교 | 내가 개설/위임받은 수업 |
-| PUT `/api/courses/<cid>` | 교수·위임조교 | 수업명/학기 수정 |
-| DELETE `/api/courses/<cid>` | 교수만 | weeks/slides/assistants/enrollments 명시 CASCADE 정리 |
-| POST `/api/courses/<cid>/weeks` | 교수·위임조교 | 주차 추가(빈 주차 empty_reason 허용) |
-| DELETE `/api/courses/<cid>/weeks/<wid>` | 교수·위임조교 | 주차 삭제(소속 확인) |
-| POST `/api/courses/<cid>/weeks/<wid>/slides` | 교수·위임조교 | ★배치 전 `_slide_access_allowed` 검증, 실패 403. 중복 허용 |
-| DELETE `/api/courses/<cid>/weeks/<wid>/slides/<sid>` | 교수·위임조교 | 배치 제거(course/주차 소속 확인, rowcount 404) |
-| POST `/api/courses/<cid>/assistants` | 교수만 | 대상=같은 기관·과목·position=='조교' 검증 |
-| DELETE `/api/courses/<cid>/assistants/<uid>` | 교수만 | 위임 해제 |
-| GET `/api/courses/<cid>/roster` | 교수·위임조교 | 명단(이름·이메일·등록일만, 활동 데이터 무) |
-| GET `/api/courses/<cid>/stats` | 교수·위임조교 | **익명 집계만**(개별 행 무) |
-| GET `/api/courses/available` | 학생(과목 좌석) | 같은 기관·과목 공개 수업 + enrolled 플래그 |
-| GET `/api/courses/enrolled` | 학생 | 내가 등록한 수업 |
-| POST `/api/courses/<cid>/enroll` | 학생 | 자유 등록, ON CONFLICT DO NOTHING(멱등) |
-| DELETE `/api/courses/<cid>/enroll` | 학생 | 해지(멱등) |
-| GET `/api/courses/<cid>` | 같은 기관·과목 좌석 사용자 | 상세(주차+슬라이드 메타). **미등록도 조회 가능**(게이트 아님) |
+### 수정1 — 동적 position 재검증 (`_course_owner_or_assistant`, server_render.py:1945)
+**변경 전**: course scope 확인 후, `professor_user_id==g.user_id`면 professor, `course_assistants` 행 있으면 assistant 통과. (지위 강등 무시 — 소유/위임 행만 보면 강등된 교수도 편집 가능.)
+**변경 후**: scope 확인 후 `pos = _course_position(cur, g.user_id)`(같은 cursor/트랜잭션 재조회) 추가 →
+- professor 통과 = `professor_user_id 일치 AND pos=='교수'`
+- assistant 통과 = `course_assistants 행 존재 AND pos=='조교'`
+- 둘 다 아니면 403 FORBIDDEN.
+**효과**: 교수→학생 강등·조교 박탈 시 소유/위임 행이 남아 있어도 기존 수업 편집·삭제·주차·배치 **즉시 차단**(인증 DB 권위 §8 정합).
 
-## 3. 헬퍼 시그니처
-- `_course_position(cur, user_id) -> position|None` — users.position 매 요청 DB 재조회(권위, LMS 권한 근거 §6-4).
-- `_course_owner_or_assistant(cur, course_id) -> (ok, role_in_course, err)` — course가 `g.institution_id`·`g.subject_code` 소속인지(scope/IDOR) + 교수(`professor_user_id` 일치, role='professor') 또는 위임 조교(`course_assistants`, role='assistant') 판정. 아니면 403. `err`=(json,status)|None. **매 요청 DB 재조회.**
-- `_course_in_scope(cur, course_id) -> row|None` — 같은 기관·같은 과목 소속 확인(열람 자격, 수업≠게이트 §21-6).
-- `_forbidden_json(msg)` — 공통 403 JSON.
+### 수정2 — DELETE /enroll scope 재검증 (`api_course_unenroll`, server_render.py:2578)
+삭제 전 `_course_in_scope(cur, cid)` 추가 — cid가 현재 scope(`g.institution_id`·`g.subject_code`) 소속이 아니면 POST /enroll와 동일하게 404, **DELETE 미실행**(cross-scope 수강행 삭제 차단). position 무관(기등록 정리 허용).
 
-> 헬퍼는 코드베이스 컨벤션(`_sync_member` 등)대로 `cur`를 받아 트랜잭션 내 재사용한다(지시문 개념 시그니처 `(course_id)`에 cur 추가).
+### 수정3 — 상세 미배포 슬라이드 필터 (`api_course_detail`, server_render.py:2627)
+주차 슬라이드 쿼리의 `course_week_slides` LEFT JOIN ON 절에 `AND cws.slide_id IN (SELECT id FROM slides WHERE deploy_status='deployed')` 추가. 미배포(qc_pending·rejected) 슬라이드 배치는 행 자체가 조인에서 빠져 **빈 주차로 표시**(주차 행은 유지), 메타데이터 비노출(`_visible_slides` 필터 원칙 응용). 일반 사용자 경로는 무조건 deployed만(편집자용 미배포 표시는 3단계).
 
-## 4. 권한 매트릭스 구현 위치
-- **개설=교수만**: `api_course_create`가 `_course_position(cur, g.user_id) != '교수'` → 403. (조교 신규개설 불가.)
-- **편집(수정·주차 추가삭제·슬라이드 배치/제거)=교수·위임조교**: 각 라우트 진입부 `_course_owner_or_assistant`. 학생/행정직원은 professor_user_id도 course_assistants도 아니므로 자동 403.
-- **삭제·조교지정·위임해제=교수만**: `_course_owner_or_assistant` 통과 후 `role_in_course != 'professor'` → 403.
-- **조교 위임 대상 검증**: `users WHERE id=대상 AND institution_id=g.* AND subject_code=g.* AND position='조교'` 없으면 400 INVALID_TARGET.
-- **role(viewer/admin)은 LMS 권한에 일절 미사용** — position과 course 소유/위임만으로 분기.
+### 수정4 — enroll position 가드 (`api_course_enroll`, server_render.py:2549)
+`_course_in_scope` 통과 후 `_course_position(cur, g.user_id)`가 `'학생'·'조교'`일 때만 등록, 그 외(교수·행정직원·position NULL) → 403 `ENROLL_NOT_ALLOWED`. 해지(DELETE)는 position 무관(수정2).
 
-## 5. 핵심 불변식 준수
-- **수업≠접근 게이트(§8)**: 슬라이드 배치 시 `_slide_access_allowed(slide_id)`로 그 슬라이드가 편집자의 과목 구독·배포 범위인지 검증 → 실패 403 `SLIDE_NOT_ALLOWED`. course API는 슬라이드 접근을 새로 부여하지 않음. 상세 조회는 메타(ID·제목·염색)만, /viewer 클릭은 기존 게이트가 최종 판정.
-- **scope 강제(§9 IDOR)**: 전 라우트 institution_id·subject_code는 `g.*`에서만 취득, body/쿼리 미참조. 타 기관/타 과목 course_id는 **FORBIDDEN(존재 은닉)**.
-- **개인정보 익명(§15-7)**: `/stats`는 수업 전체 집계 숫자만(enrolled_count·active_recent_count·inactive_count·placed/viewed_slide_count·slide_view_rate). 학생별 행·user_id·email·이름 **무반환**(0나눗셈 가드). access_logs 집계는 `al.institution_id`·`al.subject_code` 스냅샷(NULL 과거 로그 제외)이며 '이 수업을 통한 열람'이 아니라 '등록 학생의 해당 과목 활동'임을 주석 명시. `/roster`는 이름+이메일+등록일만(활동/접속 컬럼은 SELECT 자체에 없음).
-- **트랜잭션·커넥션**: 상태변경 전부 `@login_required`+CSRF(interceptor 전제), 명시 트랜잭션(autocommit=False), **`finally`에서 autocommit 복원 + `release_db_conn`** — 조기 return도 finally를 거쳐 누수 0(기존 portal 일부 조기-return 누수 패턴을 답습하지 않음).
+## 3. 신규 테스트 (tests/test_lms.py, +12 → 34)
+- 수정1: 교수→학생 강등 후 PUT/DELETE/주차추가/배치 전부 403(배치는 권한 실패가 `_slide_access_allowed` 호출보다 먼저임 단언) + 조교 박탈 후 위임 수업 편집 403.
+- 수정2: DELETE /enroll cross-scope cid → 404 + DELETE 미실행 단언 / in-scope → 200, DELETE 1회.
+- 수정3: 상세 응답에 미배포 슬라이드 미포함(빈 주차) + SQL에 `deploy_status='deployed'` 포함 단언.
+- 수정4: 학생·조교 enroll → 200(INSERT 1회) / 교수·NULL enroll → 403 ENROLL_NOT_ALLOWED(INSERT 미실행).
+- 기존 22건: 권한 헬퍼 cursor 시퀀스에 position SELECT가 추가돼 fetchone side_effect 갱신(로직 동일, 회귀 아님).
 
-## 6. 테스트 (tests/test_lms.py, 22개)
-지시 ①~⑧ 전부 + 보강:
-- ① 학생 개설→403 / ② 위임 없는 조교 편집→403(+위임 조교 편집 200) / ③ 비구독·미배포 배치→403 SLIDE_NOT_ALLOWED(+게이트 통과 시 200) / ④ 타기관·타과목 IDOR→403(+위임 조교의 수업 삭제 403) / ⑤ 자유 등록·중복 멱등(ON CONFLICT DO NOTHING 단언)+타스코프 404 / ⑥ 미등록 학생 상세 조회 200(enrolled=False) / ⑦ roster·stats를 학생·타기관·미위임 조교 호출→403 / ⑧ stats 응답에 user_id·email·이름·학생별 행 부재 단언(전 값 정수 집계)+0가드.
-- 개설 성공 시 INSERT 파라미터가 g 값(CNU/user 5)임을 단언(scope), 조교 위임 대상 position 검증(400).
-- **DB는 mock**(라우트 cursor fetch 시퀀스 정밀 모킹). CSRF는 `_csrf_ok` 패치로 통과.
+## 4. 검증 결과
+- `tests/test_lms.py` **34 passed** / 전수 **pytest 239 passed**(227→239, 회귀 0).
+- git diff: `server_render.py`(LMS 영역만)+`tests/test_lms.py` 2파일. 보호 def·auth·`.sql`·`CLAUDE.md` 변경 0.
 
-## 7. 검증 결과
-- `tests/test_lms.py` **22 passed** / 전수 **pytest 227 passed**(205→227, 회귀 0).
-- `server_render.py` AST 파싱 OK. git diff: **순수 additive 710줄 단일 hunk**, 보호 def(_slide_access_allowed·_visible_slides) 변경 0.
+## 5. TOCTOU 평가 (Codex Medium)
+수정1의 position 재검증은 **상태변경과 같은 트랜잭션**(state-change 라우트 `autocommit=False`) 안에서 수행 — 권한 SELECT와 후속 UPDATE/DELETE 사이에 커밋 경계가 없어 TOCTOU 창이 **대폭 축소**됐다. **완전 제거는 아님**: `users` 행을 `FOR UPDATE`로 잠그거나 SERIALIZABLE을 쓰지 않으므로, position SELECT 직후~mutation 직전(마이크로초)에 커밋된 동시 강등은 구 스냅샷이라 미포착될 수 있다. 잔여 위험은 낮음(동시 강등은 드묾) — 완전 차단이 필요하면 권한 행 `SELECT ... FOR UPDATE` 추가가 후속 과제(v1.5 Locust D14 시점 재검토).
 
-## 8. 한계·미완 (숨기지 않음)
-- **프론트/템플릿 0**: 3단계(home.html 수업 탭 연동·교수 편집 화면·학생 수강 화면).
-- **favorites·마이페이지**: 이번 범위 밖(4단계).
-- **course_week_slides display_order 재정렬 API 없음**: 배치/제거만. 순서 조정은 3단계 UI 요구 시.
-- **라이브 DB 미검증**: LMS 6테이블은 마이그레이션(CEO 실행 대기, `db/lms_and_viewer_role_migration.sql`) 적용 후에야 실동작. 본 작업은 마이그레이션 미실행(금지) — 코드만.
-- CLAUDE.md 미수정(지시 — 묶음 끝 §21·D27 일괄 갱신).
+## 6. 한계·미완
+- 프론트/템플릿 미구현(3단계). favorites·마이페이지(4단계).
+- LMS 6테이블 라이브 동작은 마이그레이션(`db/lms_and_viewer_role_migration.sql`, CEO 실행 대기) 적용 후. 본 작업 코드만(마이그레이션 미실행·미수정).
+- CLAUDE.md 미수정(묶음 끝 §21·D27 일괄).
 
-## 9. 배포 / 남은 게이트
-- 커밋·push origin/main 수행(지시). **EC2 git pull + 재기동 + LMS 마이그레이션(아직 미적용 시)은 CEO**(인프라/RDS 변경 없음 — 코드만).
+## 7. 배포 / 남은 게이트
+- 커밋·push origin/main 수행. **EC2 git pull + 재기동 + LMS 마이그레이션(미적용 시)은 CEO**(RDS/인프라 변경 없음 — 코드만).
