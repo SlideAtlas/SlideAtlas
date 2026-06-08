@@ -576,3 +576,16 @@ python3 run_tests.py
 [2026-06-08][Lead Developer][완료] #5 viewer.html nav "← 목록"(/slides)→"← 홈"(/home)
 [2026-06-08][Lead Developer][불변] _slide_access_allowed·_visible_slides·auth 인증 로직 무수정(접근 정책 미변경)
 [2026-06-08][test-runner][결과] pytest 205 passed (회귀 0). server_render.py·home.html 구문/Jinja 파싱 OK
+
+---
+## LMS 백엔드 2단계(라우트·API·권한) — 2026-06-08
+[2026-06-08][Lead Developer][완료] server_render.py LMS 섹션 신규(/api/chat 직전, 순수 additive 710줄)
+  - 헬퍼: _course_position(cur,user_id) 매요청 지위 재조회 / _course_owner_or_assistant(cur,course_id)→(ok,role_in_course,err) scope(g.inst·g.subject)+소유·위임 DB재조회 / _course_in_scope(cur,cid) 열람자격(수업=게이트 아님)
+  - 권한: 개설=position=='교수'만 / 편집(수정·주차·배치)=교수(소유)·조교(위임)만 / 삭제·조교지정·위임해제=교수만. role(viewer/admin) LMS 권한 미사용
+  - ★수업≠접근게이트: 슬라이드 배치 전 _slide_access_allowed(slide_id)로 구독·배포 검증, 실패 403 SLIDE_NOT_ALLOWED(불변 게이트 호출만, 수정 0)
+  - scope: 전 라우트 institution_id·subject_code=g.* 만, body/쿼리 미참조(IDOR 차단). 타기관/타과목 course=FORBIDDEN(존재은닉)
+  - 개인정보(§15-7): /stats 익명 집계만(enrolled/active_recent/inactive/slide_view_rate, 0가드). 학생별 행·user_id·email·이름 무반환. access_logs=과목 스냅샷(al.inst·al.subject, NULL 제외)·'수업 통한 열람' 아님 주석. /roster는 이름+이메일+등록일만(활동/접속 컬럼 SELECT 자체 부재)
+  - 상태변경 전부 @login_required+CSRF(interceptor 전제)+트랜잭션, finally에서 autocommit복원·release_db_conn(누수 0, 조기return도 finally 경유)
+  - 라우트 17개: courses(POST)·mine·PUT·DELETE·weeks(POST)·weeks/DELETE·weeks/slides(POST)·slides/DELETE·assistants(POST)·assistants/DELETE·roster·stats·available·enrolled·enroll(POST/DELETE)·detail(GET)
+[2026-06-08][Lead Developer][불변] _slide_access_allowed·_visible_slides·auth 무수정(git diff 확인, 순수 additive 1 hunk)
+[2026-06-08][test-runner][결과] tests/test_lms.py 22 passed(①~⑧ 전부) + 전수 pytest 227 passed(205→227, 회귀 0)

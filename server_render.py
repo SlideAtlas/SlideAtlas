@@ -1922,6 +1922,716 @@ def portal_report_export():
                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 
+# ═════════════════════════════════════════════════════════════════════════════
+# 교수 수업 페이지(LMS) — 2단계 백엔드 (§21 / §8 단일 게이트 / §15-7 개인정보)
+#   ★ 불변 원칙(어기면 reject):
+#   1) 권한 분기는 users.position 기반. 수업 개설=교수만, 편집=교수(소유)·조교(위임)만.
+#      role(viewer/admin)은 LMS 권한에 쓰지 않는다. 학생/행정직원은 개설·편집 불가.
+#   2) 수업은 접근 게이트가 아니다 — 어떤 course API도 슬라이드 접근을 새로 부여하지 않는다.
+#      슬라이드 열람 판정은 오직 _slide_access_allowed(불변). 슬라이드 '배치' 시 그 슬라이드가
+#      현재 사용자(교수)의 과목 구독 범위인지 _slide_access_allowed로 검증해 비구독/미배포 거부(403).
+#   3) scope 강제: institution_id·subject_code는 g.* 에서만. body/쿼리 미참조(IDOR 차단).
+#      course 소유·위임 검증은 매 요청 DB 재조회.
+#   4) 개인정보: 수업 통계는 익명 집계만 — 학생 개별 활동(이름+접속)을 같은 행에 묶지 않는다(§15-7).
+# ═════════════════════════════════════════════════════════════════════════════
+
+def _course_position(cur, user_id):
+    """현재 user의 지위(users.position)를 DB에서 재조회(권위, 매 요청). LMS 권한 분기 근거(§6-4·§21)."""
+    cur.execute("SELECT position FROM users WHERE id = %s", (user_id,))
+    row = cur.fetchone()
+    return (row[0] if row else None)
+
+
+def _course_owner_or_assistant(cur, course_id):
+    """course 편집 권한 판정(매 요청 DB 재조회). 반환 (ok, role_in_course, err).
+
+    - course가 g.institution_id·g.subject_code 소속이 아니면 403(scope 격리·IDOR 차단, §9).
+    - 현재 user가 교수(courses.professor_user_id 일치) → ('professor'),
+      또는 위임 조교(course_assistants 행 존재) → ('assistant'). 아니면 403.
+    err 는 (json_response, status) 튜플 또는 None.
+    """
+    cur.execute(
+        "SELECT institution_id, subject_code, professor_user_id FROM courses WHERE id = %s",
+        (course_id,),
+    )
+    row = cur.fetchone()
+    if not row:
+        return False, None, (jsonify({'success': False, 'error': 'NOT_FOUND',
+                                      'message': '수업을 찾을 수 없습니다'}), 404)
+    c_inst, c_subj, prof_id = row
+    # scope: institution_id·subject_code 는 g 에서만 — 다른 기관/과목 course 는 존재를 숨기고 403.
+    if c_inst != getattr(g, 'institution_id', None) or c_subj != getattr(g, 'subject_code', None):
+        return False, None, (jsonify({'success': False, 'error': 'FORBIDDEN',
+                                      'message': '권한이 없습니다'}), 403)
+    if prof_id is not None and str(prof_id) == str(g.user_id):
+        return True, 'professor', None
+    cur.execute("SELECT 1 FROM course_assistants WHERE course_id = %s AND user_id = %s",
+                (course_id, g.user_id))
+    if cur.fetchone():
+        return True, 'assistant', None
+    return False, None, (jsonify({'success': False, 'error': 'FORBIDDEN',
+                                  'message': '권한이 없습니다'}), 403)
+
+
+def _course_in_scope(cur, course_id):
+    """course가 g.institution_id·g.subject_code 소속인지 확인(열람 자격 — 수업은 게이트 아님, §21-6).
+
+    반환 (row 또는 None). row = (id, title, semester, professor_user_id).
+    같은 기관·같은 과목 좌석 사용자면 등록 여부 무관하게 상세 열람 가능(수업=게이트 아님).
+    """
+    cur.execute(
+        """SELECT id, title, semester, professor_user_id
+             FROM courses
+            WHERE id = %s AND institution_id = %s AND subject_code = %s""",
+        (course_id, getattr(g, 'institution_id', None), getattr(g, 'subject_code', None)),
+    )
+    return cur.fetchone()
+
+
+def _forbidden_json(msg='권한이 없습니다'):
+    return jsonify({'success': False, 'error': 'FORBIDDEN', 'message': msg}), 403
+
+
+# ── 교수/조교: 편집 ───────────────────────────────────────────────────────────
+
+@app.route('/api/courses', methods=['POST'])
+@login_required
+def api_course_create():
+    """수업 개설 — position=='교수'만(조교 신규개설 불가, 위임 시 편집만, §21-3).
+    subject_code=g.subject_code 고정, professor_user_id=g.user_id (body 미참조, §9)."""
+    body = request.get_json(silent=True) or {}
+    title = (body.get('title') or '').strip()
+    semester = (body.get('semester') or '').strip()
+    if not title:
+        return jsonify({'success': False, 'error': 'MISSING_FIELDS', 'message': '수업명을 입력하세요'}), 400
+    if getattr(g, 'subject_code', None) is None:
+        # 과목 좌석이 없는 계정(admin-only 등)은 수업을 가질 과목이 없음.
+        return _forbidden_json('과목 소속이 없어 수업을 개설할 수 없습니다')
+    conn = get_db_conn()
+    try:
+        conn.autocommit = False
+        with conn.cursor() as cur:
+            if _course_position(cur, g.user_id) != '교수':
+                conn.rollback()
+                return _forbidden_json('수업 개설은 교수만 가능합니다')
+            cur.execute(
+                """INSERT INTO courses (institution_id, subject_code, professor_user_id, title, semester)
+                   VALUES (%s, %s, %s, %s, %s) RETURNING id""",
+                (g.institution_id, g.subject_code, g.user_id, title[:200], semester[:20]),
+            )
+            cid = cur.fetchone()[0]
+        conn.commit()
+        return jsonify({'success': True, 'course_id': cid})
+    except Exception:
+        conn.rollback()
+        return jsonify({'success': False, 'error': 'SERVER_ERROR', 'message': '처리 중 오류'}), 500
+    finally:
+        try:
+            conn.autocommit = True
+        except Exception:
+            pass
+        release_db_conn(conn)
+
+
+@app.route('/api/courses/mine', methods=['GET'])
+@login_required
+def api_courses_mine():
+    """내가 개설(교수)했거나 위임받은(조교) 수업 목록 — g.institution_id·g.subject_code scope."""
+    conn = get_db_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT c.id, c.title, c.semester,
+                          (c.professor_user_id = %s) AS is_owner,
+                          (SELECT COUNT(*) FROM course_enrollments e WHERE e.course_id = c.id)
+                     FROM courses c
+                    WHERE c.institution_id = %s AND c.subject_code = %s
+                      AND (c.professor_user_id = %s
+                           OR EXISTS (SELECT 1 FROM course_assistants a
+                                       WHERE a.course_id = c.id AND a.user_id = %s))
+                    ORDER BY c.created_at DESC""",
+                (g.user_id, g.institution_id, g.subject_code, g.user_id, g.user_id),
+            )
+            courses = [{'id': r[0], 'title': r[1] or '', 'semester': r[2] or '',
+                        'role': 'professor' if r[3] else 'assistant',
+                        'enrolled_count': r[4] or 0} for r in cur.fetchall()]
+        return jsonify({'success': True, 'courses': courses})
+    finally:
+        release_db_conn(conn)
+
+
+@app.route('/api/courses/<int:cid>', methods=['PUT'])
+@login_required
+def api_course_update(cid):
+    """수업명/학기 수정 — 교수(소유) 또는 위임 조교."""
+    body = request.get_json(silent=True) or {}
+    title = (body.get('title') or '').strip()
+    semester = (body.get('semester') or '').strip()
+    if not title:
+        return jsonify({'success': False, 'error': 'MISSING_FIELDS', 'message': '수업명을 입력하세요'}), 400
+    conn = get_db_conn()
+    try:
+        conn.autocommit = False
+        with conn.cursor() as cur:
+            ok, _role, err = _course_owner_or_assistant(cur, cid)
+            if not ok:
+                conn.rollback()
+                return err
+            cur.execute("UPDATE courses SET title = %s, semester = %s WHERE id = %s",
+                        (title[:200], semester[:20], cid))
+        conn.commit()
+        return jsonify({'success': True})
+    except Exception:
+        conn.rollback()
+        return jsonify({'success': False, 'error': 'SERVER_ERROR', 'message': '처리 중 오류'}), 500
+    finally:
+        try:
+            conn.autocommit = True
+        except Exception:
+            pass
+        release_db_conn(conn)
+
+
+@app.route('/api/courses/<int:cid>', methods=['DELETE'])
+@login_required
+def api_course_delete(cid):
+    """수업 삭제 — 교수만(조교 불가). weeks/week_slides/assistants/enrollments 는 FK ON DELETE CASCADE."""
+    conn = get_db_conn()
+    try:
+        conn.autocommit = False
+        with conn.cursor() as cur:
+            ok, role_in_course, err = _course_owner_or_assistant(cur, cid)
+            if not ok:
+                conn.rollback()
+                return err
+            if role_in_course != 'professor':
+                conn.rollback()
+                return _forbidden_json('수업 삭제는 교수만 가능합니다')
+            # course_week_slides 는 course_weeks CASCADE 로, 그 외(weeks/assistants/enrollments)는
+            # courses CASCADE 로 정리된다(§7 스키마 FK). 안전을 위해 명시 순서로도 정리.
+            cur.execute("""DELETE FROM course_week_slides WHERE course_week_id IN
+                             (SELECT id FROM course_weeks WHERE course_id = %s)""", (cid,))
+            cur.execute("DELETE FROM course_weeks WHERE course_id = %s", (cid,))
+            cur.execute("DELETE FROM course_assistants WHERE course_id = %s", (cid,))
+            cur.execute("DELETE FROM course_enrollments WHERE course_id = %s", (cid,))
+            cur.execute("DELETE FROM courses WHERE id = %s", (cid,))
+        conn.commit()
+        return jsonify({'success': True})
+    except Exception:
+        conn.rollback()
+        return jsonify({'success': False, 'error': 'SERVER_ERROR', 'message': '처리 중 오류'}), 500
+    finally:
+        try:
+            conn.autocommit = True
+        except Exception:
+            pass
+        release_db_conn(conn)
+
+
+@app.route('/api/courses/<int:cid>/weeks', methods=['POST'])
+@login_required
+def api_course_week_add(cid):
+    """주차 추가 — 교수·위임 조교. 빈 주차 허용(empty_reason 메모)."""
+    body = request.get_json(silent=True) or {}
+    try:
+        week_number = int(body.get('week_number'))
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'error': 'MISSING_FIELDS', 'message': '주차 번호가 필요합니다'}), 400
+    title = (body.get('title') or '').strip()
+    empty_reason = (body.get('empty_reason') or '').strip() or None
+    conn = get_db_conn()
+    try:
+        conn.autocommit = False
+        with conn.cursor() as cur:
+            ok, _role, err = _course_owner_or_assistant(cur, cid)
+            if not ok:
+                conn.rollback()
+                return err
+            cur.execute(
+                """INSERT INTO course_weeks (course_id, week_number, title, empty_reason)
+                   VALUES (%s, %s, %s, %s) RETURNING id""",
+                (cid, week_number, title[:200], empty_reason),
+            )
+            wid = cur.fetchone()[0]
+        conn.commit()
+        return jsonify({'success': True, 'week_id': wid})
+    except Exception:
+        conn.rollback()
+        return jsonify({'success': False, 'error': 'SERVER_ERROR', 'message': '처리 중 오류'}), 500
+    finally:
+        try:
+            conn.autocommit = True
+        except Exception:
+            pass
+        release_db_conn(conn)
+
+
+@app.route('/api/courses/<int:cid>/weeks/<int:wid>', methods=['DELETE'])
+@login_required
+def api_course_week_delete(cid, wid):
+    """주차 삭제 — 교수·위임 조교. 그 주차의 슬라이드 배치(course_week_slides)는 CASCADE."""
+    conn = get_db_conn()
+    try:
+        conn.autocommit = False
+        with conn.cursor() as cur:
+            ok, _role, err = _course_owner_or_assistant(cur, cid)
+            if not ok:
+                conn.rollback()
+                return err
+            # 주차가 그 course 소속인지 확인(다른 course의 주차 wid 삭제 방지).
+            cur.execute("SELECT 1 FROM course_weeks WHERE id = %s AND course_id = %s", (wid, cid))
+            if not cur.fetchone():
+                conn.rollback()
+                return jsonify({'success': False, 'error': 'NOT_FOUND', 'message': '주차를 찾을 수 없습니다'}), 404
+            cur.execute("DELETE FROM course_week_slides WHERE course_week_id = %s", (wid,))
+            cur.execute("DELETE FROM course_weeks WHERE id = %s AND course_id = %s", (wid, cid))
+        conn.commit()
+        return jsonify({'success': True})
+    except Exception:
+        conn.rollback()
+        return jsonify({'success': False, 'error': 'SERVER_ERROR', 'message': '처리 중 오류'}), 500
+    finally:
+        try:
+            conn.autocommit = True
+        except Exception:
+            pass
+        release_db_conn(conn)
+
+
+@app.route('/api/courses/<int:cid>/weeks/<int:wid>/slides', methods=['POST'])
+@login_required
+def api_course_week_slide_add(cid, wid):
+    """주차에 슬라이드 배치 — 교수·위임 조교. 주차 내 중복 허용(§21-4).
+
+    ★ 배치 전 _slide_access_allowed(slide_id)로 그 슬라이드가 현재 사용자(교수/조교)의 과목 구독·배포
+      범위인지 검증한다. 수업은 접근을 새로 부여하지 않으므로(§8), 비구독/미배포 슬라이드는 배치 거부(403).
+      _slide_access_allowed 는 g.subject_code·g.is_special 로 판정 — 편집자도 그 과목 좌석이어야 한다.
+    """
+    body = request.get_json(silent=True) or {}
+    slide_id = (body.get('slide_id') or '').strip()
+    if not slide_id:
+        return jsonify({'success': False, 'error': 'MISSING_SLIDE', 'message': '슬라이드 ID가 필요합니다'}), 400
+    try:
+        display_order = int(body.get('display_order', 0))
+    except (TypeError, ValueError):
+        display_order = 0
+    conn = get_db_conn()
+    try:
+        conn.autocommit = False
+        with conn.cursor() as cur:
+            ok, _role, err = _course_owner_or_assistant(cur, cid)
+            if not ok:
+                conn.rollback()
+                return err
+            cur.execute("SELECT 1 FROM course_weeks WHERE id = %s AND course_id = %s", (wid, cid))
+            if not cur.fetchone():
+                conn.rollback()
+                return jsonify({'success': False, 'error': 'NOT_FOUND', 'message': '주차를 찾을 수 없습니다'}), 404
+            # ★ 슬라이드 접근 단일 게이트로 배치 가능 여부 검증(수업은 게이트 아님 §8).
+            allowed, _aerr = _slide_access_allowed(slide_id)
+            if not allowed:
+                conn.rollback()
+                return jsonify({'success': False, 'error': 'SLIDE_NOT_ALLOWED',
+                                'message': '구독·배포된 과목 슬라이드만 배치할 수 있습니다'}), 403
+            cur.execute(
+                """INSERT INTO course_week_slides (course_week_id, slide_id, display_order)
+                   VALUES (%s, %s, %s) RETURNING id""",
+                (wid, slide_id, display_order),
+            )
+            link_id = cur.fetchone()[0]
+        conn.commit()
+        return jsonify({'success': True, 'id': link_id})
+    except Exception:
+        conn.rollback()
+        return jsonify({'success': False, 'error': 'SERVER_ERROR', 'message': '처리 중 오류'}), 500
+    finally:
+        try:
+            conn.autocommit = True
+        except Exception:
+            pass
+        release_db_conn(conn)
+
+
+@app.route('/api/courses/<int:cid>/weeks/<int:wid>/slides/<int:sid>', methods=['DELETE'])
+@login_required
+def api_course_week_slide_delete(cid, wid, sid):
+    """배치 제거 — 교수·위임 조교. sid = course_week_slides.id(배치 행 id)."""
+    conn = get_db_conn()
+    try:
+        conn.autocommit = False
+        with conn.cursor() as cur:
+            ok, _role, err = _course_owner_or_assistant(cur, cid)
+            if not ok:
+                conn.rollback()
+                return err
+            # 그 배치 행이 이 course의 이 주차 소속인지 확인 후 삭제(IDOR 방지).
+            cur.execute(
+                """DELETE FROM course_week_slides
+                    WHERE id = %s AND course_week_id = %s
+                      AND course_week_id IN (SELECT id FROM course_weeks WHERE course_id = %s)""",
+                (sid, wid, cid),
+            )
+            removed = cur.rowcount
+        conn.commit()
+        if removed == 0:
+            return jsonify({'success': False, 'error': 'NOT_FOUND', 'message': '배치를 찾을 수 없습니다'}), 404
+        return jsonify({'success': True})
+    except Exception:
+        conn.rollback()
+        return jsonify({'success': False, 'error': 'SERVER_ERROR', 'message': '처리 중 오류'}), 500
+    finally:
+        try:
+            conn.autocommit = True
+        except Exception:
+            pass
+        release_db_conn(conn)
+
+
+@app.route('/api/courses/<int:cid>/assistants', methods=['POST'])
+@login_required
+def api_course_assistant_add(cid):
+    """조교 위임 — 교수만. 대상이 같은 기관·같은 과목·position=='조교'인지 검증(§21-4)."""
+    body = request.get_json(silent=True) or {}
+    target = body.get('user_id')
+    if target is None:
+        return jsonify({'success': False, 'error': 'MISSING_FIELDS', 'message': 'user_id가 필요합니다'}), 400
+    conn = get_db_conn()
+    try:
+        conn.autocommit = False
+        with conn.cursor() as cur:
+            ok, role_in_course, err = _course_owner_or_assistant(cur, cid)
+            if not ok:
+                conn.rollback()
+                return err
+            if role_in_course != 'professor':
+                conn.rollback()
+                return _forbidden_json('조교 지정은 교수만 가능합니다')
+            # 대상 검증: 같은 기관·같은 과목·지위 조교 (scope 는 g 기준, 대상 user 만 id 로 조회).
+            cur.execute(
+                """SELECT 1 FROM users
+                    WHERE id = %s AND institution_id = %s AND subject_code = %s AND position = '조교'""",
+                (target, g.institution_id, g.subject_code),
+            )
+            if not cur.fetchone():
+                conn.rollback()
+                return jsonify({'success': False, 'error': 'INVALID_TARGET',
+                                'message': '같은 과목의 조교만 지정할 수 있습니다'}), 400
+            cur.execute(
+                """INSERT INTO course_assistants (course_id, user_id) VALUES (%s, %s)
+                   ON CONFLICT (course_id, user_id) DO NOTHING""",
+                (cid, target),
+            )
+        conn.commit()
+        return jsonify({'success': True})
+    except Exception:
+        conn.rollback()
+        return jsonify({'success': False, 'error': 'SERVER_ERROR', 'message': '처리 중 오류'}), 500
+    finally:
+        try:
+            conn.autocommit = True
+        except Exception:
+            pass
+        release_db_conn(conn)
+
+
+@app.route('/api/courses/<int:cid>/assistants/<int:uid>', methods=['DELETE'])
+@login_required
+def api_course_assistant_remove(cid, uid):
+    """위임 해제 — 교수만."""
+    conn = get_db_conn()
+    try:
+        conn.autocommit = False
+        with conn.cursor() as cur:
+            ok, role_in_course, err = _course_owner_or_assistant(cur, cid)
+            if not ok:
+                conn.rollback()
+                return err
+            if role_in_course != 'professor':
+                conn.rollback()
+                return _forbidden_json('위임 해제는 교수만 가능합니다')
+            cur.execute("DELETE FROM course_assistants WHERE course_id = %s AND user_id = %s",
+                        (cid, uid))
+        conn.commit()
+        return jsonify({'success': True})
+    except Exception:
+        conn.rollback()
+        return jsonify({'success': False, 'error': 'SERVER_ERROR', 'message': '처리 중 오류'}), 500
+    finally:
+        try:
+            conn.autocommit = True
+        except Exception:
+            pass
+        release_db_conn(conn)
+
+
+# ── 교수/조교: 수업 대시보드(명단 + 익명 집계) ────────────────────────────────
+
+@app.route('/api/courses/<int:cid>/roster', methods=['GET'])
+@login_required
+def api_course_roster(cid):
+    """등록 학생 명단 — 교수·위임 조교만. 표시명(roster.name)·이메일·등록일만.
+    ★ 개인 활동/접속 데이터는 절대 포함하지 않는다(이름과 활동을 같은 행에 묶지 않음, §15-7)."""
+    conn = get_db_conn()
+    try:
+        with conn.cursor() as cur:
+            ok, _role, err = _course_owner_or_assistant(cur, cid)
+            if not ok:
+                return err
+            # 표시명은 institution_rosters.name(가입 표시명). 활동/접속 컬럼은 SELECT 자체에 없음.
+            cur.execute(
+                """SELECT COALESCE(r.name, ''), u.email, e.enrolled_at
+                     FROM course_enrollments e
+                     JOIN users u ON u.id = e.user_id
+                     LEFT JOIN institution_rosters r
+                       ON lower(r.email) = lower(u.email)
+                      AND r.institution_id = u.institution_id
+                      AND r.subject_code = u.subject_code
+                    WHERE e.course_id = %s
+                    ORDER BY r.name, u.email""",
+                (cid,),
+            )
+            students = [{'name': r[0] or '', 'email': r[1],
+                         'enrolled_at': r[2].isoformat() if r[2] else None}
+                        for r in cur.fetchall()]
+        return jsonify({'success': True, 'students': students, 'count': len(students)})
+    finally:
+        release_db_conn(conn)
+
+
+@app.route('/api/courses/<int:cid>/stats', methods=['GET'])
+@login_required
+def api_course_stats(cid):
+    """수업 단위 익명 집계만 — 교수·위임 조교만.
+
+    ★ 절대 원칙(§15-7): 학생별 개별 행(user_id·이름·학생별 마지막 접속)을 반환하지 않는다.
+      오직 수업 전체 집계 숫자만 — 개인 지목 불가.
+    ⚠ access_logs 는 '이 수업을 통한 열람'이 아니라 '등록 학생의 해당 과목 활동'이다(수업=게이트 아님 §8).
+      집계는 al.institution_id·al.subject_code 스냅샷 기준(§15-7), subject_code NULL 과거 로그 제외.
+    """
+    from datetime import timedelta
+    conn = get_db_conn()
+    try:
+        with conn.cursor() as cur:
+            ok, _role, err = _course_owner_or_assistant(cur, cid)
+            if not ok:
+                return err
+            inst = g.institution_id
+            subj = g.subject_code
+            since = _today_kst() - timedelta(days=7)
+
+            # 1) 등록 인원
+            cur.execute("SELECT COUNT(*) FROM course_enrollments WHERE course_id = %s", (cid,))
+            enrolled_count = cur.fetchone()[0] or 0
+
+            # 2) 최근 7일 활동 유무 분포 — '명수'만(학생별 행 없음). 스냅샷 inst·subject 기준.
+            cur.execute(
+                """SELECT
+                     COUNT(*) FILTER (WHERE recent),
+                     COUNT(*) FILTER (WHERE NOT recent)
+                   FROM (
+                     SELECT EXISTS (
+                         SELECT 1 FROM access_logs al
+                          WHERE al.user_id = e.user_id
+                            AND al.institution_id = %s
+                            AND al.subject_code = %s
+                            AND al.subject_code IS NOT NULL
+                            AND al.accessed_at >= %s
+                     ) AS recent
+                       FROM course_enrollments e
+                      WHERE e.course_id = %s
+                   ) t""",
+                (inst, subj, since, cid),
+            )
+            ar = cur.fetchone()
+            active_recent_count = ar[0] or 0
+            inactive_count = ar[1] or 0
+
+            # 3) 슬라이드 열람률 — 배치 슬라이드 중 등록 학생이 1회+ 열람한 비율(익명 비율).
+            cur.execute(
+                """SELECT
+                     COUNT(DISTINCT cws.slide_id),
+                     COUNT(DISTINCT cws.slide_id) FILTER (WHERE EXISTS (
+                       SELECT 1 FROM access_logs al
+                        JOIN course_enrollments e ON e.user_id = al.user_id AND e.course_id = %s
+                        WHERE al.slide_id = cws.slide_id
+                          AND al.institution_id = %s
+                          AND al.subject_code = %s
+                          AND al.subject_code IS NOT NULL
+                     ))
+                   FROM course_week_slides cws
+                   JOIN course_weeks cw ON cw.id = cws.course_week_id
+                  WHERE cw.course_id = %s""",
+                (cid, inst, subj, cid),
+            )
+            ps = cur.fetchone()
+            placed = ps[0] or 0
+            viewed = ps[1] or 0
+            slide_view_rate = round(viewed / placed * 100) if placed > 0 else 0
+
+        return jsonify({'success': True, 'stats': {
+            'enrolled_count': enrolled_count,
+            'active_recent_count': active_recent_count,
+            'inactive_count': inactive_count,
+            'placed_slide_count': placed,
+            'viewed_slide_count': viewed,
+            'slide_view_rate': slide_view_rate,
+        }})
+    finally:
+        release_db_conn(conn)
+
+
+# ── 학생: 수강 ────────────────────────────────────────────────────────────────
+
+@app.route('/api/courses/available', methods=['GET'])
+@login_required
+def api_courses_available():
+    """같은 기관·같은 과목 공개 수업 전체 + 등록 여부 플래그(§21-5)."""
+    if getattr(g, 'subject_code', None) is None:
+        return jsonify({'success': True, 'courses': []})
+    conn = get_db_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT c.id, c.title, c.semester,
+                          EXISTS (SELECT 1 FROM course_enrollments e
+                                   WHERE e.course_id = c.id AND e.user_id = %s)
+                     FROM courses c
+                    WHERE c.institution_id = %s AND c.subject_code = %s
+                    ORDER BY c.created_at DESC""",
+                (g.user_id, g.institution_id, g.subject_code),
+            )
+            courses = [{'id': r[0], 'title': r[1] or '', 'semester': r[2] or '',
+                        'enrolled': bool(r[3])} for r in cur.fetchall()]
+        return jsonify({'success': True, 'courses': courses})
+    finally:
+        release_db_conn(conn)
+
+
+@app.route('/api/courses/enrolled', methods=['GET'])
+@login_required
+def api_courses_enrolled():
+    """내가 등록한 수업 목록(§21-5 내 수업)."""
+    conn = get_db_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT c.id, c.title, c.semester
+                     FROM course_enrollments e
+                     JOIN courses c ON c.id = e.course_id
+                    WHERE e.user_id = %s
+                      AND c.institution_id = %s AND c.subject_code = %s
+                    ORDER BY e.enrolled_at DESC""",
+                (g.user_id, g.institution_id, g.subject_code),
+            )
+            courses = [{'id': r[0], 'title': r[1] or '', 'semester': r[2] or ''}
+                       for r in cur.fetchall()]
+        return jsonify({'success': True, 'courses': courses})
+    finally:
+        release_db_conn(conn)
+
+
+@app.route('/api/courses/<int:cid>/enroll', methods=['POST'])
+@login_required
+def api_course_enroll(cid):
+    """수강 등록 — 자유(승인 불필요), 같은 기관·과목 수업만. 중복 등록은 멱등(§21-5)."""
+    conn = get_db_conn()
+    try:
+        conn.autocommit = False
+        with conn.cursor() as cur:
+            if _course_in_scope(cur, cid) is None:
+                conn.rollback()
+                return jsonify({'success': False, 'error': 'NOT_FOUND', 'message': '수업을 찾을 수 없습니다'}), 404
+            cur.execute(
+                """INSERT INTO course_enrollments (course_id, user_id) VALUES (%s, %s)
+                   ON CONFLICT (course_id, user_id) DO NOTHING""",
+                (cid, g.user_id),
+            )
+        conn.commit()
+        return jsonify({'success': True})
+    except Exception:
+        conn.rollback()
+        return jsonify({'success': False, 'error': 'SERVER_ERROR', 'message': '처리 중 오류'}), 500
+    finally:
+        try:
+            conn.autocommit = True
+        except Exception:
+            pass
+        release_db_conn(conn)
+
+
+@app.route('/api/courses/<int:cid>/enroll', methods=['DELETE'])
+@login_required
+def api_course_unenroll(cid):
+    """수강 해지 — 멱등(이미 미등록이어도 성공)."""
+    conn = get_db_conn()
+    try:
+        conn.autocommit = False
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM course_enrollments WHERE course_id = %s AND user_id = %s",
+                        (cid, g.user_id))
+        conn.commit()
+        return jsonify({'success': True})
+    except Exception:
+        conn.rollback()
+        return jsonify({'success': False, 'error': 'SERVER_ERROR', 'message': '처리 중 오류'}), 500
+    finally:
+        try:
+            conn.autocommit = True
+        except Exception:
+            pass
+        release_db_conn(conn)
+
+
+@app.route('/api/courses/<int:cid>', methods=['GET'])
+@login_required
+def api_course_detail(cid):
+    """수업 상세(주차+슬라이드 메타) — 열람 자격 = 같은 기관·같은 과목 좌석 사용자(등록 여부 무관, §21-6).
+
+    ★ 수업은 게이트가 아니다 — 미등록 학생도 조회 가능. 슬라이드 카드 클릭→/viewer 는 기존 게이트가
+      최종 판정한다(여기서 슬라이드 접근을 새로 부여하지 않는다, §8). 슬라이드 메타는 ID·제목·염색만.
+    """
+    conn = get_db_conn()
+    try:
+        with conn.cursor() as cur:
+            course = _course_in_scope(cur, cid)
+            if course is None:
+                return jsonify({'success': False, 'error': 'NOT_FOUND', 'message': '수업을 찾을 수 없습니다'}), 404
+            enrolled = False
+            cur.execute("SELECT 1 FROM course_enrollments WHERE course_id = %s AND user_id = %s",
+                        (cid, g.user_id))
+            enrolled = cur.fetchone() is not None
+            # 주차 + 배치 슬라이드 메타(타일·토큰 발급 없음 — 카탈로그 메타만).
+            cur.execute(
+                """SELECT cw.id, cw.week_number, cw.title, cw.empty_reason,
+                          cws.id, cws.slide_id, cws.display_order, s.title_ko, s.stain
+                     FROM course_weeks cw
+                     LEFT JOIN course_week_slides cws ON cws.course_week_id = cw.id
+                     LEFT JOIN slides s ON s.id = cws.slide_id
+                    WHERE cw.course_id = %s
+                    ORDER BY cw.week_number, cws.display_order, cws.id""",
+                (cid,),
+            )
+            weeks = {}
+            order = []
+            for r in cur.fetchall():
+                wkid = r[0]
+                if wkid not in weeks:
+                    weeks[wkid] = {'id': wkid, 'week_number': r[1], 'title': r[2] or '',
+                                   'empty_reason': r[3], 'slides': []}
+                    order.append(wkid)
+                if r[4] is not None:   # 배치 슬라이드 존재
+                    weeks[wkid]['slides'].append({
+                        'link_id': r[4], 'slide_id': r[5], 'display_order': r[6],
+                        'title_ko': r[7] or r[5], 'stain': r[8] or '',
+                    })
+        return jsonify({'success': True, 'course': {
+            'id': course[0], 'title': course[1] or '', 'semester': course[2] or '',
+            'enrolled': enrolled, 'weeks': [weeks[w] for w in order],
+        }})
+    finally:
+        release_db_conn(conn)
+
+
 @app.route('/api/chat', methods=['POST'])
 @login_required
 def api_chat():
