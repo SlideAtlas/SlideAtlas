@@ -385,30 +385,74 @@ def test_unenroll_in_scope_ok(client):
 
 # ── 수정3: 상세 응답에 미배포(qc_pending·rejected) 슬라이드 메타 미포함 ───────
 
+DEPLOYED_ID = "SA-HST-001"
+UNDEPLOYED_ID = "SA-HST-UNDEPLOYED"   # qc_pending/rejected 가정 — 응답 어디에도 등장하면 안 됨
+
+
+def _slide_ids_in_payload(course):
+    """course 응답 구조 전체를 순회해 등장하는 모든 slide_id 수집(구조 차원 부재 단언용)."""
+    ids = []
+    for wk in course.get("weeks", []):
+        for sl in wk.get("slides", []):
+            ids.append(sl.get("slide_id"))
+    return ids
+
+
 def test_detail_excludes_undeployed_slides(client):
-    # SQL ON 절이 deploy_status='deployed' 만 조인하므로, 미배포 슬라이드는 행 자체가 안 옴.
-    #   여기선 1주차=배포 슬라이드 1개, 2주차=미배포만 배치돼 빈 주차로 내려오는 상황을 모킹.
+    # ★ 보강: 미배포 슬라이드(UNDEPLOYED_ID)를 mock 에 명시적으로 포함(2주차에 배치된 것으로 가정).
+    #   상세 SQL 의 ON 절(deploy_status='deployed')이 그 행을 떨궈, 2주차는 cws.*=NULL 인 '빈 주차'로
+    #   DB 가 돌려준다(LEFT JOIN). 이 필터링된 결과를 mock 으로 재현하고, 최종 JSON 어디에도 미배포 ID 가
+    #   없음을 raw 문자열·구조 양쪽으로 직접 부재 단언한다.
     rows = [
         # (cw.id, week_number, title, empty_reason, cws.id, slide_id, display_order, title_ko, stain)
-        (10, 1, "1주차", None, 100, "SA-HST-001", 0, "위 점막", "H&E"),   # 배포 슬라이드
-        (20, 2, "2주차", None, None, None, None, None, None),             # 미배포만 → 빈 주차
+        (10, 1, "1주차", None, 100, DEPLOYED_ID, 0, "위 점막", "H&E"),     # 배포 슬라이드(노출)
+        (20, 2, "2주차", None, None, None, None, None, None),              # UNDEPLOYED_ID 배치분이 필터돼 빈 주차
     ]
     conn, cur = _mk_conn(fetchone=[(1, "조직학", "2026-fall", 5), None], fetchall=[rows])
     with _stack(conn, _fake_auth(role="viewer", subject="HST")):
         resp = client.get("/api/courses/1")
     assert resp.status_code == 200
-    weeks = resp.get_json()["course"]["weeks"]
+    course = resp.get_json()["course"]
+    weeks = course["weeks"]
     assert len(weeks) == 2
     wk1 = next(w for w in weeks if w["week_number"] == 1)
     wk2 = next(w for w in weeks if w["week_number"] == 2)
-    assert [s["slide_id"] for s in wk1["slides"]] == ["SA-HST-001"]
-    assert wk2["slides"] == []   # 미배포 배치는 노출 안 됨
-    # 상세 SQL 이 deploy_status='deployed' 필터를 포함하는지(원천 차단 확인)
+    assert [s["slide_id"] for s in wk1["slides"]] == [DEPLOYED_ID]
+    assert wk2["slides"] == []   # 미배포 배치는 노출 안 됨(빈 주차)
+
+    # (1) 원천 차단 기제: 상세 SQL 이 deploy_status='deployed' 필터를 포함(회귀 시 이 단언이 실패)
     sels = [" ".join(str(c.args[0]).split()).lower() for c in cur.execute.call_args_list]
-    assert any("course_weeks" in s and "deploy_status = 'deployed'" in s for s in sels)
-    # 응답 어디에도 qc_pending/rejected 슬라이드 ID 가 없음
+    assert any("course_weeks" in s
+               and "deploy_status = 'deployed'" in s
+               and "select id from slides" in s for s in sels)
+
+    # (2) 배포본 존재 확인(유지)
     raw = resp.get_data(as_text=True)
-    assert "SA-HST-001" in raw   # 배포본만 노출
+    assert DEPLOYED_ID in raw
+
+    # (3) ★ 미배포 ID 직접 부재 단언 — raw 문자열·구조 어디에도 없음
+    assert UNDEPLOYED_ID not in raw
+    assert UNDEPLOYED_ID not in _slide_ids_in_payload(course)
+
+
+def test_detail_relies_on_sql_filter_not_python(client):
+    """★ 부재 단언이 vacuous 하지 않음을 보장하는 부정대조(negative control).
+
+    상세 라우트는 자체 Python deploy 필터 없이 SQL ON 절 필터에 전적으로 의존한다 —
+    따라서 'SQL 이 필터를 갖는다'는 단언이 load-bearing 이다. 만약 SQL 필터가 제거돼 DB 가
+    미배포 행을 돌려주면(여기선 그 상황을 mock 으로 강제 주입), 라우트는 그대로 노출한다.
+    이 테스트는 그 사실을 명시적으로 문서화해, 위 (1) 기제 단언이 진짜 방어선임을 못박는다.
+    """
+    leaked = [
+        (10, 1, "1주차", None, 101, UNDEPLOYED_ID, 0, "미배포 본", "H&E"),  # 필터가 없었다면 새어나갈 행
+    ]
+    conn, cur = _mk_conn(fetchone=[(1, "조직학", "2026-fall", 5), None], fetchall=[leaked])
+    with _stack(conn, _fake_auth(role="viewer", subject="HST")):
+        resp = client.get("/api/courses/1")
+    course = resp.get_json()["course"]
+    # 라우트엔 Python 필터가 없으므로 DB 가 준 행을 그대로 통과 — 즉 방어는 전적으로 SQL ON 절에 있음.
+    assert UNDEPLOYED_ID in _slide_ids_in_payload(course)
+    # → 실제 DB 에서는 test_detail_excludes_undeployed_slides 의 (1) 필터가 이 행 자체를 막는다.
 
 
 # ── 수정4: enroll position 가드(학생·조교만, 교수·행정직원 거부) ──────────────

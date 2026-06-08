@@ -604,3 +604,10 @@ python3 run_tests.py
 [2026-06-08][Lead Developer][불변] _slide_access_allowed·_visible_slides·auth 무수정(git diff 확인). .sql·CLAUDE.md 미수정
 [2026-06-08][test-runner][결과] tests/test_lms.py 34 passed(기존 22 시퀀스 갱신 + 신규 12) / 전수 pytest 239 passed(227→239, 회귀 0)
 [2026-06-08][Lead Developer][평가] TOCTOU: 수정1 재검증이 상태변경과 같은 트랜잭션(autocommit=False)이라 권한 SELECT~UPDATE/DELETE 사이 커밋경계 없음 → 창 대폭 축소. 완전제거는 아님(users 행 FOR UPDATE/SERIALIZABLE 미적용 — position SELECT 직후~mutation 직전 마이크로초 강등은 구 스냅샷이라 미포착). 잔여 위험 낮음(드문 동시 강등), v1.5 Locust 시 재검토
+
+---
+## LMS 2단계 마무리 — 미배포 상세 필터 테스트 보강 — 2026-06-08
+[2026-06-08][Lead Developer][완료] tests/test_lms.py만 수정(코드 로직·.sql·CLAUDE.md 미수정)
+  - test_detail_excludes_undeployed_slides 강화: 미배포 ID(UNDEPLOYED_ID='SA-HST-UNDEPLOYED')를 mock에 명시 포함(2주차 배치→SQL ON절 deploy_status='deployed'로 필터→빈주차), 최종 JSON raw 문자열·구조(_slide_ids_in_payload) 양쪽에서 미배포 ID 직접 부재 단언. 배포본 존재 유지. SQL 필터 기제(course_weeks+deploy_status='deployed'+select id from slides) 단언 강화
+  - test_detail_relies_on_sql_filter_not_python 신규(부정대조): 라우트에 Python deploy 필터 없음을 명시 — DB가 미배포 행 주면 그대로 통과 → 방어선이 전적으로 SQL ON절임을 못박아 부재 단언이 vacuous 아님 보장
+[2026-06-08][test-runner][결과] tests/test_lms.py 35 passed(34→35) / 전수 pytest 240 passed(회귀 0)
