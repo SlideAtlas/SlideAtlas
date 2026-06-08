@@ -807,27 +807,64 @@ small {{ color:rgba(255,255,255,0.25); font-size:12px; margin-top:8px; display:b
 @app.route('/slides')
 @page_login_required
 def slides():
+    # 학생 홈(/home)으로 통합 — 기존 북마크·next 링크 보존을 위해 라우트는 유지하되 진입은 redirect만.
+    #   (slides.html 템플릿은 당장 삭제하지 않고 남겨둔다 — §21 1단계.)
+    return redirect('/home')
+
+
+@app.route('/home')
+@page_login_required
+def home():
+    """로그인 후 학생 홈 — 수업 탭 / 전체 탭 2탭 셸(§21 1단계).
+
+    - subject_code 없는 admin-only(콘텐츠 비소비자)는 슬라이드 0개 화면 대신 /portal로 보낸다.
+    - 그 외(viewer·겸직)는 home.html 렌더. '전체 탭' 슬라이드 목록은 기존 단일 게이트의
+      _visible_slides(load_slides())를 그대로 재사용한다 — 접근 정책·필터 로직을 새로 만들지 않는다(§8 불변).
+    - '수업 탭'은 1단계에선 빈 상태 placeholder(데이터 연동은 3단계).
+    """
+    # admin-only(순수 관리자, 좌석 0·콘텐츠 비소비, §6-4)는 홈 대신 포털로.
+    if g.role == 'admin' and g.subject_code is None:
+        return redirect('/portal')
+
     data = load_slides()
-    # 단일 게이트: 과목 구독 기준으로 가시 슬라이드 필터 (기관 일치 화석 제거, §6-1·§8)
+    # 단일 게이트와 동일 기준의 가시 슬라이드 필터(§6-1·§8) — 새 필터 로직 추가 금지.
     all_slides = _visible_slides(data.get('slides', []))
-    systems = {}
-    stains = {}
-    for s in all_slides:
-        sys = s.get('system', '기타')
-        stain = s.get('stain', '기타')
-        systems[sys] = systems.get(sys, 0) + 1
-        stains[stain] = stains.get(stain, 0) + 1
     total = len(all_slides)
     stain_class = {'H&E': 'he', 'PAS': 'pas', 'Masson Trichrome': 'masson', 'Silver': 'silver'}
-    # 헤더 "관리자 포털" 링크 노출 여부. 포털 게이트와 동일 기준(현재 __ADMIN__ roster 행 존재)으로
-    #   판정해, 권한 회수된 사용자에게 죽은 링크를 보여주지 않는다(§9). 게이트·접근권과는 무관.
+    # 계통(organ) 드롭다운 옵션 — 전체 탭 클라이언트 필터용(빈 값 제외, 정렬).
+    organs = sorted({s.get('system') for s in all_slides if s.get('system')})
+
+    # 표시명(roster.name)·과목명(subject_codes.name_ko) — 헤더 표시용.
+    display_name, subject_name = '', ''
+    conn = get_db_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT COALESCE(r.name, ''), COALESCE(sc.name_ko, u.subject_code, '')
+                     FROM users u
+                     LEFT JOIN institution_rosters r
+                       ON lower(r.email) = lower(u.email)
+                      AND r.institution_id = u.institution_id
+                      AND r.subject_code = u.subject_code
+                     LEFT JOIN subject_codes sc ON sc.code = u.subject_code
+                    WHERE u.id = %s""",
+                (g.user_id,),
+            )
+            row = cur.fetchone()
+            if row:
+                display_name, subject_name = row[0] or '', row[1] or ''
+    finally:
+        release_db_conn(conn)
+
+    # 헤더 "관리자 포털" 링크 노출 여부 — 포털 게이트와 동일 기준(현재 __ADMIN__ roster 행 존재, §9).
     is_admin = _is_institution_admin(g.user_id, g.institution_id)
-    return render_template('slides.html',
+    return render_template('home.html',
         slides=all_slides,
-        systems=systems,
-        stains=stains,
         total=total,
+        organs=organs,
         stain_class=stain_class,
+        display_name=display_name,
+        subject_name=subject_name,
         is_admin=is_admin,
     )
 

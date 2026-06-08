@@ -14,15 +14,15 @@
 
   /* ── next URL (오픈 리다이렉트 방어) ─────────────────── */
   var _nextUrl = (function () {
-    var n = new URLSearchParams(location.search).get('next') || '/slides';
+    var n = new URLSearchParams(location.search).get('next') || '/home';
     // '/'로 시작하는 내부 경로만 허용, '//'나 외부 URL 차단
-    if (!n.startsWith('/') || n.startsWith('//')) n = '/slides';
+    if (!n.startsWith('/') || n.startsWith('//')) n = '/home';
     return n;
   })();
 
   /* ── 로그인/인증 후 목적지 결정 ────────────────────────
      순수 admin-only(role='admin' AND subject_code 없음)는 슬라이드 0개 화면 대신 /portal로.
-     겸직 admin(subject_code 보유)·일반 viewer는 next(기본 /slides)로. 게이트 판정은 서버 단일
+     겸직 admin(subject_code 보유)·일반 viewer는 next(기본 /home — 학생 홈)로. 게이트 판정은 서버 단일
      게이트가 담당하며, 여기선 "어디로 보내나"만 결정한다(§8 무관). */
   function _postLoginDest(d) {
     var noSubject = (d.subject_code === null || d.subject_code === undefined || d.subject_code === '');

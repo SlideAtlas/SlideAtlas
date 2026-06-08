@@ -559,3 +559,20 @@ python3 run_tests.py
   - §0 권위 row 일치(분모 WHERE 술어+subscription_end DESC = 게이트), 분자=분모=인증 같은 집합, active_seat_count 불변, DISTINCT ON↔ORDER BY 정합, 멀티테넌시·바인딩·NULL·0가드·KPI SQL 유지
   - 잔존(범위 밖): subscription_end 동률 시 양쪽 비결정적 1행 선택(D22 추적) — 이번 수정이 신규 불일치 안 만듦. 개선안: 양쪽에 공통 secondary sort(예: , id DESC) — 인증 게이트 변경 수반이라 별건
 [2026-06-06][Lead Developer][대기] 좁은 Codex 재확인 + CEO 승인 = 운영자 게이트. 신규 마이그레이션 없음(직전 D25·D25b 2종은 여전히 CEO 실행 대기)
+
+---
+## 학생 공통 셸 + 로그인 후 홈(/home) 1단계 — 2026-06-08
+[2026-06-08][Lead Developer][완료] #1 GET /home 라우트 신설(server_render.py, @page_login_required)
+  - admin-only(role=='admin' AND subject_code IS NULL)→/portal redirect(콘텐츠 비소비자)
+  - viewer·겸직→home.html 렌더. 전체 탭 목록 = _visible_slides(load_slides()) 그대로(접근 정책·필터 로직 불변, §8)
+  - 표시명(roster.name)·과목명(subject_codes.name_ko) 1쿼리 조회해 헤더 전달. is_admin=_is_institution_admin 재사용
+[2026-06-08][Lead Developer][완료] #2 templates/home.html 신규(standalone, slides.html 카드 이식)
+  - 공통 학생 헤더: 로고+Beta / 탭 토글 [수업|전체] / 우측 마이페이지(href=/mypage 링크만, 4단계) + 로그아웃 버튼
+  - 전체 탭: 제목/ID 검색창 + 계통(organ) 드롭다운 클라이언트 필터만 동작화(data-search·data-organ). 과한 사이드바 생략
+  - 수업 탭: 빈 상태 placeholder(데이터 3단계). 기본 탭=전체
+  - interceptor.js 로드, esc() portal 정의 인라인 복사, 로그아웃=fetch POST /api/auth/logout→/login
+[2026-06-08][Lead Developer][완료] #3 login_terminal.js _postLoginDest·next 기본값 /slides→/home(admin-only→/portal 유지)
+[2026-06-08][Lead Developer][완료] #4 /slides 라우트=redirect('/home')(북마크·next 보존). slides.html 파일 잔존(미삭제)
+[2026-06-08][Lead Developer][완료] #5 viewer.html nav "← 목록"(/slides)→"← 홈"(/home)
+[2026-06-08][Lead Developer][불변] _slide_access_allowed·_visible_slides·auth 인증 로직 무수정(접근 정책 미변경)
+[2026-06-08][test-runner][결과] pytest 205 passed (회귀 0). server_render.py·home.html 구문/Jinja 파싱 OK

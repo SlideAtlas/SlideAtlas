@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SlideAtlas — 홈</title>
+<!-- 전역 fetch 래퍼 + CSRF 자동 주입 + 401 처리(향후 fetch 대비) -->
+<script src="/static/js/interceptor.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+@import url('https://cdn.jsdelivr.net/gh/sunn-us/SUIT/fonts/variable/woff2/SUIT-Variable.css');
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:"SUIT Variable","SUIT",sans-serif;background:#F7F4EF;color:#0F1F3D;min-height:100vh;}
+/* ── 공통 학생 헤더 ── */
+nav{background:#0F1F3D;padding:0 40px;height:58px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
+.nav-left{display:flex;align-items:center;gap:18px;}
+.logo-link{display:flex;align-items:center;text-decoration:none;}
+.nav-badge{font-size:11px;color:#2A9D8F;border:1px solid rgba(42,157,143,0.3);padding:4px 12px;border-radius:20px;font-weight:500;}
+.nav-tabs{display:flex;gap:4px;margin-left:8px;}
+.nav-tab{background:transparent;color:rgba(255,255,255,0.55);border:none;padding:8px 18px;border-radius:6px;font-size:14px;font-family:"SUIT Variable",sans-serif;font-weight:600;cursor:pointer;}
+.nav-tab.active{background:rgba(42,157,143,0.18);color:#fff;}
+.nav-right{display:flex;gap:10px;align-items:center;}
+.nav-user{font-size:12px;color:rgba(255,255,255,0.55);margin-right:4px;}
+.nav-user strong{color:#fff;font-weight:600;}
+.btn-nav{background:#2A9D8F;color:#fff;border:none;padding:7px 16px;border-radius:6px;font-size:13px;font-family:"SUIT Variable",sans-serif;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block;}
+.btn-nav.ghost{background:transparent;border:1px solid rgba(255,255,255,0.25);color:rgba(255,255,255,0.8);}
+.btn-nav.ghost:hover{border-color:rgba(255,255,255,0.5);color:#fff;}
+/* ── 페이지 헤더 ── */
+.page-header{padding:28px 40px 20px;background:#fff;border-bottom:1px solid #E5E0D8;}
+.page-title{font-size:26px;font-weight:800;letter-spacing:-0.03em;margin-bottom:4px;}
+.page-desc{font-size:14px;color:#6B6560;font-weight:300;}
+/* ── 콘텐츠 컨테이너 ── */
+.container{padding:24px 40px;}
+.toolbar{display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap;}
+.search-box{flex:1;min-width:220px;max-width:380px;}
+.search-box input{width:100%;padding:9px 14px;border:1px solid #D8D3CA;border-radius:8px;font-size:14px;font-family:"SUIT Variable",sans-serif;background:#fff;color:#0F1F3D;}
+.search-box input:focus{outline:none;border-color:#2A9D8F;}
+.organ-select{padding:9px 14px;border:1px solid #D8D3CA;border-radius:8px;font-size:14px;font-family:"SUIT Variable",sans-serif;background:#fff;color:#0F1F3D;cursor:pointer;}
+.organ-select:focus{outline:none;border-color:#2A9D8F;}
+.result-count{font-size:13px;color:#6B6560;margin-left:auto;}
+.result-count strong{color:#0F1F3D;font-weight:700;}
+/* ── 슬라이드 그리드(slides.html 이식) ── */
+.slides-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;}
+.slide-card{background:#fff;border:1px solid #E5E0D8;border-radius:12px;overflow:hidden;cursor:pointer;transition:all 0.2s;text-decoration:none;display:block;color:inherit;}
+.slide-card:hover{border-color:#2A9D8F;transform:translateY(-2px);box-shadow:0 8px 24px rgba(15,31,61,0.08);}
+.card-thumb{height:140px;position:relative;overflow:hidden;}
+.thumb-he{background:radial-gradient(ellipse 80px 60px at 40% 45%,rgba(220,150,170,0.7) 0%,transparent 65%),linear-gradient(135deg,#f5e8ee,#f0dce6,#e8d0dc);}
+.thumb-pas{background:radial-gradient(ellipse 70px 50px at 35% 50%,rgba(150,200,220,0.6) 0%,transparent 60%),linear-gradient(135deg,#e8f4f8,#d4eaf4);}
+.thumb-masson{background:radial-gradient(ellipse 60px 50px at 42% 48%,rgba(100,160,220,0.6) 0%,transparent 60%),linear-gradient(135deg,#e8eef8,#d8e4f4);}
+.thumb-silver{background:radial-gradient(ellipse 60px 45px at 40% 50%,rgba(180,180,160,0.7) 0%,transparent 60%),linear-gradient(135deg,#f2f0ea,#e8e6de);}
+.card-thumb-badge{position:absolute;top:10px;left:10px;font-size:9px;font-weight:600;padding:3px 8px;border-radius:4px;font-family:"DM Mono",monospace;}
+.badge-he{background:rgba(42,157,143,0.9);color:#fff;}
+.badge-pas{background:rgba(52,120,180,0.9);color:#fff;}
+.badge-masson{background:rgba(100,70,160,0.9);color:#fff;}
+.badge-silver{background:rgba(100,100,90,0.9);color:#fff;}
+.card-sample-badge{position:absolute;top:10px;right:10px;background:rgba(233,196,106,0.95);color:#633806;font-size:9px;font-weight:700;padding:3px 8px;border-radius:4px;font-family:"DM Mono",monospace;}
+.card-scale{position:absolute;bottom:10px;left:10px;font-size:9px;font-family:"DM Mono",monospace;color:rgba(255,255,255,0.85);background:rgba(0,0,0,0.45);padding:2px 8px;border-radius:3px;}
+.card-body{padding:14px 16px;}
+.card-system{font-size:10px;color:#2A9D8F;font-weight:600;letter-spacing:0.05em;margin-bottom:4px;font-family:"DM Mono",monospace;}
+.card-name-ko{font-size:15px;font-weight:700;letter-spacing:-0.02em;margin-bottom:2px;}
+.card-name-en{font-size:11px;color:#9B9490;font-family:"DM Mono",monospace;margin-bottom:10px;}
+.card-meta{display:flex;align-items:center;justify-content:space-between;}
+.card-stain{font-size:11px;color:#6B6560;}
+.card-link{font-size:11px;color:#2A9D8F;font-weight:600;}
+.empty-grid{padding:60px 20px;text-align:center;color:#9B9490;font-size:14px;}
+/* ── 수업 탭 빈 상태 ── */
+.empty-state{padding:80px 20px;text-align:center;}
+.empty-state .es-icon{font-size:44px;margin-bottom:16px;}
+.empty-state .es-title{font-size:18px;font-weight:700;color:#0F1F3D;margin-bottom:8px;}
+.empty-state .es-desc{font-size:14px;color:#6B6560;line-height:1.7;max-width:420px;margin:0 auto;}
+.hidden{display:none !important;}
+/* ── 푸터 ── */
+footer{background:#0F1F3D;padding:28px 52px;display:flex;align-items:center;justify-content:space-between;margin-top:40px;}
+.footer-copy{font-size:12px;color:rgba(255,255,255,0.28);}
+.footer-links{display:flex;gap:24px;}
+.footer-links a{font-size:12px;color:rgba(255,255,255,0.38);text-decoration:none;}
+</style>
+</head>
+<body>
+<nav>
+  <div class="nav-left">
+    <a href="/home" class="logo-link">
+      <img src="/static/slideatlas_logo_hor.png" alt="SlideAtlas" style="height:60px;width:auto;">
+    </a>
+    <span class="nav-badge">Beta</span>
+    <div class="nav-tabs">
+      <button class="nav-tab" id="tab-btn-course" onclick="showTab('course')">수업</button>
+      <button class="nav-tab active" id="tab-btn-all" onclick="showTab('all')">전체</button>
+    </div>
+  </div>
+  <div class="nav-right">
+    <span class="nav-user">
+      {% if display_name %}<strong>{{ display_name }}</strong>{% endif %}
+      {% if subject_name %}&nbsp;·&nbsp;{{ subject_name }}{% endif %}
+    </span>
+    {% if is_admin %}<a class="btn-nav ghost" href="/portal">관리자 포털</a>{% endif %}
+    <a class="btn-nav ghost" href="/mypage">마이페이지</a>
+    <button class="btn-nav" id="btn-logout" onclick="doLogout()">로그아웃</button>
+  </div>
+</nav>
+
+<div class="page-header">
+  <h1 class="page-title">학습 홈</h1>
+  <p class="page-desc">고해상도 디지털 WSI 슬라이드 아카이브&nbsp;|&nbsp;{{ total }}개 슬라이드 열람 가능</p>
+</div>
+
+<!-- ══ 전체 탭 ══ -->
+<div class="container" id="tab-all">
+  <div class="toolbar">
+    <div class="search-box">
+      <input type="text" id="search-input" placeholder="제목 또는 ID로 검색…" oninput="applyFilter()" autocomplete="off">
+    </div>
+    <select class="organ-select" id="organ-select" onchange="applyFilter()">
+      <option value="">계통 · 전체</option>
+      {% for o in organs %}<option value="{{ o }}">{{ o }}</option>{% endfor %}
+    </select>
+    <span class="result-count"><strong id="visible-count">{{ total }}</strong>개 슬라이드</span>
+  </div>
+
+  {% if slides %}
+  <div class="slides-grid" id="slides-grid">
+    {% for s in slides %}
+    {% set sc = stain_class.get(s.get('stain',''), 'he') %}
+    {% set stain_badge = s.get('stain', 'H&E') %}
+    <a class="slide-card"
+       href="/viewer/{{ s.id }}"
+       data-organ="{{ s.get('system','') }}"
+       data-search="{{ (s.id ~ ' ' ~ s.get('title_ko','') ~ ' ' ~ s.get('title_en','')) | lower }}">
+      <div class="card-thumb thumb-{{ sc }}">
+        <span class="card-thumb-badge badge-{{ sc }}">{{ stain_badge }}</span>
+        <span class="card-sample-badge">AVAILABLE</span>
+        <span class="card-scale">WSI · 40×</span>
+      </div>
+      <div class="card-body">
+        <div class="card-system">{{ s.get('system', '') }}</div>
+        <div class="card-name-ko">{{ s.get('title_ko', s.id) }}</div>
+        <div class="card-name-en">{{ s.get('title_en', '') }}</div>
+        <div class="card-meta">
+          <span class="card-stain">{{ stain_badge }} · {{ s.get('institution', 'SA') }}</span>
+          <span class="card-link">열기 →</span>
+        </div>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  <div class="empty-grid hidden" id="no-result">검색 조건에 맞는 슬라이드가 없습니다.</div>
+  {% else %}
+  <div class="empty-grid">열람 가능한 슬라이드가 없습니다.</div>
+  {% endif %}
+</div>
+
+<!-- ══ 수업 탭(1단계 빈 상태 — 데이터 연동은 3단계) ══ -->
+<div class="container hidden" id="tab-course">
+  <div class="empty-state">
+    <div class="es-icon">📚</div>
+    <div class="es-title">아직 등록된 수업이 없습니다</div>
+    <div class="es-desc">
+      교수·조교가 수업을 개설하면 여기에 표시됩니다.<br>
+      그때까지는 <strong>전체</strong> 탭에서 구독 과목의 모든 슬라이드를 열람할 수 있습니다.
+    </div>
+  </div>
+</div>
+
+<footer>
+  <img src="/static/slideatlas_logo_hor.png" alt="SlideAtlas" style="height:60px;width:auto;">
+  <span class="footer-copy">© 2026 AtlasLab Co., Ltd.</span>
+  <div class="footer-links">
+    <a href="mailto:mcmajo@naver.com">문의</a>
+    <a href="#">기관 구독</a>
+  </div>
+</footer>
+
+<script>
+// XSS 헬퍼 — portal.html 정의 인라인 복사(향후 클라이언트 렌더 대비). 현재 마크업은 서버 렌더라 미사용이나
+//   3단계 수업 데이터 fetch 시 재사용한다.
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+
+// ── 탭 토글 ── 기본 탭 = 전체(수업 데이터 없음)
+function showTab(name) {
+  var isAll = (name === 'all');
+  document.getElementById('tab-all').classList.toggle('hidden', !isAll);
+  document.getElementById('tab-course').classList.toggle('hidden', isAll);
+  document.getElementById('tab-btn-all').classList.toggle('active', isAll);
+  document.getElementById('tab-btn-course').classList.toggle('active', !isAll);
+}
+
+// ── 전체 탭 클라이언트 필터(검색어 + 계통) ──
+function applyFilter() {
+  var q = (document.getElementById('search-input').value || '').trim().toLowerCase();
+  var organ = document.getElementById('organ-select').value || '';
+  var cards = document.querySelectorAll('#slides-grid .slide-card');
+  var shown = 0;
+  cards.forEach(function(card){
+    var matchSearch = !q || (card.getAttribute('data-search') || '').indexOf(q) !== -1;
+    var matchOrgan  = !organ || card.getAttribute('data-organ') === organ;
+    var visible = matchSearch && matchOrgan;
+    card.classList.toggle('hidden', !visible);
+    if (visible) shown++;
+  });
+  var cnt = document.getElementById('visible-count');
+  if (cnt) cnt.textContent = shown;
+  var noResult = document.getElementById('no-result');
+  if (noResult) noResult.classList.toggle('hidden', shown !== 0 || cards.length === 0);
+}
+
+// ── 로그아웃 ── interceptor 경유(CSRF 자동 주입) POST → /login 이동
+async function doLogout() {
+  var btn = document.getElementById('btn-logout');
+  if (btn) btn.disabled = true;
+  try {
+    await fetch('/api/auth/logout', { method: 'POST' });
+  } catch (e) { /* 네트워크 실패해도 로그인 페이지로 보낸다 */ }
+  location.href = '/login';
+}
+</script>
+</body>
+</html>
