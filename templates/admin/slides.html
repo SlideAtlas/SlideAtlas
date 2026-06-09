@@ -253,7 +253,7 @@
         </div>
         <div class="frow">
           <label>장기 (organ)</label>
-          <input id="a-org" placeholder="예: 소화기">
+          <select id="a-org"><option value="">(미지정)</option></select>
         </div>
         <div class="frow">
           <label>염색 (stain)</label>
@@ -317,6 +317,31 @@ const CSRF = document.getElementById('admin-csrf-token').value;
 let _allSlides = [];
 let _filter = 'all';
 let _rejectSlideId = null;
+let _organs = [];   // organ 통제어휘(§18 D28) — 개별 추가 드롭다운
+
+// ── organ 통제어휘 로드(개별 추가 드롭다운) ──────────────────
+async function loadOrgans() {
+  try {
+    const res = await fetch('/admin/api/organs');
+    const data = await res.json();
+    if (!data.ok) return;
+    _organs = data.organs || [];
+    const sel = document.getElementById('a-org');
+    if (!sel) return;
+    let html = '<option value="">(미지정)</option>';
+    let curSys = null;
+    _organs.forEach(o => {
+      if (o.organ_system && o.organ_system !== curSys) {
+        if (curSys !== null) html += '</optgroup>';
+        html += `<optgroup label="${escH(o.organ_system)}">`;
+        curSys = o.organ_system;
+      }
+      html += `<option value="${escH(o.organ_code)}">${escH(o.name_ko)}</option>`;
+    });
+    if (curSys !== null) html += '</optgroup>';
+    sel.innerHTML = html;
+  } catch (e) { /* 드롭다운 비어도 등록 가능(organ 미지정) */ }
+}
 
 // ── 데이터 로드 ──────────────────────────────────────────────
 async function loadSlides() {
@@ -604,7 +629,7 @@ function openAdd() {
   document.getElementById('a-src').value = '';
   document.getElementById('a-tko').value = '';
   document.getElementById('a-ten').value = '';
-  document.getElementById('a-org').value = '';
+  document.getElementById('a-org').value = '';   // organ 드롭다운 → (미지정)
   document.getElementById('a-stain').value = 'H&E';
   document.getElementById('a-desc').value = '';
   document.getElementById('ov-add').classList.add('show');
@@ -619,7 +644,7 @@ async function submitAdd() {
     body: JSON.stringify({
       subject_code, title_ko,
       title_en: document.getElementById('a-ten').value.trim(),
-      organ: document.getElementById('a-org').value.trim(),
+      organ_code: document.getElementById('a-org').value || null,
       stain: document.getElementById('a-stain').value.trim(),
       species: document.getElementById('a-species').value,
       description: document.getElementById('a-desc').value.trim(),
@@ -654,5 +679,6 @@ function showToast(msg, ok) {
 }
 
 loadSlides();
+loadOrgans();
 </script>
 {% endblock %}

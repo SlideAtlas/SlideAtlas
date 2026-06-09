@@ -3203,6 +3203,26 @@ def api_slides_list():
         release_db_conn(conn)
 
 
+@app.route('/admin/api/organs', methods=['GET'])
+@super_admin_required
+def api_organs_list():
+    """organ 통제어휘 목록(§18 D28). 개별 추가 모달 드롭다운용 — is_active=TRUE, display_order 정렬."""
+    conn = get_db_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT organ_code, name_ko, name_en, organ_system
+                FROM organs
+                WHERE is_active = TRUE
+                ORDER BY display_order, name_ko
+            """)
+            cols = [d[0] for d in cur.description]
+            organs = [dict(zip(cols, row)) for row in cur.fetchall()]
+        return jsonify({'ok': True, 'organs': organs})
+    finally:
+        release_db_conn(conn)
+
+
 @app.route('/admin/api/slides/<slide_id>/deploy', methods=['POST'])
 @super_admin_required
 @admin_csrf_required
@@ -3382,10 +3402,26 @@ def api_slide_add():
     if not subject_code or not title_ko:
         return jsonify({'ok': False, 'error': '과목·제목(한국어)은 필수입니다'}), 400
 
+    # organ 통제어휘(§18 D28): organ_code 만 수신·검증한다(자유텍스트 organ 단독 기록 금지).
+    organ_code = (data.get('organ_code') or '').strip().lower() or None
+
     conn = get_db_conn()
     try:
         with conn:
             with conn.cursor() as cur:
+                # organ_code 가 오면 organs 마스터에 활성 행으로 존재해야 한다(임의값 거부).
+                # 표시 연속성을 위해 organ 컬럼엔 선택 organ_code 의 name_ko 를 함께 기록
+                # (home 계통 필터 s['system']·admin 목록 escH(s.organ) 등 기존 표시 경로 무변경).
+                organ_name = None
+                if organ_code:
+                    cur.execute(
+                        "SELECT name_ko FROM organs WHERE organ_code=%s AND is_active=TRUE",
+                        (organ_code,))
+                    row = cur.fetchone()
+                    if not row:
+                        return jsonify({'ok': False, 'error': f'유효하지 않은 organ_code: {organ_code}'}), 400
+                    organ_name = row[0]
+
                 # SA-{SUBJECT} 접두사로 다음 채번
                 cur.execute("""
                     SELECT id FROM slides WHERE id LIKE %s ORDER BY id DESC LIMIT 1
@@ -3405,16 +3441,17 @@ def api_slide_add():
                     INSERT INTO slides (
                         id, institution_id, subject_code,
                         title_ko, title_en, description,
-                        stain, organ, species, license_source,
+                        stain, organ, organ_code, species, license_source,
                         original_format, conversion_status, deploy_status
-                    ) VALUES (%s,'SA',%s,%s,%s,%s,%s,%s,%s,%s,%s,'pending','qc_pending')
+                    ) VALUES (%s,'SA',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'pending','qc_pending')
                 """, (
                     new_id, subject_code,
                     title_ko,
                     (data.get('title_en') or '').strip() or None,
                     (data.get('description') or '').strip() or None,
                     (data.get('stain') or '').strip() or None,
-                    (data.get('organ') or '').strip() or None,
+                    organ_name,         # organ(표시용) = 선택 organ_code 의 name_ko
+                    organ_code,         # organ_code(정규 앵커) = 통제어휘 PK
                     (data.get('species') or 'human').strip(),
                     (data.get('license_source') or '').strip() or None,
                     (data.get('original_format') or '').upper() or None,
@@ -3432,6 +3469,11 @@ def api_slide_add():
 @super_admin_required
 @admin_csrf_required
 def admin_save_slide():
+    # ⚠ DEPRECATED (organ 정규화 §18 D28): 이 레거시 경로는 프론트엔드에서 호출되지 않는다
+    #   (개별 추가는 /admin/api/slides/add → api_slide_add 가 organ_code 통제어휘로 기록).
+    #   본 핸들러는 payload['system']→organ 자유텍스트 단독 기록이라 organ_code 정규화를 우회하므로
+    #   신규 사용 금지. 라우트는 어드민 인증/CSRF/세션잠금 테스트(tests/test_auth.py)가 참조하므로
+    #   존치하되, 슬라이드 메타 저장 용도로는 재사용하지 말 것. v1.5 정리 대상.
     # [ROLLBACK] JSON 방식 -- RDS 전환 전 코드
     # try:
     #     payload = request.get_json()
