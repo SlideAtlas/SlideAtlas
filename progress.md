@@ -627,3 +627,10 @@ python3 run_tests.py
 - 라우트 `GET /teacher/courses`(@page_login_required, position∈{교수,조교}만 아니면 /home). 템플릿 `teacher_courses.html`.
 - 호출한 기존 API: `GET /api/courses/mine`(카드 렌더), `POST /api/courses`(수업 개설 모달 → 성공 시 편집 화면 이동).
 - 새 라우트/판정: 없음(페이지 셸 + 기존 API). 수업 개설 버튼은 is_professor만 노출(API도 교수만 강제).
+
+### [A-2] 수업 편집(주차 구성) — ✅
+- 라우트 `GET /teacher/course/<cid>`(편집권자=교수·위임조교만, 아니면 403 페이지). 템플릿 `course_edit.html`(active_tab=weeks).
+- 호출한 기존 API: `GET /api/courses/<cid>`(주차+배치 슬라이드, 단 deployed만), `POST/DELETE /weeks`, `POST/DELETE /weeks/<wid>/slides`.
+- 신규 표시 API: `GET /api/courses/<cid>/available-slides` — 배치 모달용. `_course_owner_or_assistant`(편집권) + `_visible_slides`(단일 게이트 동일 기준) 재사용, 카탈로그 메타만(id·title_ko·organ·stain), 타일/토큰 없음. 배치 자체는 기존 POST가 `_slide_access_allowed` 재검증.
+- 슬라이드 배치 모달(체크박스 다중·검색·중복 허용), 빈 주차 사유는 주차 추가 모달에서 입력(POST weeks의 empty_reason).
+- 미해결(이연): 기존 주차 제목·빈주차 사유 인라인 수정은 PUT weeks 부재로 미지원(읽기전용 표시). 새 mutate 엔드포인트는 본 단계 범위 밖 → 차기. 주차 제목은 생성 시 캡처.

@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SlideAtlas — 수업 편집</title>
+<script src="/static/js/interceptor.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/lms.css">
+</head>
+<body class="lms-edit" data-cid="{{ cid }}" data-subject="{{ subject_code or '' }}">
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<!-- 주차 추가 모달 -->
+<div class="modal-backdrop hidden" id="week-modal" role="dialog" aria-modal="true">
+  <div class="modal">
+    <div class="modal-title">주차 추가</div>
+    <div class="modal-field"><label>주차 제목</label><input type="text" id="wk-title" placeholder="예: 1주차 · 상피조직" autocomplete="off"></div>
+    <div class="modal-field"><label>빈 주차 사유 (선택)</label><input type="text" id="wk-reason" placeholder="예: 다음 주 강의 후 업데이트" autocomplete="off"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeWeek()">취소</button>
+      <button class="btn btn-primary" id="wk-submit" onclick="submitWeek()"><i class="ti ti-plus"></i>추가</button>
+    </div>
+  </div>
+</div>
+
+<!-- 슬라이드 선택 모달 -->
+<div class="modal-backdrop hidden" id="pick-modal" role="dialog" aria-modal="true">
+  <div class="modal modal-lg">
+    <div class="modal-title" id="pick-title">슬라이드 배치</div>
+    <div class="pick-search"><i class="ti ti-search"></i><input type="text" id="pick-search" placeholder="이름 또는 슬라이드 ID 검색" oninput="filterPick()" autocomplete="off"></div>
+    <div class="pick-note">여러 개 선택 가능 · 같은 슬라이드를 다른 주차에 중복 배치할 수 있습니다.</div>
+    <div class="pick-list" id="pick-list"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closePick()">취소</button>
+      <button class="btn btn-primary" id="pick-submit" onclick="submitPick()"><i class="ti ti-check"></i>배치</button>
+    </div>
+  </div>
+</div>
+
+<div class="topbar">
+  <a class="tb-logo-wrap" href="/home"><img class="tb-logo-img" src="/static/SlideAtlas_Navy_Hor_small.png" alt="SlideAtlas"></a>
+  <a class="tb-back" href="/teacher/courses"><i class="ti ti-chevron-right" style="transform:rotate(180deg)"></i>수업 목록</a>
+  <div class="tb-right">
+    <a class="tb-link" href="/mypage"><i class="ti ti-user"></i>마이페이지</a>
+    <a class="tb-link" id="btn-logout" onclick="doLogout()"><i class="ti ti-logout"></i>로그아웃</a>
+  </div>
+</div>
+
+<div class="page-wrap">
+  <div class="chead">
+    <div class="chead-name" id="chead-name">수업</div>
+    <div class="chead-meta" id="chead-meta"></div>
+  </div>
+  <nav class="cnav">
+    <a class="active"><i class="ti ti-microscope"></i>주차 구성</a>
+    {% if role_in_course == 'professor' %}<a href="/teacher/course/{{ cid }}/assistants"><i class="ti ti-user-check"></i>조교</a>{% endif %}
+    <a href="/teacher/course/{{ cid }}/dashboard"><i class="ti ti-chart-bar"></i>대시보드</a>
+  </nav>
+
+  <button class="btn btn-primary add-week" onclick="openWeek()"><i class="ti ti-plus"></i>주차 추가</button>
+
+  <div id="weeks"></div>
+  <div id="weeks-empty" class="empty-row hidden" style="padding:40px 20px;text-align:center">
+    아직 주차가 없습니다. <strong>주차 추가</strong>로 커리큘럼을 구성하세요.
+  </div>
+</div>
+
+<script>
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+var toastTimer;
+function showToast(m){var t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(function(){t.classList.remove('show');},2600);}
+
+var CID=document.body.getAttribute('data-cid');
+var SUBJECT=document.body.getAttribute('data-subject');
+var WEEKS=[];              // 최근 로드된 주차 목록
+var AVAIL=[];              // 가용 슬라이드 캐시(배치 모달)
+var PICK_WID=null;         // 현재 배치 대상 주차 id
+
+function toggleWeek(el){el.closest('.week-block').classList.toggle('open');}
+
+function stainClass(st){var s=(st||'').toLowerCase();if(s.indexOf('pas')>-1)return 'stain-pas';if(s.indexOf('masson')>-1||s.indexOf('trichrome')>-1)return 'stain-mt';return 'stain-he';}
+
+function placedCard(s){
+  return '<div class="placed-card"><span class="placed-order">'+(s.display_order||0)+'</span>'
+    +'<button class="placed-rm" title="배치 제거" onclick="removeSlide('+s.week_id+','+s.link_id+')"><i class="ti ti-trash"></i></button>'
+    +'<div class="placed-thumb"><i class="ti ti-microscope"></i></div>'
+    +'<div class="placed-meta"><div class="placed-title">'+esc(s.title_ko)+'</div><div class="placed-sub">'+esc(s.slide_id)+'</div></div></div>';
+}
+
+function weekBlock(w,open){
+  var slides=(w.slides||[]).map(function(s){s.week_id=w.id;return placedCard(s);}).join('');
+  var body;
+  if((w.slides||[]).length){
+    body='<div class="placed-grid">'+slides+'</div>';
+  }else{
+    body=w.empty_reason
+      ? '<input class="empty-reason-input" value="'+esc(w.empty_reason)+'" readonly>'
+      : '<div class="empty-row" style="padding:10px 2px 14px;font-size:12px;color:var(--color-text-tertiary)">배치된 슬라이드가 없습니다.</div>';
+  }
+  return '<div class="section-card week-block'+(open?' open':'')+'">'
+    +'<div class="card-header week-head">'
+    +'<i class="ti ti-chevron-right week-chev" onclick="toggleWeek(this)"></i>'
+    +'<div class="week-title-input" style="border-color:transparent;cursor:default">'+esc(w.title||('주차 '+w.week_number))+'</div>'
+    +'<span class="week-count">'+((w.slides||[]).length)+'개</span>'
+    +'<button class="week-del" title="주차 삭제" onclick="removeWeek('+w.id+')"><i class="ti ti-trash"></i></button>'
+    +'</div>'
+    +'<div class="week-body">'+body
+    +'<button class="add-slide-btn" onclick="openPick('+w.id+',\''+esc(w.title||('주차 '+w.week_number))+'\')"><i class="ti ti-plus"></i>슬라이드 배치</button>'
+    +'</div></div>';
+}
+
+async function loadCourse(){
+  try{
+    var r=await fetch('/api/courses/'+encodeURIComponent(CID));
+    var d=await r.json();
+    if(!r.ok||!d.success){document.getElementById('chead-name').textContent='수업을 찾을 수 없습니다';return;}
+    var c=d.course;
+    document.getElementById('chead-name').textContent=c.title||'수업';
+    document.getElementById('chead-meta').textContent=[c.semester,SUBJECT].filter(Boolean).join(' · ');
+    WEEKS=c.weeks||[];
+    var box=document.getElementById('weeks');
+    if(!WEEKS.length){box.innerHTML='';document.getElementById('weeks-empty').classList.remove('hidden');return;}
+    document.getElementById('weeks-empty').classList.add('hidden');
+    box.innerHTML=WEEKS.map(function(w,i){return weekBlock(w,i===0);}).join('');
+  }catch(e){showToast('수업을 불러오지 못했습니다');}
+}
+
+// ── 주차 추가 ──
+function openWeek(){document.getElementById('wk-title').value='';document.getElementById('wk-reason').value='';document.getElementById('week-modal').classList.remove('hidden');document.getElementById('wk-title').focus();}
+function closeWeek(){document.getElementById('week-modal').classList.add('hidden');}
+async function submitWeek(){
+  var title=(document.getElementById('wk-title').value||'').trim();
+  var reason=(document.getElementById('wk-reason').value||'').trim();
+  var next=WEEKS.reduce(function(m,w){return Math.max(m,w.week_number||0);},0)+1;
+  var btn=document.getElementById('wk-submit');btn.disabled=true;
+  try{
+    var r=await fetch('/api/courses/'+encodeURIComponent(CID)+'/weeks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({week_number:next,title:title,empty_reason:reason})});
+    var d=await r.json();
+    if(r.ok&&d.success){closeWeek();showToast('주차를 추가했습니다');await loadCourse();}
+    else showToast(d.message||'추가 실패');
+  }catch(e){showToast('네트워크 오류');}
+  btn.disabled=false;
+}
+
+// ── 주차 삭제 ──
+async function removeWeek(wid){
+  if(!confirm('이 주차를 삭제할까요? 배치된 슬라이드도 함께 제거됩니다.'))return;
+  try{
+    var r=await fetch('/api/courses/'+encodeURIComponent(CID)+'/weeks/'+wid,{method:'DELETE'});
+    var d=await r.json();
+    if(r.ok&&d.success){showToast('주차를 삭제했습니다');await loadCourse();}
+    else showToast(d.message||'삭제 실패');
+  }catch(e){showToast('네트워크 오류');}
+}
+
+// ── 슬라이드 배치 ──
+async function openPick(wid,wtitle){
+  PICK_WID=wid;
+  document.getElementById('pick-title').textContent='슬라이드 배치 — '+wtitle;
+  document.getElementById('pick-search').value='';
+  var list=document.getElementById('pick-list');
+  list.innerHTML='<div class="empty-row" style="padding:20px">불러오는 중…</div>';
+  document.getElementById('pick-modal').classList.remove('hidden');
+  try{
+    var r=await fetch('/api/courses/'+encodeURIComponent(CID)+'/available-slides');
+    var d=await r.json();
+    AVAIL=(d&&d.slides)||[];
+    renderPick();
+  }catch(e){list.innerHTML='<div class="empty-row" style="padding:20px">슬라이드를 불러오지 못했습니다.</div>';}
+}
+function closePick(){document.getElementById('pick-modal').classList.add('hidden');PICK_WID=null;}
+function renderPick(){
+  var list=document.getElementById('pick-list');
+  if(!AVAIL.length){list.innerHTML='<div class="empty-row" style="padding:20px">배치 가능한 슬라이드가 없습니다.</div>';return;}
+  list.innerHTML=AVAIL.map(function(s){
+    var sub=[s.id,s.organ,s.stain].filter(Boolean).join(' · ');
+    var hay=(s.id+' '+s.title_ko+' '+(s.organ||'')).toLowerCase();
+    return '<label class="pick-item" data-hay="'+esc(hay)+'"><input type="checkbox" value="'+esc(s.id)+'">'
+      +'<div class="pick-thumb"><i class="ti ti-microscope"></i></div>'
+      +'<div class="pick-info"><div class="pick-name">'+esc(s.title_ko)+'</div><div class="pick-id">'+esc(sub)+'</div></div></label>';
+  }).join('');
+}
+function filterPick(){
+  var q=(document.getElementById('pick-search').value||'').trim().toLowerCase();
+  document.querySelectorAll('#pick-list .pick-item').forEach(function(el){
+    el.style.display=(!q||(el.getAttribute('data-hay')||'').indexOf(q)>-1)?'':'none';
+  });
+}
+async function submitPick(){
+  if(PICK_WID==null)return;
+  var ids=Array.prototype.slice.call(document.querySelectorAll('#pick-list input:checked')).map(function(i){return i.value;});
+  if(!ids.length){showToast('슬라이드를 선택하세요');return;}
+  var btn=document.getElementById('pick-submit');btn.disabled=true;
+  var ok=0,fail=0;
+  for(var i=0;i<ids.length;i++){
+    try{
+      var r=await fetch('/api/courses/'+encodeURIComponent(CID)+'/weeks/'+PICK_WID+'/slides',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slide_id:ids[i],display_order:i+1})});
+      var d=await r.json();
+      if(r.ok&&d.success)ok++;else fail++;
+    }catch(e){fail++;}
+  }
+  btn.disabled=false;closePick();
+  showToast(ok+'개 배치'+(fail?(' · '+fail+'개 실패'):''));
+  await loadCourse();
+}
+
+// ── 배치 제거 ──
+async function removeSlide(wid,linkId){
+  try{
+    var r=await fetch('/api/courses/'+encodeURIComponent(CID)+'/weeks/'+wid+'/slides/'+linkId,{method:'DELETE'});
+    var d=await r.json();
+    if(r.ok&&d.success){showToast('배치를 제거했습니다');await loadCourse();}
+    else showToast(d.message||'제거 실패');
+  }catch(e){showToast('네트워크 오류');}
+}
+
+async function doLogout(){
+  var btn=document.getElementById('btn-logout');if(btn)btn.style.pointerEvents='none';
+  try{await fetch('/api/auth/logout',{method:'POST'});}catch(e){}
+  location.href='/login';
+}
+
+loadCourse();
+</script>
+</body>
+</html>
