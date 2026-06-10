@@ -1,0 +1,240 @@
+"""
+LMS 교수/조교 프론트 라우트(3단계-A) pytest — 페이지 권한 가드 + 신규 표시용 GET API 가드.
+
+불변 원칙(어기면 reject):
+ · 프론트 라우트는 새 권한 판정 로직을 만들지 않는다 — position(_course_position)·
+   편집권(_course_owner_or_assistant) 기존 헬퍼만 재사용한다.
+ · 학생/타 기관·과목/미위임 조교는 /teacher/* 접근 시 redirect(/home) 또는 403.
+ · 신규 GET API(available-slides·assistants·assistant-candidates)는 모두 편집권 게이트 통과자만.
+
+DB 는 mock(로컬 RDS 접속 불가) — 라우트 실행 경로의 fetch 시퀀스를 정확히 모킹한다.
+"""
+import os
+from contextlib import ExitStack
+from unittest.mock import MagicMock, patch
+
+os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-for-pytest")
+os.environ.setdefault("GMAIL_USER", "test@gmail.com")
+os.environ.setdefault("GMAIL_APP_PW", "test-app-pw")
+os.environ.setdefault("ADMIN_SECRET_KEY", "test-admin-secret-for-pytest")
+
+import pytest
+import server_render as sr
+from server_render import app
+
+
+@pytest.fixture
+def client():
+    app.config["TESTING"] = True
+    with app.test_client() as c:
+        yield c
+
+
+def _fake_auth(uid="5", inst="CNU", role="viewer", subject="HST"):
+    def f():
+        from flask import g
+        g.user_id = uid
+        g.institution_id = inst
+        g.role = role
+        g.subject_code = subject
+        g.is_special = False
+        return None
+    return f
+
+
+def _mk_conn(fetchone=None, fetchall=None, rowcount=1):
+    cur = MagicMock()
+    if fetchone is not None:
+        cur.fetchone.side_effect = list(fetchone)
+    if fetchall is not None:
+        cur.fetchall.side_effect = list(fetchall)
+    cur.rowcount = rowcount
+    conn = MagicMock()
+    conn.cursor.return_value.__enter__.return_value = cur
+    return conn, cur
+
+
+def _stack(conn, auth=None, extra=None):
+    auth = auth or _fake_auth()
+    st = ExitStack()
+    st.enter_context(patch("auth.decorators._authenticate", auth))
+    st.enter_context(patch("auth.decorators._csrf_ok", lambda: True))
+    st.enter_context(patch("server_render.get_db_conn", return_value=conn))
+    st.enter_context(patch("server_render.release_db_conn"))
+    for p in (extra or []):
+        st.enter_context(p)
+    return st
+
+
+# ── /teacher/courses : position∈{교수,조교}만 ────────────────────────────────
+
+def test_courses_page_requires_auth(client):
+    """비로그인 → page_login_required 가 랜딩(/)으로 redirect."""
+    resp = client.get("/teacher/courses")
+    assert resp.status_code == 302
+    assert resp.headers["Location"].rstrip("/").endswith("") or resp.headers["Location"] == "/"
+
+
+def test_student_redirected_from_courses_page(client):
+    """학생(position=학생) → /home 으로 redirect(교수/조교 아님)."""
+    conn, _ = _mk_conn(fetchone=[("학생",)])
+    with _stack(conn, _fake_auth(role="viewer", subject="HST")):
+        resp = client.get("/teacher/courses")
+    assert resp.status_code == 302
+    assert resp.headers["Location"].endswith("/home")
+
+
+def test_professor_sees_courses_page(client):
+    conn, _ = _mk_conn(fetchone=[("교수",)])
+    with _stack(conn, _fake_auth(role="viewer", subject="HST")):
+        resp = client.get("/teacher/courses")
+    assert resp.status_code == 200
+    assert "내 수업 관리" in resp.get_data(as_text=True)
+
+
+def test_assistant_sees_courses_page(client):
+    conn, _ = _mk_conn(fetchone=[("조교",)])
+    with _stack(conn, _fake_auth(role="viewer", subject="HST")):
+        resp = client.get("/teacher/courses")
+    assert resp.status_code == 200
+
+
+# ── /teacher/course/<cid> : 편집권자(교수·위임조교)만 ────────────────────────
+
+def test_non_editor_403_on_edit_page(client):
+    """학생(소유 아님·위임 없음) → 403 페이지."""
+    # _course_owner_or_assistant: course(CNU/HST/prof=99) → position 학생 → assistants None
+    conn, _ = _mk_conn(fetchone=[("CNU", "HST", 99), ("학생",), None])
+    with _stack(conn, _fake_auth(uid="5", subject="HST")):
+        resp = client.get("/teacher/course/1")
+    assert resp.status_code == 403
+    assert "접근 권한이 없습니다" in resp.get_data(as_text=True)
+
+
+def test_other_institution_course_403(client):
+    """타 기관 수업(scope 불일치) → 403(존재 숨김)."""
+    conn, _ = _mk_conn(fetchone=[("SNU", "HST", 5)])   # course inst=SNU ≠ g.inst=CNU
+    with _stack(conn, _fake_auth(uid="5", inst="CNU", subject="HST")):
+        resp = client.get("/teacher/course/1")
+    assert resp.status_code == 403
+
+
+def test_owner_professor_sees_edit_page(client):
+    conn, _ = _mk_conn(fetchone=[("CNU", "HST", 5), ("교수",)])
+    with _stack(conn, _fake_auth(uid="5", inst="CNU", subject="HST")):
+        resp = client.get("/teacher/course/1")
+    assert resp.status_code == 200
+    assert "주차 구성" in resp.get_data(as_text=True)
+
+
+def test_delegated_assistant_sees_edit_page(client):
+    # 교수=99≠나(5), 위임행 존재, position 조교 → assistant 편집권
+    conn, _ = _mk_conn(fetchone=[("CNU", "HST", 99), ("조교",), (1,)])
+    with _stack(conn, _fake_auth(uid="5", inst="CNU", subject="HST")):
+        resp = client.get("/teacher/course/1")
+    assert resp.status_code == 200
+
+
+# ── /teacher/course/<cid>/assistants : 교수만 ────────────────────────────────
+
+def test_delegated_assistant_cannot_open_assistants_page(client):
+    """위임 조교는 편집권은 있으나 조교 지정 화면은 교수 전용 → 403."""
+    conn, _ = _mk_conn(fetchone=[("CNU", "HST", 99), ("조교",), (1,)])
+    with _stack(conn, _fake_auth(uid="5", inst="CNU", subject="HST")):
+        resp = client.get("/teacher/course/1/assistants")
+    assert resp.status_code == 403
+
+
+def test_professor_opens_assistants_page(client):
+    conn, _ = _mk_conn(fetchone=[("CNU", "HST", 5), ("교수",)])
+    with _stack(conn, _fake_auth(uid="5", inst="CNU", subject="HST")):
+        resp = client.get("/teacher/course/1/assistants")
+    assert resp.status_code == 200
+    assert "조교 추가" in resp.get_data(as_text=True)
+
+
+# ── /teacher/course/<cid>/dashboard : 편집권자 ───────────────────────────────
+
+def test_non_editor_403_on_dashboard_page(client):
+    conn, _ = _mk_conn(fetchone=[("CNU", "HST", 99), ("학생",), None])
+    with _stack(conn, _fake_auth(uid="5", inst="CNU", subject="HST")):
+        resp = client.get("/teacher/course/1/dashboard")
+    assert resp.status_code == 403
+
+
+def test_assistant_sees_dashboard_page(client):
+    conn, _ = _mk_conn(fetchone=[("CNU", "HST", 99), ("조교",), (1,)])
+    with _stack(conn, _fake_auth(uid="5", inst="CNU", subject="HST")):
+        resp = client.get("/teacher/course/1/dashboard")
+    assert resp.status_code == 200
+    assert "익명 집계" in resp.get_data(as_text=True)
+
+
+# ── 신규 표시용 GET API 가드 ─────────────────────────────────────────────────
+
+def test_available_slides_blocks_non_editor(client):
+    """비편집자 → _course_owner_or_assistant 가 403."""
+    conn, _ = _mk_conn(fetchone=[("CNU", "HST", 99), ("학생",), None])
+    with _stack(conn, _fake_auth(uid="5", inst="CNU", subject="HST")):
+        resp = client.get("/api/courses/1/available-slides")
+    assert resp.status_code == 403
+
+
+def test_available_slides_reuses_visible_filter(client):
+    """편집권자 → _visible_slides 결과만 메타로 반환(타일·토큰 없음)."""
+    conn, _ = _mk_conn(fetchone=[("CNU", "HST", 5), ("교수",)])
+    vis = [{"id": "SA-HST-001", "title_ko": "단층 편평상피", "system": "소화기", "stain": "H&E"}]
+    extra = [
+        patch("server_render.load_slides", return_value={"slides": vis}),
+        patch("server_render._visible_slides", return_value=vis),
+    ]
+    with _stack(conn, _fake_auth(uid="5", inst="CNU", subject="HST"), extra=extra):
+        resp = client.get("/api/courses/1/available-slides")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["success"] and data["slides"][0]["id"] == "SA-HST-001"
+    # 타일/토큰 필드가 새지 않는다(카탈로그 메타만).
+    assert set(data["slides"][0].keys()) == {"id", "title_ko", "organ", "stain"}
+
+
+def test_assistant_candidates_professor_only(client):
+    """위임 조교(편집권 O)라도 조교 검색은 교수 전용 → 403."""
+    conn, _ = _mk_conn(fetchone=[("CNU", "HST", 99), ("조교",), (1,)])
+    with _stack(conn, _fake_auth(uid="5", inst="CNU", subject="HST")):
+        resp = client.get("/api/courses/1/assistant-candidates?q=조")
+    assert resp.status_code == 403
+
+
+def test_assistant_candidates_scope_is_g_only(client):
+    """교수 → 후보 검색 scope 는 g.institution_id·g.subject_code 강제(IDOR 차단)."""
+    conn, cur = _mk_conn(
+        fetchone=[("CNU", "HST", 5), ("교수",)],
+        fetchall=[[(9, "조민수", "minsu@test.ac.kr")]],
+    )
+    with _stack(conn, _fake_auth(uid="5", inst="CNU", subject="HST")):
+        resp = client.get("/api/courses/1/assistant-candidates?q=조")
+    assert resp.status_code == 200
+    assert resp.get_json()["candidates"][0]["user_id"] == 9
+    # 후보 SELECT 파라미터 1·2 가 g.institution_id·g.subject_code 인지(body/쿼리 미참조)
+    sel = [c for c in cur.execute.call_args_list
+           if "u.position = '조교'" in " ".join(str(c.args[0]).split())]
+    assert sel and sel[0].args[1][0] == "CNU" and sel[0].args[1][1] == "HST"
+
+
+def test_assistants_list_blocks_non_editor(client):
+    conn, _ = _mk_conn(fetchone=[("CNU", "HST", 99), ("학생",), None])
+    with _stack(conn, _fake_auth(uid="5", inst="CNU", subject="HST")):
+        resp = client.get("/api/courses/1/assistants")
+    assert resp.status_code == 403
+
+
+def test_assistants_list_returns_names(client):
+    conn, _ = _mk_conn(
+        fetchone=[("CNU", "HST", 5), ("교수",)],
+        fetchall=[[(7, "박지훈", "jihoon@test.ac.kr")]],
+    )
+    with _stack(conn, _fake_auth(uid="5", inst="CNU", subject="HST")):
+        resp = client.get("/api/courses/1/assistants")
+    assert resp.status_code == 200
+    a = resp.get_json()["assistants"][0]
+    assert a["user_id"] == 7 and a["name"] == "박지훈"

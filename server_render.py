@@ -2661,6 +2661,190 @@ def api_course_detail(cid):
         release_db_conn(conn)
 
 
+# ── 교수/조교 프론트 표시용 읽기 API (3단계-A) ────────────────────────────────
+#   ★ 모두 GET·읽기 전용. 새 접근/권한 판정 로직 없음 — 기존 헬퍼(_course_owner_or_assistant·
+#     _visible_slides·POST assistants 의 대상검증식)를 그대로 재사용한다. 슬라이드 접근 판정(§8)·
+#     LMS 권한(§21)은 손대지 않는다. 타일·토큰 발급 없음(카탈로그/명단 메타만).
+
+@app.route('/api/courses/<int:cid>/available-slides', methods=['GET'])
+@login_required
+def api_course_available_slides(cid):
+    """슬라이드 배치 모달용 — 편집자(교수·위임 조교)가 접근 가능한 슬라이드 메타 목록.
+
+    권한: _course_owner_or_assistant(편집권·scope) 재사용. 목록: _visible_slides(단일 게이트와
+    동일 기준, g 기반) 재사용 — 새 필터 없음. 배치 자체는 기존 POST .../slides 가 _slide_access_allowed
+    로 재검증하므로(§8), 이 목록은 표시 후보일 뿐 접근을 부여하지 않는다.
+    """
+    conn = get_db_conn()
+    try:
+        with conn.cursor() as cur:
+            ok, _role, err = _course_owner_or_assistant(cur, cid)
+            if not ok:
+                return err
+        data = load_slides()
+        vis = _visible_slides(data.get('slides', []))
+        slides = [{'id': s['id'], 'title_ko': s.get('title_ko', s['id']),
+                   'organ': s.get('system', ''), 'stain': s.get('stain', '')} for s in vis]
+        return jsonify({'success': True, 'slides': slides})
+    finally:
+        release_db_conn(conn)
+
+
+@app.route('/api/courses/<int:cid>/assistants', methods=['GET'])
+@login_required
+def api_course_assistants_list(cid):
+    """현재 위임 조교 목록(표시명·이메일·user_id) — 편집권자 열람(표시용 GET).
+
+    권한·scope = _course_owner_or_assistant 재사용. 표시명은 institution_rosters.name.
+    """
+    conn = get_db_conn()
+    try:
+        with conn.cursor() as cur:
+            ok, _role, err = _course_owner_or_assistant(cur, cid)
+            if not ok:
+                return err
+            cur.execute(
+                """SELECT u.id, COALESCE(r.name, ''), u.email
+                     FROM course_assistants a
+                     JOIN users u ON u.id = a.user_id
+                     LEFT JOIN institution_rosters r
+                       ON lower(r.email) = lower(u.email)
+                      AND r.institution_id = u.institution_id
+                      AND r.subject_code = u.subject_code
+                    WHERE a.course_id = %s
+                    ORDER BY r.name, u.email""",
+                (cid,),
+            )
+            assistants = [{'user_id': r[0], 'name': r[1] or '', 'email': r[2]}
+                          for r in cur.fetchall()]
+        return jsonify({'success': True, 'assistants': assistants})
+    finally:
+        release_db_conn(conn)
+
+
+@app.route('/api/courses/<int:cid>/assistant-candidates', methods=['GET'])
+@login_required
+def api_course_assistant_candidates(cid):
+    """조교 위임 후보 검색 — 교수만(표시용 GET).
+
+    후보 기준 = 기존 POST assistants 의 대상검증식과 동일: 같은 기관(g.institution_id)·같은 과목
+    (g.subject_code)·position='조교'. 이미 위임된 사용자는 제외. scope 는 g 에서만(IDOR 차단, §9).
+    """
+    q = (request.args.get('q') or '').strip()
+    conn = get_db_conn()
+    try:
+        with conn.cursor() as cur:
+            ok, role_in_course, err = _course_owner_or_assistant(cur, cid)
+            if not ok:
+                return err
+            if role_in_course != 'professor':
+                return _forbidden_json('조교 검색은 교수만 가능합니다')
+            like = '%' + q + '%'
+            cur.execute(
+                """SELECT u.id, COALESCE(r.name, ''), u.email
+                     FROM users u
+                     LEFT JOIN institution_rosters r
+                       ON lower(r.email) = lower(u.email)
+                      AND r.institution_id = u.institution_id
+                      AND r.subject_code = u.subject_code
+                    WHERE u.institution_id = %s AND u.subject_code = %s AND u.position = '조교'
+                      AND NOT EXISTS (SELECT 1 FROM course_assistants a
+                                       WHERE a.course_id = %s AND a.user_id = u.id)
+                      AND (%s = '' OR COALESCE(r.name, '') ILIKE %s OR u.email ILIKE %s)
+                    ORDER BY r.name, u.email
+                    LIMIT 20""",
+                (g.institution_id, g.subject_code, cid, q, like, like),
+            )
+            cands = [{'user_id': r[0], 'name': r[1] or '', 'email': r[2]}
+                     for r in cur.fetchall()]
+        return jsonify({'success': True, 'candidates': cands})
+    finally:
+        release_db_conn(conn)
+
+
+# ── 교수/조교 페이지 라우트 (3단계-A) ─────────────────────────────────────────
+#   HTML 셸만 렌더 — 데이터는 프론트가 위 기존 API 를 interceptor.js(CSRF 자동) 로 호출한다.
+#   권한 게이트는 전부 기존 헬퍼 재사용(새 판정 경로 없음): position(_course_position)·
+#   편집권(_course_owner_or_assistant). 비편집자/타 기관·과목은 403 페이지.
+
+def _lms_403_page():
+    """LMS 페이지 권한 거부 — JSON 대신 사람용 403 HTML(학생 홈 링크)."""
+    html = (
+        '<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8">'
+        '<title>SlideAtlas — 접근 권한 없음</title>'
+        '<style>body{background:#FAF8F5;color:#0F1F3D;font-family:"Noto Sans KR",sans-serif;'
+        'display:flex;align-items:center;justify-content:center;height:100vh;margin:0}'
+        '.box{text-align:center}.box h2{font-size:20px;margin-bottom:10px}'
+        '.box p{color:#8A91A0;font-size:14px;margin-bottom:18px}'
+        '.box a{color:#2C7E99;text-decoration:none;font-weight:600;font-size:14px}</style>'
+        '</head><body><div class="box"><h2>접근 권한이 없습니다</h2>'
+        '<p>이 수업의 편집 권한이 없거나 다른 기관·과목의 수업입니다.</p>'
+        '<a href="/home">← 학습 홈으로</a></div></body></html>'
+    )
+    return html, 403
+
+
+def _page_course_role(cid):
+    """페이지용 편집권 판정 — (role 또는 None). _course_owner_or_assistant 재사용(새 판정 없음)."""
+    conn = get_db_conn()
+    try:
+        with conn.cursor() as cur:
+            ok, role, _err = _course_owner_or_assistant(cur, cid)
+            return role if ok else None
+    finally:
+        release_db_conn(conn)
+
+
+@app.route('/teacher/courses')
+@page_login_required
+def teacher_courses_page():
+    """교수/조교 수업 목록 — position∈{교수,조교}만, 그 외 학습 홈으로."""
+    conn = get_db_conn()
+    try:
+        with conn.cursor() as cur:
+            pos = _course_position(cur, g.user_id)
+    finally:
+        release_db_conn(conn)
+    if pos not in ('교수', '조교'):
+        return redirect('/home')
+    return render_template('teacher_courses.html', is_professor=(pos == '교수'))
+
+
+@app.route('/teacher/course/<int:cid>')
+@page_login_required
+def teacher_course_edit_page(cid):
+    """수업 편집(주차 구성) — 편집권자(교수·위임 조교)만."""
+    role = _page_course_role(cid)
+    if role is None:
+        return _lms_403_page()
+    return render_template('course_edit.html', cid=cid, active_tab='weeks',
+                           role_in_course=role, subject_code=g.subject_code)
+
+
+@app.route('/teacher/course/<int:cid>/assistants')
+@page_login_required
+def teacher_course_assistants_page(cid):
+    """조교 지정 — 교수만(조교 위임은 교수 권한, §21-3)."""
+    role = _page_course_role(cid)
+    if role is None:
+        return _lms_403_page()
+    if role != 'professor':
+        return _lms_403_page()
+    return render_template('assistants.html', cid=cid, active_tab='assistants',
+                           role_in_course=role, subject_code=g.subject_code)
+
+
+@app.route('/teacher/course/<int:cid>/dashboard')
+@page_login_required
+def teacher_course_dashboard_page(cid):
+    """수업 대시보드 — 편집권자(교수·위임 조교)만. 명단/익명집계는 프론트가 기존 roster·stats 호출."""
+    role = _page_course_role(cid)
+    if role is None:
+        return _lms_403_page()
+    return render_template('course_dashboard.html', cid=cid, active_tab='dashboard',
+                           role_in_course=role, subject_code=g.subject_code)
+
+
 @app.route('/api/chat', methods=['POST'])
 @login_required
 def api_chat():

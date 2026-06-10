@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SlideAtlas — 내 수업 관리</title>
+<script src="/static/js/interceptor.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/lms.css">
+</head>
+<body class="lms-teacher">
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<!-- 수업 개설 모달 -->
+<div class="modal-backdrop hidden" id="new-modal" role="dialog" aria-modal="true">
+  <div class="modal">
+    <div class="modal-title">새 수업 개설</div>
+    <div class="modal-field"><label>수업명</label><input type="text" id="nc-title" placeholder="예: 조직학 실습 A반" autocomplete="off"></div>
+    <div class="modal-field"><label>과목</label><div class="fixed">구독 과목으로 고정됩니다</div></div>
+    <div class="modal-field"><label>학기</label><input type="text" id="nc-sem" placeholder="예: 2026 가을" value="2026 가을" autocomplete="off"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeNew()">취소</button>
+      <button class="btn btn-primary" id="nc-submit" onclick="submitNew()"><i class="ti ti-plus"></i>개설</button>
+    </div>
+  </div>
+</div>
+
+<div class="topbar">
+  <a class="tb-logo-wrap" href="/home"><img class="tb-logo-img" src="/static/SlideAtlas_Navy_Hor_small.png" alt="SlideAtlas"></a>
+  <a class="tb-back" href="/home"><i class="ti ti-chevron-right" style="transform:rotate(180deg)"></i>홈</a>
+  <div class="tb-right">
+    <a class="tb-link" href="/mypage"><i class="ti ti-user"></i>마이페이지</a>
+    <a class="tb-link" id="btn-logout" onclick="doLogout()"><i class="ti ti-logout"></i>로그아웃</a>
+  </div>
+</div>
+
+<div class="page-wrap">
+  <div class="page-head">
+    <h1 class="page-title">내 수업 관리</h1>
+    {% if is_professor %}<button class="btn btn-primary" onclick="openNew()"><i class="ti ti-plus"></i>수업 개설</button>{% endif %}
+  </div>
+
+  <div class="tgrid" id="course-grid"></div>
+  <div id="empty-state" class="empty-row hidden" style="padding:48px 20px;text-align:center">
+    아직 개설했거나 위임받은 수업이 없습니다.{% if is_professor %} 상단의 <strong>수업 개설</strong>로 시작하세요.{% endif %}
+  </div>
+</div>
+
+<script>
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+var toastTimer;
+function showToast(m){var t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(function(){t.classList.remove('show');},2600);}
+
+function openNew(){document.getElementById('new-modal').classList.remove('hidden');document.getElementById('nc-title').focus();}
+function closeNew(){document.getElementById('new-modal').classList.add('hidden');}
+
+async function submitNew(){
+  var title=(document.getElementById('nc-title').value||'').trim();
+  var sem=(document.getElementById('nc-sem').value||'').trim();
+  if(!title){showToast('수업명을 입력하세요');return;}
+  var btn=document.getElementById('nc-submit');btn.disabled=true;
+  try{
+    var r=await fetch('/api/courses',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:title,semester:sem})});
+    var d=await r.json();
+    if(r.ok&&d.success){location.href='/teacher/course/'+d.course_id;return;}
+    showToast(d.message||'개설에 실패했습니다');
+  }catch(e){showToast('네트워크 오류');}
+  btn.disabled=false;
+}
+
+function roleBadge(role){
+  return role==='professor'
+    ? '<span class="badge badge-professor">개설</span>'
+    : '<span class="badge badge-assistant">조교 위임</span>';
+}
+
+async function loadCourses(){
+  var grid=document.getElementById('course-grid');
+  try{
+    var r=await fetch('/api/courses/mine');
+    var d=await r.json();
+    var list=(d&&d.courses)||[];
+    if(!list.length){document.getElementById('empty-state').classList.remove('hidden');return;}
+    grid.innerHTML=list.map(function(c){
+      return '<a class="tcard" href="/teacher/course/'+encodeURIComponent(c.id)+'">'
+        +'<div class="tcard-top"><div class="tcard-name">'+esc(c.title)+'</div>'+roleBadge(c.role)+'</div>'
+        +'<div class="tcard-meta"><span>'+esc(c.semester||'학기 미정')+'</span><span>수강 '+(c.enrolled_count||0)+'</span></div>'
+        +'<div class="tcard-foot"><i class="ti ti-edit"></i>'+(c.role==='professor'?'편집':'편집 (위임받음)')+'</div></a>';
+    }).join('');
+  }catch(e){grid.innerHTML='<div class="empty-row" style="padding:40px;text-align:center">수업을 불러오지 못했습니다.</div>';}
+}
+
+async function doLogout(){
+  var btn=document.getElementById('btn-logout');if(btn)btn.style.pointerEvents='none';
+  try{await fetch('/api/auth/logout',{method:'POST'});}catch(e){}
+  location.href='/login';
+}
+
+loadCourses();
+</script>
+</body>
+</html>

@@ -611,3 +611,19 @@ python3 run_tests.py
   - test_detail_excludes_undeployed_slides 강화: 미배포 ID(UNDEPLOYED_ID='SA-HST-UNDEPLOYED')를 mock에 명시 포함(2주차 배치→SQL ON절 deploy_status='deployed'로 필터→빈주차), 최종 JSON raw 문자열·구조(_slide_ids_in_payload) 양쪽에서 미배포 ID 직접 부재 단언. 배포본 존재 유지. SQL 필터 기제(course_weeks+deploy_status='deployed'+select id from slides) 단언 강화
   - test_detail_relies_on_sql_filter_not_python 신규(부정대조): 라우트에 Python deploy 필터 없음을 명시 — DB가 미배포 행 주면 그대로 통과 → 방어선이 전적으로 SQL ON절임을 못박아 부재 단언이 vacuous 아님 보장
 [2026-06-08][test-runner][결과] tests/test_lms.py 35 passed(34→35) / 전수 pytest 240 passed(회귀 0)
+[18:47] claude 완료 - LMS 프론트 목업 7종 docs/mockups/ 추가·커밋·푸시 (4d61c47, 내용 무수정)
+
+## ════════ LMS 3단계-A — 교수/조교 프론트(4화면) + 표시용 백엔드 — 2026-06-11 ════════
+브랜치: main. 기준선 pytest 240. §21 LMS / §8 단일 게이트 불변 / §15-7 개인정보.
+불변(무수정 확인): `_slide_access_allowed`·`_visible_slides`·auth 인증·2단계 LMS 권한 헬퍼(`_course_owner_or_assistant`·`_course_position`·기존 course API). 이번엔 프론트 + 읽기전용 표시 라우트만. server_render.py diff = 2661행 단일 추가 블록(+184, 삭제 0).
+
+### 공통(전 단계 토대)
+- 디자인: docs/mockups 1차 사양서에서 추출·조립 → `static/css/lms.css`(Tabler 인라인 폰트+토큰+컴포넌트, navy/sky·Noto Sans KR·Montserrat·모노폰트 sans 매핑). 4템플릿이 link 재사용(중복 제거).
+- top-bar: 학생 앱과 동일 셸(로고 SlideAtlas_Navy_Hor_small.png·← 뒤로·마이페이지·로그아웃). 교수 화면은 한 수업 내 서브탭(cnav) [주차 구성·조교·대시보드].
+- 모든 fetch = interceptor.js 경유(CSRF 자동), 클라이언트 렌더는 esc()로 XSS 방어(home.html 정의 재사용).
+- 페이지 권한 가드: 새 판정 없이 기존 헬퍼 재사용 — `_course_position`(목록 position∈{교수,조교}), `_page_course_role`=`_course_owner_or_assistant` 래퍼. 비편집자/타기관·과목 → redirect(/home) 또는 `_lms_403_page`(403).
+
+### [A-1] 교수 수업 목록 — ✅
+- 라우트 `GET /teacher/courses`(@page_login_required, position∈{교수,조교}만 아니면 /home). 템플릿 `teacher_courses.html`.
+- 호출한 기존 API: `GET /api/courses/mine`(카드 렌더), `POST /api/courses`(수업 개설 모달 → 성공 시 편집 화면 이동).
+- 새 라우트/판정: 없음(페이지 셸 + 기존 API). 수업 개설 버튼은 is_professor만 노출(API도 교수만 강제).
