@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SlideAtlas — 수업 대시보드</title>
+<script src="/static/js/interceptor.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/lms.css">
+</head>
+<body class="lms-dashboard" data-cid="{{ cid }}" data-subject="{{ subject_code or '' }}">
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<div class="topbar">
+  <a class="tb-logo-wrap" href="/home"><img class="tb-logo-img" src="/static/SlideAtlas_Navy_Hor_small.png" alt="SlideAtlas"></a>
+  <a class="tb-back" href="/teacher/courses"><i class="ti ti-chevron-right" style="transform:rotate(180deg)"></i>수업 목록</a>
+  <div class="tb-right">
+    <a class="tb-link" href="/mypage"><i class="ti ti-user"></i>마이페이지</a>
+    <a class="tb-link" id="btn-logout" onclick="doLogout()"><i class="ti ti-logout"></i>로그아웃</a>
+  </div>
+</div>
+
+<div class="page-wrap">
+  <div class="chead">
+    <div class="chead-name" id="chead-name">수업</div>
+    <div class="chead-meta" id="chead-meta"></div>
+  </div>
+  <nav class="cnav">
+    <a href="/teacher/course/{{ cid }}"><i class="ti ti-microscope"></i>주차 구성</a>
+    {% if role_in_course == 'professor' %}<a href="/teacher/course/{{ cid }}/assistants"><i class="ti ti-user-check"></i>조교</a>{% endif %}
+    <a class="active"><i class="ti ti-chart-bar"></i>대시보드</a>
+  </nav>
+
+  <!-- ══ 익명 집계 영역 (개인 비식별) ══ -->
+  <div class="sec-eyebrow"><i class="ti ti-chart-bar"></i>수업 현황 (익명 집계)</div>
+  <div class="kpi-grid">
+    <div class="kpi-card"><div class="kpi-label"><i class="ti ti-users"></i>등록 학생</div><div class="kpi-value" id="kpi-enrolled">–</div><div class="kpi-sub">명</div></div>
+    <div class="kpi-card"><div class="kpi-label"><i class="ti ti-user-check"></i>최근 7일 활동</div><div class="kpi-value" id="kpi-active">–</div><div class="kpi-sub">명</div></div>
+    <div class="kpi-card"><div class="kpi-label"><i class="ti ti-eye"></i>미활동</div><div class="kpi-value" id="kpi-inactive">–</div><div class="kpi-sub">명 (최근 7일)</div></div>
+    <div class="kpi-card"><div class="kpi-label"><i class="ti ti-microscope"></i>평균 열람률</div><div class="kpi-value"><span id="kpi-rate">–</span><span style="font-size:15px">%</span></div><div class="kpi-sub">배치 슬라이드 기준</div></div>
+  </div>
+  <div class="section-card">
+    <div class="card-header"><div class="card-title"><i class="ti ti-chart-bar"></i>배치 슬라이드 평균 열람률</div></div>
+    <div class="rate-wrap">
+      <div class="bar-row">
+        <div class="bar-label">전체 배치</div>
+        <div class="bar-track"><div class="bar-fill" id="rate-bar" style="width:0%"></div></div>
+        <div class="bar-val" id="rate-val">—</div>
+      </div>
+      <div class="kpi-sub" id="rate-note" style="margin-top:8px">배치 슬라이드 중 등록 학생이 1회 이상 열람한 비율입니다.</div>
+    </div>
+  </div>
+
+  <div class="divider"><span>등록 명단</span></div>
+
+  <!-- ══ 명단 영역 (개인 활동 비노출 — 익명 집계와 분리) ══ -->
+  <div class="privacy-note"><i class="ti ti-shield"></i><div>등록 학생 명단입니다. 개인별 접속·열람 기록은 표시하지 않습니다 — 학생 활동은 위 <strong>익명 집계</strong>로만 제공됩니다(개별 추적 방지 원칙).</div></div>
+  <div class="section-card">
+    <div class="card-header"><div class="card-title"><i class="ti ti-users"></i>등록 학생</div><span id="roster-count" style="font-size:12px;color:var(--color-text-tertiary)">0명</span></div>
+    <table class="roster-table">
+      <thead><tr><th>이름</th><th>이메일</th><th>등록일</th></tr></thead>
+      <tbody id="roster-body"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+var toastTimer;
+function showToast(m){var t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(function(){t.classList.remove('show');},2600);}
+
+var CID=document.body.getAttribute('data-cid');
+var SUBJECT=document.body.getAttribute('data-subject');
+
+async function loadHead(){
+  try{
+    var r=await fetch('/api/courses/'+encodeURIComponent(CID));
+    var d=await r.json();
+    if(r.ok&&d.success){
+      document.getElementById('chead-name').textContent=d.course.title||'수업';
+      document.getElementById('chead-meta').textContent=[d.course.semester,SUBJECT].filter(Boolean).join(' · ');
+    }
+  }catch(e){}
+}
+
+// 익명 집계만 — 개인 식별자 없음(§15-7)
+async function loadStats(){
+  try{
+    var r=await fetch('/api/courses/'+encodeURIComponent(CID)+'/stats');
+    var d=await r.json();
+    if(!r.ok||!d.success)return;
+    var s=d.stats;
+    document.getElementById('kpi-enrolled').textContent=s.enrolled_count;
+    document.getElementById('kpi-active').textContent=s.active_recent_count;
+    document.getElementById('kpi-inactive').textContent=s.inactive_count;
+    document.getElementById('kpi-rate').textContent=s.slide_view_rate;
+    var rate=s.slide_view_rate||0;
+    document.getElementById('rate-bar').style.width=rate+'%';
+    document.getElementById('rate-val').textContent=(s.placed_slide_count?rate+'%':'—');
+    document.getElementById('rate-note').textContent='배치 슬라이드 '+s.placed_slide_count+'개 중 '+s.viewed_slide_count+'개를 등록 학생이 1회 이상 열람했습니다.';
+  }catch(e){}
+}
+
+// 명단만 — 이름·이메일·등록일(활동 컬럼 없음, 익명 집계와 분리)
+async function loadRoster(){
+  var body=document.getElementById('roster-body');
+  try{
+    var r=await fetch('/api/courses/'+encodeURIComponent(CID)+'/roster');
+    var d=await r.json();
+    var list=(d&&d.students)||[];
+    document.getElementById('roster-count').textContent=list.length+'명';
+    if(!list.length){body.innerHTML='<tr><td colspan="3" class="empty-row" style="text-align:center;padding:24px">등록한 학생이 없습니다.</td></tr>';return;}
+    body.innerHTML=list.map(function(st){
+      return '<tr><td>'+esc(st.name||'—')+'</td><td class="em">'+esc(st.email)+'</td>'
+        +'<td class="dt">'+esc((st.enrolled_at||'').slice(0,10))+'</td></tr>';
+    }).join('');
+  }catch(e){body.innerHTML='<tr><td colspan="3" class="empty-row" style="text-align:center;padding:24px">명단을 불러오지 못했습니다.</td></tr>';}
+}
+
+async function doLogout(){
+  var btn=document.getElementById('btn-logout');if(btn)btn.style.pointerEvents='none';
+  try{await fetch('/api/auth/logout',{method:'POST'});}catch(e){}
+  location.href='/login';
+}
+
+loadHead();
+loadStats();
+loadRoster();
+</script>
+</body>
+</html>

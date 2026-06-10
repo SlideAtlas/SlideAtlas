@@ -639,3 +639,11 @@ python3 run_tests.py
 - 라우트 `GET /teacher/course/<cid>/assistants`(교수만, 위임조교/비편집자 403). 템플릿 `assistants.html`. cnav 조교 탭은 교수에게만 노출.
 - 신규 표시 API: `GET /api/courses/<cid>/assistants`(현재 조교 목록·표시명·이메일, 편집권자 열람) / `GET /api/courses/<cid>/assistant-candidates?q=`(교수만, 같은 기관·과목·position='조교'·미위임 — 기존 POST assistants 대상검증식과 동일 기준, scope=g.* IDOR 차단).
 - 추가/해제는 기존 `POST /assistants`(user_id)·`DELETE /assistants/<uid>`.
+
+### [A-4] 수업 대시보드 — ✅
+- 라우트 `GET /teacher/course/<cid>/dashboard`(편집권자, 비편집자 403). 템플릿 `course_dashboard.html`.
+- 호출한 기존 API: `GET /api/courses/<cid>/stats`(익명 집계 KPI 4 + 열람률), `GET /api/courses/<cid>/roster`(명단), `GET /api/courses/<cid>`(제목·학기).
+- ★ §15-7: 화면에서 익명 집계(KPI·열람률)와 등록 명단(이름·이메일·등록일)을 물리적으로 분리 — 명단 행에 활동 컬럼 없음(이름+활동 혼합 금지). 주차별 열람률은 /stats 무수정 원칙상 전체 배치 열람률 1개 바로 표시(주차별 분해 미제공).
+
+### 결과
+[2026-06-11][결과] 신규 tests/test_lms_teacher_pages.py 18건 + 전수 pytest 258 passed(240→258, 회귀 0). server_render.py = 단일 추가 블록(+184, 삭제0), 보호 def 무수정. 단계 커밋 4개(A-1~A-4, 누적). push 미실행(지시 없음). CLAUDE.md 미수정(묶음 끝 일괄).
