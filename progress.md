@@ -634,3 +634,8 @@ python3 run_tests.py
 - 신규 표시 API: `GET /api/courses/<cid>/available-slides` — 배치 모달용. `_course_owner_or_assistant`(편집권) + `_visible_slides`(단일 게이트 동일 기준) 재사용, 카탈로그 메타만(id·title_ko·organ·stain), 타일/토큰 없음. 배치 자체는 기존 POST가 `_slide_access_allowed` 재검증.
 - 슬라이드 배치 모달(체크박스 다중·검색·중복 허용), 빈 주차 사유는 주차 추가 모달에서 입력(POST weeks의 empty_reason).
 - 미해결(이연): 기존 주차 제목·빈주차 사유 인라인 수정은 PUT weeks 부재로 미지원(읽기전용 표시). 새 mutate 엔드포인트는 본 단계 범위 밖 → 차기. 주차 제목은 생성 시 캡처.
+
+### [A-3] 조교 지정 — ✅
+- 라우트 `GET /teacher/course/<cid>/assistants`(교수만, 위임조교/비편집자 403). 템플릿 `assistants.html`. cnav 조교 탭은 교수에게만 노출.
+- 신규 표시 API: `GET /api/courses/<cid>/assistants`(현재 조교 목록·표시명·이메일, 편집권자 열람) / `GET /api/courses/<cid>/assistant-candidates?q=`(교수만, 같은 기관·과목·position='조교'·미위임 — 기존 POST assistants 대상검증식과 동일 기준, scope=g.* IDOR 차단).
+- 추가/해제는 기존 `POST /assistants`(user_id)·`DELETE /assistants/<uid>`.

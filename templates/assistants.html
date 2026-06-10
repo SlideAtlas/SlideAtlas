@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SlideAtlas — 조교 지정</title>
+<script src="/static/js/interceptor.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/lms.css">
+</head>
+<body class="lms-assistants" data-cid="{{ cid }}" data-subject="{{ subject_code or '' }}">
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<div class="topbar">
+  <a class="tb-logo-wrap" href="/home"><img class="tb-logo-img" src="/static/SlideAtlas_Navy_Hor_small.png" alt="SlideAtlas"></a>
+  <a class="tb-back" href="/teacher/courses"><i class="ti ti-chevron-right" style="transform:rotate(180deg)"></i>수업 목록</a>
+  <div class="tb-right">
+    <a class="tb-link" href="/mypage"><i class="ti ti-user"></i>마이페이지</a>
+    <a class="tb-link" id="btn-logout" onclick="doLogout()"><i class="ti ti-logout"></i>로그아웃</a>
+  </div>
+</div>
+
+<div class="page-wrap">
+  <div class="chead">
+    <div class="chead-name" id="chead-name">수업</div>
+    <div class="chead-meta" id="chead-meta"></div>
+  </div>
+  <nav class="cnav">
+    <a href="/teacher/course/{{ cid }}"><i class="ti ti-microscope"></i>주차 구성</a>
+    <a class="active"><i class="ti ti-user-check"></i>조교</a>
+    <a href="/teacher/course/{{ cid }}/dashboard"><i class="ti ti-chart-bar"></i>대시보드</a>
+  </nav>
+
+  <div class="note-warn"><i class="ti ti-shield"></i>조교 지정은 수업 개설 교수만 할 수 있습니다. 조교는 이 수업의 주차·슬라이드 편집을 위임받습니다.</div>
+
+  <div class="section-card" style="margin-bottom:20px">
+    <div class="card-header"><div class="card-title"><i class="ti ti-search"></i>조교 추가</div></div>
+    <div style="padding:16px 18px">
+      <div class="search-add"><i class="ti ti-search"></i><input type="text" id="cand-q" placeholder="이름 또는 이메일로 조교 검색" oninput="onSearch()" autocomplete="off"></div>
+      <div class="search-hint">지위가 '조교'인 같은 과목 구성원만 검색됩니다.</div>
+      <div style="border:1px solid var(--color-border-tertiary);border-radius:9px" id="cand-list"></div>
+    </div>
+  </div>
+
+  <div class="section-card">
+    <div class="card-header"><div class="card-title"><i class="ti ti-user-check"></i>현재 조교</div><span class="week-count" id="ta-count" style="font-size:12px;color:var(--color-text-tertiary)">0명</span></div>
+    <div id="ta-list"></div>
+  </div>
+</div>
+
+<script>
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+var toastTimer;
+function showToast(m){var t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(function(){t.classList.remove('show');},2600);}
+
+var CID=document.body.getAttribute('data-cid');
+var SUBJECT=document.body.getAttribute('data-subject');
+var searchTimer;
+
+function initial(name,email){var s=(name||email||'?').trim();return s?s.charAt(0):'?';}
+
+async function loadHead(){
+  try{
+    var r=await fetch('/api/courses/'+encodeURIComponent(CID));
+    var d=await r.json();
+    if(r.ok&&d.success){
+      document.getElementById('chead-name').textContent=d.course.title||'수업';
+      document.getElementById('chead-meta').textContent=[d.course.semester,SUBJECT].filter(Boolean).join(' · ');
+    }
+  }catch(e){}
+}
+
+async function loadAssistants(){
+  var box=document.getElementById('ta-list');
+  try{
+    var r=await fetch('/api/courses/'+encodeURIComponent(CID)+'/assistants');
+    var d=await r.json();
+    var list=(d&&d.assistants)||[];
+    document.getElementById('ta-count').textContent=list.length+'명';
+    if(!list.length){box.innerHTML='<div class="empty-row" style="padding:18px 16px;font-size:13px">아직 지정된 조교가 없습니다.</div>';return;}
+    box.innerHTML=list.map(function(a){
+      return '<div class="ta-item"><div class="ta-avatar">'+esc(initial(a.name,a.email))+'</div>'
+        +'<div class="ta-info"><div class="ta-name">'+esc(a.name||a.email)+' <span class="badge badge-assistant">조교</span></div>'
+        +'<div class="ta-email">'+esc(a.email)+'</div></div>'
+        +'<button class="ta-rm" onclick="removeAssistant('+a.user_id+')">위임 해제</button></div>';
+    }).join('');
+  }catch(e){box.innerHTML='<div class="empty-row" style="padding:18px 16px">조교 목록을 불러오지 못했습니다.</div>';}
+}
+
+function onSearch(){clearTimeout(searchTimer);searchTimer=setTimeout(loadCandidates,250);}
+async function loadCandidates(){
+  var q=(document.getElementById('cand-q').value||'').trim();
+  var box=document.getElementById('cand-list');
+  try{
+    var r=await fetch('/api/courses/'+encodeURIComponent(CID)+'/assistant-candidates?q='+encodeURIComponent(q));
+    var d=await r.json();
+    var list=(d&&d.candidates)||[];
+    if(!list.length){box.innerHTML='<div class="empty-row" style="padding:14px;font-size:13px">검색 결과가 없습니다.</div>';return;}
+    box.innerHTML=list.map(function(c){
+      return '<div class="cand"><div class="cand-info"><div class="cand-name">'+esc(c.name||c.email)+'</div>'
+        +'<div class="cand-email">'+esc(c.email)+'</div></div>'
+        +'<button class="cand-add" onclick="addAssistant('+c.user_id+')"><i class="ti ti-plus"></i>추가</button></div>';
+    }).join('');
+  }catch(e){box.innerHTML='<div class="empty-row" style="padding:14px">검색에 실패했습니다.</div>';}
+}
+
+async function addAssistant(uid){
+  try{
+    var r=await fetch('/api/courses/'+encodeURIComponent(CID)+'/assistants',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:uid})});
+    var d=await r.json();
+    if(r.ok&&d.success){showToast('조교를 위임했습니다');await loadAssistants();await loadCandidates();}
+    else showToast(d.message||'추가 실패');
+  }catch(e){showToast('네트워크 오류');}
+}
+
+async function removeAssistant(uid){
+  if(!confirm('이 조교의 편집 위임을 해제할까요?'))return;
+  try{
+    var r=await fetch('/api/courses/'+encodeURIComponent(CID)+'/assistants/'+uid,{method:'DELETE'});
+    var d=await r.json();
+    if(r.ok&&d.success){showToast('위임을 해제했습니다');await loadAssistants();await loadCandidates();}
+    else showToast(d.message||'해제 실패');
+  }catch(e){showToast('네트워크 오류');}
+}
+
+async function doLogout(){
+  var btn=document.getElementById('btn-logout');if(btn)btn.style.pointerEvents='none';
+  try{await fetch('/api/auth/logout',{method:'POST'});}catch(e){}
+  location.href='/login';
+}
+
+loadHead();
+loadAssistants();
+loadCandidates();
+</script>
+</body>
+</html>
