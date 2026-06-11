@@ -563,9 +563,11 @@ def resend_code():
 
     get_db_conn, release_db_conn = _db()
     conn = get_db_conn()
-    conn.autocommit = False
     code = None
+    # [Codex sweep] release_db_conn 은 finally 단일 지점에서만 — 검증실패 early return 포함 모든
+    #   경로에서 정확히 1회(autocommit 복구 후). 판정 로직·반환 shape·에러코드는 불변, release 구조만 정리.
     try:
+        conn.autocommit = False
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT id, status FROM users WHERE lower(email) = %s",
@@ -626,21 +628,20 @@ def resend_code():
         conn.commit()
     except Exception:
         conn.rollback()
-        release_db_conn(conn)
         return _err("SERVER_ERROR", "처리 중 오류가 발생했습니다", 500)
     finally:
         try:
             conn.autocommit = True
         except Exception:
             pass
+        release_db_conn(conn)
 
+    # conn 은 위 finally 에서 이미 release 됨(메일 발송은 DB 무관).
     try:
         send_verification_email(email, code)
     except Exception:
-        release_db_conn(conn)
         return _err("EMAIL_SEND_FAILED", "인증코드 발송에 실패했습니다", 502)
 
-    release_db_conn(conn)
     return _ok({"message": "새 인증코드가 발송되었습니다"})
 
 
@@ -835,9 +836,12 @@ def change_password():
 
     get_db_conn, release_db_conn = _db()
     conn = get_db_conn()
-    conn.autocommit = False
     token = csrf_token = None
+    # [Codex] release_db_conn 은 finally 단일 지점에서만 — 정상·검증실패(early return)·예외 모든
+    #   경로에서 정확히 1회 release(autocommit 복구 후). early return 이 try 안에서 일어나도 finally 가
+    #   release 를 보장 → 커넥션 누수 차단(직전 포털 수정 160a082 와 동일 패턴). 판정 로직·에러코드 불변.
     try:
+        conn.autocommit = False
         with conn.cursor() as cur:
             # scope=g.user_id 고정(IDOR 불가). FOR UPDATE 로 동시 변경 직렬화.
             cur.execute(
@@ -871,14 +875,13 @@ def change_password():
         csrf_token = secrets.token_hex(32)
     except Exception:
         conn.rollback()
-        release_db_conn(conn)
         return _err("SERVER_ERROR", "처리 중 오류가 발생했습니다", 500)
     finally:
         try:
             conn.autocommit = True
         except Exception:
             pass
-    release_db_conn(conn)
+        release_db_conn(conn)
 
     # 세션 회전: 현재 기기에는 새 토큰/CSRF 쿠키 재발급(로그인 유지), 구 세션은 무효화(login·verify 와 동일).
     resp = _ok({"message": "비밀번호가 변경되었습니다"})

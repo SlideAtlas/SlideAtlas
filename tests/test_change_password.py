@@ -188,3 +188,69 @@ def test_change_password_requires_csrf(client):
 def test_change_password_requires_auth(client):
     resp = client.post(URL, json={"current_password": "x", "new_password": "newpass34"})
     assert resp.status_code == 401
+
+
+# ─────────────────────────────────────────────
+# 6. [Codex] 커넥션 누수 차단 — 검증실패 early return 에서도 release(acquire==release)
+# ─────────────────────────────────────────────
+def test_change_password_wrong_current_releases_connection(client):
+    """현재 비번 오류 403 early return 에서도 conn release — acquire==release(누수 없음)."""
+    conn, cur = _mock_db()
+    cur.fetchone.side_effect = [
+        _auth_row(),
+        (generate_password_hash("oldpass12"), "YU", "viewer", False),
+    ]
+    _login(client)
+    with patch("server_render.get_db_conn", return_value=conn) as gm, \
+         patch("server_render.release_db_conn") as rm:
+        resp = client.post(URL, headers={"X-CSRF-Token": CSRF},
+                           json={"current_password": "WRONGpass", "new_password": "newpass34"})
+    assert resp.status_code == 403
+    assert gm.call_count == rm.call_count and gm.call_count >= 2   # _authenticate + change 둘 다 균형
+
+
+def test_change_password_success_releases_connection(client):
+    conn, cur = _mock_db()
+    cur.fetchone.side_effect = [
+        _auth_row(),
+        (generate_password_hash("oldpass12"), "YU", "viewer", False),
+    ]
+    _login(client)
+    with patch("server_render.get_db_conn", return_value=conn) as gm, \
+         patch("server_render.release_db_conn") as rm:
+        resp = client.post(URL, headers={"X-CSRF-Token": CSRF},
+                           json={"current_password": "oldpass12", "new_password": "newpass34"})
+    assert resp.status_code == 200
+    assert gm.call_count == rm.call_count
+
+
+def test_change_password_repeated_failure_no_pool_leak(client):
+    """현재 비번 오류를 반복해도 매 요청 release — 풀 고갈(누적 미반환) 없음."""
+    for _ in range(8):
+        conn, cur = _mock_db()
+        cur.fetchone.side_effect = [
+            _auth_row(),
+            (generate_password_hash("oldpass12"), "YU", "viewer", False),
+        ]
+        _login(client)
+        with patch("server_render.get_db_conn", return_value=conn) as gm, \
+             patch("server_render.release_db_conn") as rm:
+            resp = client.post(URL, headers={"X-CSRF-Token": CSRF},
+                               json={"current_password": "WRONGpass", "new_password": "newpass34"})
+        assert resp.status_code == 403
+        assert gm.call_count == rm.call_count
+
+
+# ─────────────────────────────────────────────
+# 7. [Codex sweep] resend-code 검증실패 early return 에서도 release
+# ─────────────────────────────────────────────
+def test_resend_code_early_return_releases_connection(client):
+    """resend-code: 이미 인증된 계정(ALREADY_VERIFIED) early return 에서도 conn release(누수 없음)."""
+    conn, cur = _mock_db()
+    cur.fetchone.return_value = (1, "active")     # status='active' → ALREADY_VERIFIED(409) early return
+    with patch("server_render.get_db_conn", return_value=conn) as gm, \
+         patch("server_render.release_db_conn") as rm:
+        resp = client.post("http://localhost/api/auth/resend-code", json={"email": "a@b.c"})
+    assert resp.status_code == 409
+    assert resp.get_json()["error"] == "ALREADY_VERIFIED"
+    assert gm.call_count == rm.call_count == 1     # 검증실패 경로도 정확히 1회 release
