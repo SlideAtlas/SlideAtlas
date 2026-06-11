@@ -2236,6 +2236,20 @@ def api_course_week_slide_add(cid, wid):
             if not cur.fetchone():
                 conn.rollback()
                 return jsonify({'success': False, 'error': 'NOT_FOUND', 'message': '주차를 찾을 수 없습니다'}), 404
+            # ★ [외부검증 수정1] 과목 정합성 가드 — 접근 게이트(_slide_access_allowed)와 별개 축이다(§21-2
+            #   "수업은 특정 과목 안에서만"). is_special 편집자는 _slide_access_allowed/_visible_slides 의
+            #   institution·subject 우회로 타 과목(PATH 등) 슬라이드를 HST 수업에 배치할 수 있는데, 그러면
+            #   일반 학생 화면에선 단일 게이트에 막혀 깨진 카드/403 비대칭이 생긴다. 따라서 배치 슬라이드의
+            #   과목이 이 수업 과목과 같은지 먼저 검사한다(course.subject_code == g.subject_code 는
+            #   _course_owner_or_assistant 가 강제하므로 g.subject_code 와 대조). _slide_access_allowed 무수정.
+            _sinfo = get_slide_institution(slide_id)
+            if _sinfo is None:
+                conn.rollback()
+                return jsonify({'success': False, 'error': 'SLIDE_NOT_FOUND', 'message': '슬라이드를 찾을 수 없습니다'}), 404
+            if _sinfo[1] != getattr(g, 'subject_code', None):
+                conn.rollback()
+                return jsonify({'success': False, 'error': 'SLIDE_SUBJECT_MISMATCH',
+                                'message': '이 수업 과목의 슬라이드만 배치할 수 있습니다'}), 403
             # ★ 슬라이드 접근 단일 게이트로 배치 가능 여부 검증(수업은 게이트 아님 §8).
             allowed, _aerr = _slide_access_allowed(slide_id)
             if not allowed:
@@ -2315,10 +2329,12 @@ def api_course_assistant_add(cid):
             if role_in_course != 'professor':
                 conn.rollback()
                 return _forbidden_json('조교 지정은 교수만 가능합니다')
-            # 대상 검증: 같은 기관·같은 과목·지위 조교 (scope 는 g 기준, 대상 user 만 id 로 조회).
+            # 대상 검증: 같은 기관·같은 과목·지위 조교·활성 계정 (scope 는 g 기준, 대상 user 만 id 로 조회).
+            #   [외부검증 수정2] status='active' 추가 — locked/pending 계정 위임 거부(활성 정의 통일 §0).
             cur.execute(
                 """SELECT 1 FROM users
-                    WHERE id = %s AND institution_id = %s AND subject_code = %s AND position = '조교'""",
+                    WHERE id = %s AND institution_id = %s AND subject_code = %s
+                      AND position = '조교' AND status = 'active'""",
                 (target, g.institution_id, g.subject_code),
             )
             if not cur.fetchone():
@@ -2683,8 +2699,13 @@ def api_course_available_slides(cid):
                 return err
         data = load_slides()
         vis = _visible_slides(data.get('slides', []))
+        # ★ [외부검증 수정1] 후보·배치 두 경로가 같은 과목 집합이 되도록, 이 수업 과목(=g.subject_code)
+        #   슬라이드만 후보로 노출한다. 일반 편집자는 _visible_slides 가 이미 과목을 강제하므로 무영향이고,
+        #   is_special 편집자(과목·institution 우회)에서만 타 과목 슬라이드를 후보에서 배제한다(배치 가드와 정합).
+        subj = getattr(g, 'subject_code', None)
         slides = [{'id': s['id'], 'title_ko': s.get('title_ko', s['id']),
-                   'organ': s.get('system', ''), 'stain': s.get('stain', '')} for s in vis]
+                   'organ': s.get('system', ''), 'stain': s.get('stain', '')}
+                  for s in vis if s.get('subject_code') == subj]
         return jsonify({'success': True, 'slides': slides})
     finally:
         release_db_conn(conn)
@@ -2748,6 +2769,7 @@ def api_course_assistant_candidates(cid):
                       AND r.institution_id = u.institution_id
                       AND r.subject_code = u.subject_code
                     WHERE u.institution_id = %s AND u.subject_code = %s AND u.position = '조교'
+                      AND u.status = 'active'   -- [외부검증 수정2] locked/pending 비노출(활성 정의 통일 §0)
                       AND NOT EXISTS (SELECT 1 FROM course_assistants a
                                        WHERE a.course_id = %s AND a.user_id = u.id)
                       AND (%s = '' OR COALESCE(r.name, '') ILIKE %s OR u.email ILIKE %s)

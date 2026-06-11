@@ -70,9 +70,11 @@ def _stack(conn, auth=None, extra=None):
 
 def test_courses_page_requires_auth(client):
     """비로그인 → page_login_required 가 랜딩(/)으로 redirect."""
+    from urllib.parse import urlparse
     resp = client.get("/teacher/courses")
     assert resp.status_code == 302
-    assert resp.headers["Location"].rstrip("/").endswith("") or resp.headers["Location"] == "/"
+    # [외부검증 수정3] endswith("") 는 항상 참(무력) → 리다이렉트 경로가 정확히 '/'(랜딩)인지 실질 단언.
+    assert urlparse(resp.headers["Location"]).path == "/"
 
 
 def test_student_redirected_from_courses_page(client):
@@ -180,21 +182,53 @@ def test_available_slides_blocks_non_editor(client):
     assert resp.status_code == 403
 
 
-def test_available_slides_reuses_visible_filter(client):
-    """편집권자 → _visible_slides 결과만 메타로 반환(타일·토큰 없음)."""
+def _mixed_slides():
+    """배포/미배포·과목 혼합 카탈로그(load_slides 형태)."""
+    return {"slides": [
+        {"id": "SA-HST-001", "title_ko": "단층 편평상피", "system": "소화기", "stain": "H&E",
+         "subject_code": "HST", "deploy_status": "deployed", "conversion_status": "ready"},
+        {"id": "SA-HST-PENDING", "title_ko": "검수 대기본", "system": "소화기", "stain": "H&E",
+         "subject_code": "HST", "deploy_status": "qc_pending", "conversion_status": "ready"},
+        {"id": "SA-PATH-001", "title_ko": "간경변", "system": "간담췌", "stain": "H&E",
+         "subject_code": "PATH", "deploy_status": "deployed", "conversion_status": "ready"},
+    ]}
+
+
+def test_available_slides_excludes_undeployed(client):
+    """[외부검증 수정3] _visible_slides 를 통째로 mock 하지 않고 load_slides 만 mock + 미배포 섞어,
+    결과에서 미배포(qc_pending)·타 과목이 실제로 빠지는지 직접 단언(vacuous 방지)."""
     conn, _ = _mk_conn(fetchone=[("CNU", "HST", 5), ("교수",)])
-    vis = [{"id": "SA-HST-001", "title_ko": "단층 편평상피", "system": "소화기", "stain": "H&E"}]
     extra = [
-        patch("server_render.load_slides", return_value={"slides": vis}),
-        patch("server_render._visible_slides", return_value=vis),
+        patch("server_render.load_slides", return_value=_mixed_slides()),
+        patch("server_render._institution_subject_access", return_value=True),
     ]
     with _stack(conn, _fake_auth(uid="5", inst="CNU", subject="HST"), extra=extra):
         resp = client.get("/api/courses/1/available-slides")
     assert resp.status_code == 200
-    data = resp.get_json()
-    assert data["success"] and data["slides"][0]["id"] == "SA-HST-001"
+    ids = [s["id"] for s in resp.get_json()["slides"]]
+    assert ids == ["SA-HST-001"]              # 배포·HST 만
+    assert "SA-HST-PENDING" not in ids        # 미배포 제외
+    assert "SA-PATH-001" not in ids           # 타 과목 제외
     # 타일/토큰 필드가 새지 않는다(카탈로그 메타만).
-    assert set(data["slides"][0].keys()) == {"id", "title_ko", "organ", "stain"}
+    assert set(resp.get_json()["slides"][0].keys()) == {"id", "title_ko", "organ", "stain"}
+
+
+def test_available_slides_subject_filter_for_special_editor(client):
+    """[외부검증 수정1] is_special 편집자는 _visible_slides 가 타 과목까지 반환하지만, 후보 목록은
+    이 수업 과목(HST)으로 제한돼 PATH 슬라이드가 노출되지 않는다(배치 가드와 같은 과목 집합)."""
+    def _auth_special():
+        from flask import g
+        g.user_id = "5"; g.institution_id = "CNU"; g.role = "viewer"
+        g.subject_code = "HST"; g.is_special = True
+        return None
+    conn, _ = _mk_conn(fetchone=[("CNU", "HST", 5), ("교수",)])
+    extra = [patch("server_render.load_slides", return_value=_mixed_slides())]
+    with _stack(conn, _auth_special, extra=extra):
+        resp = client.get("/api/courses/1/available-slides")
+    assert resp.status_code == 200
+    ids = [s["id"] for s in resp.get_json()["slides"]]
+    assert "SA-PATH-001" not in ids           # 특별계정도 타 과목 후보 비노출
+    assert "SA-HST-001" in ids
 
 
 def test_assistant_candidates_professor_only(client):
@@ -219,6 +253,22 @@ def test_assistant_candidates_scope_is_g_only(client):
     sel = [c for c in cur.execute.call_args_list
            if "u.position = '조교'" in " ".join(str(c.args[0]).split())]
     assert sel and sel[0].args[1][0] == "CNU" and sel[0].args[1][1] == "HST"
+
+
+def test_assistant_candidates_excludes_non_active(client):
+    """[외부검증 수정2] 후보 SQL 에 u.status='active' 조건이 있어 locked/pending 계정은 후보에서 빠진다.
+    (DB mock 은 활성 행만 반환하지만, 필터 자체가 SQL 에 박혀 있음을 직접 단언 — vacuous 방지.)"""
+    conn, cur = _mk_conn(
+        fetchone=[("CNU", "HST", 5), ("교수",)],
+        fetchall=[[(9, "조민수", "minsu@test.ac.kr")]],   # active 만 반환됐다고 가정
+    )
+    with _stack(conn, _fake_auth(uid="5", inst="CNU", subject="HST")):
+        resp = client.get("/api/courses/1/assistant-candidates?q=조")
+    assert resp.status_code == 200
+    sel = [c for c in cur.execute.call_args_list
+           if "u.position = '조교'" in " ".join(str(c.args[0]).split())]
+    sql = " ".join(str(sel[0].args[0]).split())
+    assert "u.status = 'active'" in sql        # locked/pending 비노출 조건 존재
 
 
 def test_assistants_list_blocks_non_editor(client):

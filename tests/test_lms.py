@@ -122,23 +122,47 @@ def test_delegated_assistant_can_edit(client):
 # ── ③ 비구독/미배포 슬라이드 배치 → 403 (게이트로 검증) ──────────────────────
 
 def test_place_slide_blocked_by_access_gate(client):
-    # _course_owner_or_assistant: professor OK → 주차 존재 → _slide_access_allowed=False → 403
-    conn, cur = _mk_conn(fetchone=[("CNU", "HST", 5), ("교수",), (1,)])
+    # _course_owner_or_assistant: professor OK → 주차 존재 → 과목정합(HST) → _slide_access_allowed=False → 403
+    #   (시퀀스: course, position, week, slide_info[get_slide_institution]) — slide_info 과목은 HST(정합 통과)라
+    #   배치가 막히는 원인이 '게이트'임을 분리 검증.
+    conn, cur = _mk_conn(fetchone=[("CNU", "HST", 5), ("교수",), (1,), ("SA", "HST", "deployed", "ready")])
     extra = [patch("server_render._slide_access_allowed", return_value=(False, None))]
     with _stack(conn, _fake_auth(uid="5", subject="HST"), extra):
-        resp = client.post("/api/courses/1/weeks/2/slides", json={"slide_id": "SA-PATH-001"})
+        resp = client.post("/api/courses/1/weeks/2/slides", json={"slide_id": "SA-HST-009"})
     assert resp.status_code == 403
     assert resp.get_json()["error"] == "SLIDE_NOT_ALLOWED"
 
 
 def test_place_slide_allowed_when_gate_passes(client):
-    conn, cur = _mk_conn(fetchone=[("CNU", "HST", 5), ("교수",), (1,), (10,)])
+    # 시퀀스: course, position, week, slide_info(HST 정합), insert RETURNING id
+    conn, cur = _mk_conn(fetchone=[("CNU", "HST", 5), ("교수",), (1,),
+                                   ("SA", "HST", "deployed", "ready"), (10,)])
     extra = [patch("server_render._slide_access_allowed", return_value=(True, None))]
     with _stack(conn, _fake_auth(uid="5", subject="HST"), extra):
         resp = client.post("/api/courses/1/weeks/2/slides",
                            json={"slide_id": "SA-HST-001", "display_order": 1})
     assert resp.status_code == 200
     assert resp.get_json()["id"] == 10
+
+
+def test_place_slide_blocked_on_subject_mismatch(client):
+    # [외부검증 수정1] 타 과목(PATH) 슬라이드를 HST 수업에 배치 → SLIDE_SUBJECT_MISMATCH 403.
+    #   과목 정합 검사가 _slide_access_allowed '앞'에서 차단하므로 게이트는 호출되지 않는다(가드 미충돌).
+    gate_calls = []
+    def _gate(_sid):
+        gate_calls.append(_sid)
+        return (True, None)
+    conn, cur = _mk_conn(fetchone=[("CNU", "HST", 5), ("교수",), (1,),
+                                   ("SA", "PATH", "deployed", "ready")])
+    extra = [patch("server_render._slide_access_allowed", side_effect=_gate)]
+    with _stack(conn, _fake_auth(uid="5", subject="HST"), extra):
+        resp = client.post("/api/courses/1/weeks/2/slides", json={"slide_id": "SA-PATH-001"})
+    assert resp.status_code == 403
+    assert resp.get_json()["error"] == "SLIDE_SUBJECT_MISMATCH"
+    assert gate_calls == []   # 과목 불일치는 게이트 도달 전에 차단
+    # INSERT 미실행
+    assert not [c for c in cur.execute.call_args_list
+                if "insert into course_week_slides" in " ".join(str(c.args[0]).split()).lower()]
 
 
 # ── ④ 타 기관/타 과목 course IDOR → 403 ───────────────────────────────────────

@@ -647,3 +647,23 @@ python3 run_tests.py
 
 ### 결과
 [2026-06-11][결과] 신규 tests/test_lms_teacher_pages.py 18건 + 전수 pytest 258 passed(240→258, 회귀 0). server_render.py = 단일 추가 블록(+184, 삭제0), 보호 def 무수정. 단계 커밋 4개(A-1~A-4, 누적). push 미실행(지시 없음). CLAUDE.md 미수정(묶음 끝 일괄).
+
+## ════════ LMS 3단계-A 외부검증 반영(Low 3건) — 2026-06-11 ════════
+브랜치: main. 기준선 258 → 261. 무수정 확인: `_slide_access_allowed`·`_visible_slides`·auth·`_course_owner_or_assistant`(git diff: 해당 def 변경 0, auth/ 변경 0). 변경 = server_render.py 4개 훅 + tests.
+
+### 수정1 — 배치 과목 정합성 가드(접근 게이트와 별개 축, §21-2)
+- `api_course_week_slide_add`(server_render.py:2235~): 주차 존재 확인 후 `_slide_access_allowed` '앞'에 한 단계 추가 — `get_slide_institution(slide_id)`로 slide.subject_code 조회, `g.subject_code`(=course.subject_code, `_course_owner_or_assistant`가 일치 강제)와 불일치면 `SLIDE_SUBJECT_MISMATCH` 403. 슬라이드 없으면 404. `_slide_access_allowed` 자체 무수정(별개 축: 배치 정합성≠접근 게이트).
+- `api_course_available_slides`(:2699~): `_visible_slides` 결과를 `s.subject_code==g.subject_code`로 한 번 더 필터 — 후보·배치 두 경로가 같은 과목 집합. 일반 편집자는 무영향, is_special(과목·institution 우회)에서만 타 과목 배제.
+- 목적: is_special 편집자가 타 과목(PATH) 슬라이드를 HST 수업에 배치 → 일반 학생 화면이 단일 게이트에 막혀 깨진 카드/403 나는 비대칭 차단.
+
+### 수정2 — 조교 후보·추가 status='active' (활성 정의 통일 §0)
+- `api_course_assistant_candidates` SQL(:2769): `AND u.status='active'` 추가 — locked/pending 후보 비노출.
+- `api_course_assistant_add` 대상검증 SQL(:2334): `AND status='active'` 추가 — locked/pending 위임 거부.
+
+### 수정3 — 테스트 무력화 2건 + 신규
+- `test_courses_page_requires_auth`: `endswith("")`(항상 참) → `urlparse(Location).path=='/'` 실질 단언.
+- available-slides 미배포 필터 테스트: `_visible_slides` 통째 mock 제거 → `load_slides`만 mock + qc_pending·타과목 섞은 데이터 + `_institution_subject_access` mock → 미배포·타과목 제외 직접 단언(vacuous 방지). 분리: 일반 편집자(`test_available_slides_excludes_undeployed`) / is_special 편집자 과목필터(`test_available_slides_subject_filter_for_special_editor`).
+- 신규: `test_place_slide_blocked_on_subject_mismatch`(PATH→HST 수업 배치 403·게이트 미도달·INSERT 미실행), `test_assistant_candidates_excludes_non_active`(SQL에 status='active' 존재 단언). 기존 배치 테스트 2건 fetchone 시퀀스에 slide_info 추가(get_slide_institution 호출 반영).
+
+### 결과
+[2026-06-11][결과] 전수 pytest 261 passed(258→261, 회귀 0). server_render.py 4훅, 보호 함수·auth 무수정. (참고) organ 관리 API는 본 작업 아님 — 커밋 a97b381 "feat(slides): organ 통제어휘 정규화(D28)" 출처. push 실행.
