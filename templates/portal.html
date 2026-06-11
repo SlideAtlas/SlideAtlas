@@ -273,7 +273,11 @@
       // 과목 1개면 자동 선택, 여러 개면 이전 선택 보존(없으면 선택 강제).
       if (SUBJECTS.length === 1) { ws.value = SUBJECTS[0].code; }
       else if (prev) { ws.value = prev; }
-      document.getElementById('filter-subject').innerHTML = '<option value="">전체 과목</option>' + opts;
+      // [Gemini#2] 조회 필터(filter-subject)도 이전 선택값 보존·복원 — 추가/삭제 후 '전체 과목'으로 초기화 방지.
+      var fsEl = document.getElementById('filter-subject');
+      var prevFilter = fsEl.value;
+      fsEl.innerHTML = '<option value="">전체 과목</option>' + opts;
+      fsEl.value = prevFilter;
       onWorkSubjectChange();
     }
 

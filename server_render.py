@@ -1269,10 +1269,16 @@ def portal_roster_add():
     if position not in _PORTAL_POSITIONS:
         return jsonify({'success': False, 'error': 'INVALID_POSITION',
                         'message': '지위는 학생/조교/교수만 가능합니다'}), 400
+    # [Codex#2] 빈/누락 과목은 conn 획득 전에 400(MISSING_SUBJECT) — 업로드·양식과 대칭(경로 통일).
+    if not subject_code:
+        return jsonify({'success': False, 'error': 'MISSING_SUBJECT',
+                        'message': '과목을 선택하세요'}), 400
 
     conn = get_db_conn()
-    conn.autocommit = False
+    # [Codex#1] release_db_conn 은 finally 단일 지점에서만 — 정상·403·예외 모든 경로에서 정확히 1회.
+    #   (early return 이 try 안에서 일어나도 finally 가 release 를 보장 → 커넥션 누수 차단, D11 부류.)
     try:
+        conn.autocommit = False
         with conn.cursor() as cur:
             subjects = _subscribed_subjects(cur, inst_id)
             # 서버 재검증(업로드와 동일): 화면이 보낸 과목을 그대로 믿지 않는다 — 비구독이면 403.
@@ -1285,7 +1291,6 @@ def portal_roster_add():
         conn.commit()
     except Exception:
         conn.rollback()
-        release_db_conn(conn)
         return jsonify({'success': False, 'error': 'SERVER_ERROR',
                         'message': '처리 중 오류가 발생했습니다'}), 500
     finally:
@@ -1293,7 +1298,7 @@ def portal_roster_add():
             conn.autocommit = True
         except Exception:
             pass
-    release_db_conn(conn)
+        release_db_conn(conn)
     return jsonify({'success': True, 'outcome': outcome,
                     'message': _PORTAL_OUTCOME_MSG.get(outcome, outcome)})
 
@@ -1377,13 +1382,14 @@ def portal_roster_upload():
         return jsonify({'success': False, 'error': 'EMPTY', 'message': '데이터 행이 없습니다'}), 400
 
     conn = get_db_conn()
-    conn.autocommit = False
     results = []
+    # [Codex#1] release_db_conn 은 finally 단일 지점에서만 — 정상·403·예외 모든 경로에서 정확히 1회.
+    #   (403 early return 이 try 안에서 일어나도 finally 가 release 를 보장 → 커넥션 누수 차단, D11 부류.)
     try:
+        conn.autocommit = False
         with conn.cursor() as cur:
             subjects = _subscribed_subjects(cur, inst_id)
             # ★ 서버 재검증: 파라미터 과목이 그 기관 구독 과목인지 — 아니면 행 처리 전 전면 거부(403).
-            #   (release 는 아래 finally→bottom 패턴과 동일하게 두지 않는다 — 기존 add 경로와 일관.)
             if subject_code not in subjects:
                 conn.rollback()
                 return jsonify({'success': False, 'error': 'SUBJECT_NOT_SUBSCRIBED',
@@ -1410,7 +1416,6 @@ def portal_roster_upload():
         conn.commit()
     except Exception:
         conn.rollback()
-        release_db_conn(conn)
         return jsonify({'success': False, 'error': 'SERVER_ERROR',
                         'message': '처리 중 오류로 전체 취소되었습니다'}), 500
     finally:
@@ -1418,7 +1423,7 @@ def portal_roster_upload():
             conn.autocommit = True
         except Exception:
             pass
-    release_db_conn(conn)
+        release_db_conn(conn)
     counts = {}
     for r in results:
         counts[r['outcome']] = counts.get(r['outcome'], 0) + 1

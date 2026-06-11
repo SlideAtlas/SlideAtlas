@@ -163,3 +163,108 @@ def test_upload_missing_subject_param_400(client):
     assert resp.status_code == 400
     assert resp.get_json()["error"] == "MISSING_SUBJECT"
     assert sync.call_count == 0
+
+
+# ─────────────────────────────────────────────
+# 5. [Codex#1] 커넥션 누수 차단 — 모든 경로에서 acquire == release (풀 고갈 없음)
+# ─────────────────────────────────────────────
+from contextlib import ExitStack
+
+
+def _spy_ctx(subjects, sync_outcome="added_no_user"):
+    """get_db_conn/release_db_conn 을 스파이로 잡아 acquire/release 균형을 검증."""
+    st = ExitStack()
+    st.enter_context(patch("auth.decorators._authenticate", _fake_auth()))
+    st.enter_context(patch("auth.decorators._csrf_ok", lambda: True))
+    st.enter_context(patch("server_render._is_institution_admin", return_value=True))
+    st.enter_context(patch("server_render._subscribed_subjects", side_effect=lambda cur, inst: dict(subjects)))
+    sync = st.enter_context(patch("server_render._sync_member", return_value=sync_outcome))
+    conn = MagicMock()
+    conn.cursor.return_value.__enter__.return_value = MagicMock()
+    get_mock = st.enter_context(patch("server_render.get_db_conn", return_value=conn))
+    rel_mock = st.enter_context(patch("server_render.release_db_conn"))
+    return st, get_mock, rel_mock, conn
+
+
+def test_upload_403_releases_connection(client):
+    """비구독 과목 403 early return 에서도 커넥션이 정확히 1회 release(누수 없음)."""
+    data = _xlsx_bytes([("김", "학생", "a@c.ac")])
+    st, get_mock, rel_mock, conn = _spy_ctx({"HST": "조직학"})
+    with st:
+        resp = _post(client, data, subject_code="PATH")     # 비구독 → 403
+    assert resp.status_code == 403
+    assert get_mock.call_count == 1
+    assert rel_mock.call_count == 1                          # acquire 1 == release 1
+    assert rel_mock.call_args.args[0] is conn               # 그 conn 을 반환
+
+
+def test_upload_repeated_403_no_pool_leak(client):
+    """비구독 403 을 반복 호출해도 매번 release — 풀 고갈(누적 미반환) 없음."""
+    data = _xlsx_bytes([("김", "학생", "a@c.ac")])
+    for _ in range(10):
+        st, get_mock, rel_mock, _conn = _spy_ctx({"HST": "조직학"})
+        with st:
+            resp = _post(client, data, subject_code="PATH")
+        assert resp.status_code == 403
+        assert get_mock.call_count == rel_mock.call_count == 1   # 매 호출 acquire==release
+
+
+def test_upload_success_releases_connection(client):
+    """정상 경로도 정확히 1회 release(중복 release 없음)."""
+    data = _xlsx_bytes([("김", "학생", "a@c.ac")])
+    st, get_mock, rel_mock, _conn = _spy_ctx({"HST": "조직학"})
+    with st:
+        resp = _post(client, data, subject_code="HST")
+    assert resp.status_code == 200
+    assert get_mock.call_count == rel_mock.call_count == 1
+
+
+def test_upload_missing_subject_does_not_acquire_conn(client):
+    """과목 누락(400)은 conn 획득 전에 거부 — 애초에 acquire 안 함(누수 불가)."""
+    data = _xlsx_bytes([("김", "학생", "a@c.ac")])
+    st, get_mock, rel_mock, _conn = _spy_ctx({"HST": "조직학"})
+    with st:
+        resp = _post(client, data, subject_code=None)
+    assert resp.status_code == 400
+    assert get_mock.call_count == 0 and rel_mock.call_count == 0
+
+
+# ─────────────────────────────────────────────
+# 6. 개별 추가(POST /portal/api/roster) — 커넥션 위생 + 빈 과목 통일(Codex#2)
+# ─────────────────────────────────────────────
+def _post_add(client, body):
+    import json
+    return client.post("/portal/api/roster", data=json.dumps(body),
+                       content_type="application/json")
+
+
+def test_add_403_releases_connection(client):
+    """개별추가 비구독 403 early return 에서도 conn 1회 release(누수 없음)."""
+    st, get_mock, rel_mock, conn = _spy_ctx({"HST": "조직학"})
+    with st:
+        resp = _post_add(client, {"name": "김", "position": "학생",
+                                  "subject_code": "PATH", "email": "a@c.ac"})
+    assert resp.status_code == 403
+    assert resp.get_json()["error"] == "SUBJECT_NOT_SUBSCRIBED"
+    assert get_mock.call_count == 1 and rel_mock.call_count == 1
+    assert rel_mock.call_args.args[0] is conn
+
+
+def test_add_missing_subject_400_before_conn(client):
+    """[Codex#2] 개별추가 빈/누락 과목 → conn 획득 전 400(MISSING_SUBJECT), 업로드와 대칭."""
+    st, get_mock, rel_mock, _conn = _spy_ctx({"HST": "조직학"})
+    with st:
+        resp = _post_add(client, {"name": "김", "position": "학생",
+                                  "subject_code": "", "email": "a@c.ac"})
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "MISSING_SUBJECT"
+    assert get_mock.call_count == 0 and rel_mock.call_count == 0
+
+
+def test_add_success_releases_connection(client):
+    st, get_mock, rel_mock, _conn = _spy_ctx({"HST": "조직학"})
+    with st:
+        resp = _post_add(client, {"name": "김", "position": "학생",
+                                  "subject_code": "HST", "email": "a@c.ac"})
+    assert resp.status_code == 200
+    assert get_mock.call_count == rel_mock.call_count == 1
