@@ -38,8 +38,7 @@
     <div class="prof-note">소속·지위·이름은 기관 명단 기준이라 직접 수정할 수 없습니다. 변경이 필요하면 기관 관리자에게 문의하세요.</div>
   </div>
 
-  <!-- 비밀번호 변경 (표시용 — 변경 API 미구현, 부채 D31) -->
-  <!-- TODO(D31): 학생 비밀번호 변경 API 부재. 현재 표시용 폼 + 안내 토스트만. API 신설 시 연동. -->
+  <!-- 비밀번호 변경 (D31 구현 — POST /api/auth/change-password) -->
   <div class="section-card" style="margin-bottom:18px">
     <div class="card-header"><div class="card-title"><i class="ti ti-shield" aria-hidden="true"></i>비밀번호 변경</div></div>
     <div class="pw-form">
@@ -68,8 +67,36 @@ function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){retur
 var toastTimer;
 function showToast(m){var t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(function(){t.classList.remove('show');},2600);}
 
-// 비밀번호 변경 — API 미구현(부채 D31). 표시용 안내만.
-function changePassword(){ showToast('비밀번호 변경 기능은 준비 중입니다'); }
+// 비밀번호 변경 — POST /api/auth/change-password (interceptor.js 가 CSRF 자동 주입).
+async function changePassword(){
+  var cur = document.getElementById('pw-cur').value || '';
+  var nw  = document.getElementById('pw-new').value || '';
+  var cfm = document.getElementById('pw-cfm').value || '';
+  if (!cur || !nw) { showToast('현재 비밀번호와 새 비밀번호를 입력하세요'); return; }
+  if (nw.length < 8) { showToast('새 비밀번호는 8자 이상이어야 합니다'); return; }
+  if (nw !== cfm) { showToast('새 비밀번호가 일치하지 않습니다'); return; }
+  var btn = document.querySelector('.pw-form .btn-primary');
+  if (btn) btn.disabled = true;
+  try {
+    var r = await fetch('/api/auth/change-password', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ current_password: cur, new_password: nw })
+    });
+    var d = await r.json();
+    if (d.success) {
+      document.getElementById('pw-cur').value = '';
+      document.getElementById('pw-new').value = '';
+      document.getElementById('pw-cfm').value = '';
+      showToast('비밀번호가 변경되었습니다');
+    } else {
+      var msg = { CURRENT_PASSWORD_INVALID: '현재 비밀번호가 올바르지 않습니다',
+                  WEAK_PASSWORD: '새 비밀번호는 8자 이상이어야 합니다',
+                  SAME_PASSWORD: '새 비밀번호가 현재 비밀번호와 같습니다' }[d.error] || (d.message || '변경에 실패했습니다');
+      showToast(msg);
+    }
+  } catch (e) { showToast('네트워크 오류가 발생했습니다'); }
+  if (btn) btn.disabled = false;
+}
 
 // ── 즐겨찾기 ── interceptor.js(CSRF 자동). scope=서버 g.user_id 강제(본인 것만).
 async function loadFavorites(){

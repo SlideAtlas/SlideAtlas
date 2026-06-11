@@ -810,6 +810,82 @@ def logout():
 
 
 # ─────────────────────────────────────────────
+# POST /api/auth/change-password  (D31 — 로그인 사용자 본인 비밀번호 변경)
+# ─────────────────────────────────────────────
+@auth_bp.route("/change-password", methods=["POST"])
+@login_required
+def change_password():
+    """로그인 사용자가 '본인' 비밀번호를 변경한다.
+
+    ★ 본인만: scope = g.user_id 단일 — body/경로의 user_id 는 받지도 보지도 않는다(IDOR 불가).
+    ★ 현재 비번 검증: 기존 login 과 동일한 check_password_hash 로 current_password 를 대조해야만 진행.
+    ★ 신규 해시/세션 로직 없음 — register 의 generate_password_hash, login/verify 의
+      _issue_token_payload(세션 회전) 를 그대로 재사용한다.
+    세션 처리: 비번 변경 시 session_token 을 회전하고(다른 기기의 구 세션은 다음 요청에서 SESSION_REVOKED),
+      현재 기기에는 새 토큰 쿠키를 재발급해 로그인 상태를 유지한다(기존 동시접속 모델과 동일 메커니즘, §8).
+    """
+    body = request.get_json(silent=True) or {}
+    current_password = body.get("current_password") or ""
+    new_password = body.get("new_password") or ""
+    if not current_password or not new_password:
+        return _err("MISSING_FIELDS", "현재 비밀번호와 새 비밀번호를 입력하세요")
+    # 새 비번 정책 — register 와 동일(8자 이상).
+    if len(new_password) < 8:
+        return _err("WEAK_PASSWORD", "비밀번호는 8자 이상이어야 합니다")
+
+    get_db_conn, release_db_conn = _db()
+    conn = get_db_conn()
+    conn.autocommit = False
+    token = csrf_token = None
+    try:
+        with conn.cursor() as cur:
+            # scope=g.user_id 고정(IDOR 불가). FOR UPDATE 로 동시 변경 직렬화.
+            cur.execute(
+                "SELECT password_hash, institution_id, role, is_special "
+                "FROM users WHERE id = %s FOR UPDATE",
+                (g.user_id,),
+            )
+            row = cur.fetchone()
+            if row is None:
+                conn.rollback()
+                return _err("USER_NOT_FOUND", "사용자를 찾을 수 없습니다", 404)
+            pw_hash, institution_id, role, is_special = row
+            # ★ 현재 비밀번호 검증 — login 과 동일한 check_password_hash 재사용. 불일치면 변경 거부.
+            if not pw_hash or not check_password_hash(pw_hash, current_password):
+                conn.rollback()
+                return _err("CURRENT_PASSWORD_INVALID", "현재 비밀번호가 올바르지 않습니다", 403)
+            # 새 비번이 현재 비번과 동일하면 거부.
+            if check_password_hash(pw_hash, new_password):
+                conn.rollback()
+                return _err("SAME_PASSWORD", "새 비밀번호가 현재 비밀번호와 같습니다")
+            # 해싱·세션 회전은 기존 함수 재사용(신규 로직 없음).
+            new_hash = generate_password_hash(new_password)
+            session_token, payload = _issue_token_payload(
+                g.user_id, institution_id, role, is_special)
+            cur.execute(
+                "UPDATE users SET password_hash = %s, session_token = %s WHERE id = %s",
+                (new_hash, session_token, g.user_id),
+            )
+        conn.commit()
+        token = encode_token(payload)
+        csrf_token = secrets.token_hex(32)
+    except Exception:
+        conn.rollback()
+        release_db_conn(conn)
+        return _err("SERVER_ERROR", "처리 중 오류가 발생했습니다", 500)
+    finally:
+        try:
+            conn.autocommit = True
+        except Exception:
+            pass
+    release_db_conn(conn)
+
+    # 세션 회전: 현재 기기에는 새 토큰/CSRF 쿠키 재발급(로그인 유지), 구 세션은 무효화(login·verify 와 동일).
+    resp = _ok({"message": "비밀번호가 변경되었습니다"})
+    return _set_auth_cookies(resp, token, csrf_token)
+
+
+# ─────────────────────────────────────────────
 # GET /api/auth/me
 # ─────────────────────────────────────────────
 @auth_bp.route("/me", methods=["GET"])
