@@ -679,3 +679,10 @@ python3 run_tests.py
 - 테스트: 신규 2(`test_slide_add_requires_organ_code` 400 / `test_legacy_admin_save_slide_is_gone` 410). 기존 admin 게이트 테스트는 본문 미도달(401/403)이라 무영향. 전수 pytest 263 passed(261→263, 회귀 0).
 
 [2026-06-11][결과] 코드·verify.sql 수정 완료, 단일 커밋. push 없음(재검증 후 CEO 배포). §0·게이트 무변경.
+
+## ════════ LMS 3단계-B 학생 프론트 — 2026-06-11 ════════
+브랜치: main. 기준선 pytest 263. 무수정 원칙: `_slide_access_allowed`·`_visible_slides`·auth·`_course_owner_or_assistant`·기존 LMS API 권한/scope 로직(표시 필드만 보강). 슬라이드 접근 판정 손대지 않음. 모든 fetch interceptor.js 경유(CSRF 자동), 클라이언트 렌더 esc() XSS 방어.
+
+### [B-1] 홈 수업 탭 — ✅
+- `templates/home.html` 수업 탭 placeholder → 실제 UI. 3단: 학기 칩(`#sem-chips`, 등록+개설 학기 union·textContent로만 채워 XSS 방어) → 내 수업(`GET /api/courses/enrolled`) → 이번 학기 개설 수업(`GET /api/courses/available`, `enrolled` 플래그 시 '등록됨' 뱃지). 카드 클릭 → `/course/<id>`.
+- 최초 수업 탭 진입 시 1회 lazy load(`loadCourseTab`), 학기 칩 클릭 클라이언트 필터. **전체 탭 무변경**(기존 슬라이드 그리드·필터 그대로). 기존 API만 호출 — 새 라우트·권한 경로 없음. home.html 자체 디자인(SUIT/teal) 유지(이미 배포된 셸).
