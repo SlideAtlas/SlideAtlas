@@ -1119,7 +1119,8 @@ def _remove_member(cur, institution_id, subject_code, email):
 
 
 def _looks_like_header(cells):
-    joined = ' '.join((c or '').strip() for c in cells[:4]).lower()
+    # 과목은 업로드 컨텍스트(요청 파라미터)로 받으므로 시트는 3칸(이름·지위·이메일)이다.
+    joined = ' '.join((c or '').strip() for c in cells[:3]).lower()
     return ('이름' in joined or 'name' in joined) and ('이메일' in joined or 'email' in joined)
 
 
@@ -1158,8 +1159,9 @@ def _xlsx_zip_guard(data):
 
 
 def _rows_from_iter(row_iter, max_rows):
-    """공통: (4컬럼 정규화 + 헤더/빈행 스킵 + 스트리밍 중 행상한 적용). 상한 초과 시 즉시 거부.
-       빈 행이 과도해도 절대 무한루프하지 않도록 전체 순회 횟수도 backstop 으로 제한."""
+    """공통: (3컬럼 정규화[이름·지위·이메일] + 헤더/빈행 스킵 + 스트리밍 중 행상한 적용).
+       과목은 업로드 컨텍스트(요청 파라미터)로 일괄 적용되므로 시트에는 없다.
+       상한 초과 시 즉시 거부. 빈 행이 과도해도 무한루프하지 않게 전체 순회 횟수도 backstop 제한."""
     out = []
     scanned = 0
     scan_limit = max_rows * 50 + 1000   # 빈 행/forged dimension 대비 backstop
@@ -1168,14 +1170,14 @@ def _rows_from_iter(row_iter, max_rows):
         if scanned > scan_limit:
             raise _RosterParseError('엑셀 행 수가 과도합니다')
         # 셀 길이 캡(보안검증 권고): 거대 단일 셀이 다운스트림으로 전파/저장되지 않게 일관 제한.
-        #   정상 이름/이메일/과목/지위는 수십자 이내 — 512자 캡은 유효 데이터에 영향 없고, 초과분은
+        #   정상 이름/이메일/지위는 수십자 이내 — 512자 캡은 유효 데이터에 영향 없고, 초과분은
         #   어차피 validator/allowlist/DB 제약에서 거부된다(이름은 _clean_name 에서 100자 재캡).
-        cells = ['' if c is None else str(c)[:512] for c in (list(row) + ['', '', '', ''])[:4]]
+        cells = ['' if c is None else str(c)[:512] for c in (list(row) + ['', '', ''])[:3]]
         if i == 0 and _looks_like_header(cells):
             continue
         if not any(c.strip() for c in cells):
             continue
-        out.append((cells[0], cells[1], cells[2], cells[3]))
+        out.append((cells[0], cells[1], cells[2]))   # (이름, 지위, 이메일)
         if len(out) > max_rows:
             raise _RosterParseError(f'최대 {max_rows}행까지 처리합니다')
     return out
@@ -1273,10 +1275,11 @@ def portal_roster_add():
     try:
         with conn.cursor() as cur:
             subjects = _subscribed_subjects(cur, inst_id)
+            # 서버 재검증(업로드와 동일): 화면이 보낸 과목을 그대로 믿지 않는다 — 비구독이면 403.
             if subject_code not in subjects:
                 conn.rollback()
-                return jsonify({'success': False, 'error': 'INVALID_SUBJECT',
-                                'message': '구독 중인 과목만 등록할 수 있습니다'}), 400
+                return jsonify({'success': False, 'error': 'SUBJECT_NOT_SUBSCRIBED',
+                                'message': '구독 중인 과목만 등록할 수 있습니다'}), 403
             outcome = _sync_member(cur, inst_id, subject_code, email, name,
                                    position, _today_kst(), {})
         conn.commit()
@@ -1340,6 +1343,14 @@ def portal_roster_upload():
     inst_id, err = _portal_guard()
     if err:
         return err
+    # ★ 과목은 '엑셀 칼럼'이 아니라 '업로드 컨텍스트(요청 파라미터)' — 한 업로드 = 한 과목 불변식.
+    #   화면이 보낸 과목을 그대로 믿지 않고 서버에서 _subscribed_subjects(g.institution_id)로 재검증한다
+    #   (?subject_code 조작으로 비구독 과목 등록 차단, §9 scope 격리). 데이터 모델(§0)은 불변 —
+    #   subject_code 는 여전히 과목별로 채워지고(아래 _sync_member), 다과목이면 과목별로 따로 업로드한다.
+    subject_code = (request.form.get('subject_code') or '').strip()
+    if not subject_code:
+        return jsonify({'success': False, 'error': 'MISSING_SUBJECT',
+                        'message': '과목을 선택하세요'}), 400
     # 명단 파일은 텍스트(수천 행이라도 수백 KB). 전역 MAX_CONTENT_LENGTH 는 어드민 슬라이드(GB급 SVS)
     #   업로드를 깨뜨리므로 두지 않고, 이 라우트에서만 국소로 막는다(High#4):
     #   · content_length 는 '빠른 사전 거부'로만 쓰고(헤더 비신뢰) 권위 검사는 실측 바이트(_read_capped).
@@ -1371,17 +1382,18 @@ def portal_roster_upload():
     try:
         with conn.cursor() as cur:
             subjects = _subscribed_subjects(cur, inst_id)
-            # 과목 셀은 code 또는 name_ko 둘 다 허용 → code 로 정규화.
-            name_to_code = {}
-            for c, n in subjects.items():
-                name_to_code[c.lower()] = c
-                name_to_code[(n or '').strip().lower()] = c
+            # ★ 서버 재검증: 파라미터 과목이 그 기관 구독 과목인지 — 아니면 행 처리 전 전면 거부(403).
+            #   (release 는 아래 finally→bottom 패턴과 동일하게 두지 않는다 — 기존 add 경로와 일관.)
+            if subject_code not in subjects:
+                conn.rollback()
+                return jsonify({'success': False, 'error': 'SUBJECT_NOT_SUBSCRIBED',
+                                'message': '구독 중인 과목만 등록할 수 있습니다'}), 403
             today = _today_kst()
             seat_cache, seen = {}, set()
-            for idx, (rname, rpos, rsubj, remail) in enumerate(rows, start=1):
+            # 모든 행에 이 한 과목(subject_code)을 일괄 적용 — '한 업로드 = 한 과목' 불변식.
+            for idx, (rname, rpos, remail) in enumerate(rows, start=1):
                 remail = (remail or '').strip().lower()
                 rpos = (rpos or '').strip()
-                rsubj = (rsubj or '').strip()
                 # 행별 검증 — '예상된 거절'은 skip-and-report(전체 롤백 아님, §3).
                 if not remail or not _PORTAL_EMAIL_RE.match(remail):
                     results.append({'row': idx, 'email': remail, 'outcome': 'invalid_email'})
@@ -1389,17 +1401,12 @@ def portal_roster_upload():
                 if rpos not in _PORTAL_POSITIONS:
                     results.append({'row': idx, 'email': remail, 'outcome': 'invalid_position'})
                     continue
-                code = name_to_code.get(rsubj.lower())
-                if code is None:
-                    results.append({'row': idx, 'email': remail, 'outcome': 'invalid_subject'})
-                    continue
-                key = (code, remail)
-                if key in seen:
+                if remail in seen:    # 같은 업로드(=같은 과목) 내 이메일 중복 제거
                     results.append({'row': idx, 'email': remail, 'outcome': 'duplicate_row'})
                     continue
-                seen.add(key)
-                outcome = _sync_member(cur, inst_id, code, remail, rname, rpos, today, seat_cache)
-                results.append({'row': idx, 'email': remail, 'subject_code': code, 'outcome': outcome})
+                seen.add(remail)
+                outcome = _sync_member(cur, inst_id, subject_code, remail, rname, rpos, today, seat_cache)
+                results.append({'row': idx, 'email': remail, 'subject_code': subject_code, 'outcome': outcome})
         conn.commit()
     except Exception:
         conn.rollback()
@@ -1415,27 +1422,30 @@ def portal_roster_upload():
     counts = {}
     for r in results:
         counts[r['outcome']] = counts.get(r['outcome'], 0) + 1
-    return jsonify({'success': True, 'total': len(results), 'counts': counts, 'results': results})
+    return jsonify({'success': True, 'subject_code': subject_code,
+                    'total': len(results), 'counts': counts, 'results': results})
 
 
 # 업로드 파서(_parse_*_roster)가 기대하는 헤더 — 양식과 파서가 어긋나면 업로드가 자기 양식을
 #   거부하는 모순이 생긴다. 그래서 헤더는 '문자열 상수'로 한곳에 두고 양식·검증이 함께 쓴다.
-#   · 순서는 파서 위치읽기(cells[0..3] = 이름·지위·과목·이메일)와 동일.
+#   · 순서는 파서 위치읽기(cells[0..2] = 이름·지위·이메일)와 동일. ★ 과목은 시트 칼럼이 아니라
+#     업로드 컨텍스트(요청 파라미터)로 받는다 — '한 업로드 = 한 과목' 불변식(오타·다과목 혼재 방지).
 #   · 헤더 검출(_looks_like_header)은 1행에 '이름'·'이메일'이 있으면 헤더로 보고 건너뛴다 → 이 헤더는
 #     재업로드 시 자동 스킵된다.
-_PORTAL_ROSTER_HEADER = ('이름', '지위', '과목', '이메일')
+_PORTAL_ROSTER_HEADER = ('이름', '지위', '이메일')
 
 
 @app.route('/portal/api/roster/template', methods=['GET'])
 @login_required
 def portal_roster_template():
-    """명단 일괄 업로드용 빈 양식(xlsx/csv) 다운로드.
+    """명단 일괄 업로드용 빈 양식(xlsx/csv) 다운로드 — '선택된 과목 1개'의 3칸 양식.
 
+    ★ 과목은 칼럼이 아니라 업로드 컨텍스트(요청 파라미터 subject_code)다 — 한 양식 = 한 과목.
     업로드(POST /portal/api/roster/upload)와 '정확히 같은' 컬럼·순서·검증 기준으로 생성한다:
-      · 헤더 = _PORTAL_ROSTER_HEADER(파서 기대 문자열 그대로) → 재업로드 시 자동 헤더 스킵.
+      · 헤더 = _PORTAL_ROSTER_HEADER(이름·지위·이메일, 파서 기대 문자열 그대로) → 재업로드 시 자동 헤더 스킵.
       · 지위 안내 = _PORTAL_POSITIONS(파서 allowlist 그대로). 행정직원은 과목 명단 대상이 아니라
         admin-only(슈퍼관리자 관할, 과목행 없음 §21-1)라 양식 지위에서 제외 — 넣으면 파서가 거절.
-      · 과목 안내 = _subscribed_subjects(g.institution_id) — 그 기관 구독 과목만(타 기관 노출 0, §9 scope).
+      · 과목 = subject_code 파라미터. _subscribed_subjects(g.institution_id)로 재검증(비구독이면 403, §9 scope).
       · 모든 셀 _xlsx_safe(§8·§18 D9 수식주입 방어).
     """
     inst_id, err = _portal_guard()
@@ -1445,6 +1455,10 @@ def portal_roster_template():
     if fmt not in ('xlsx', 'csv'):
         return jsonify({'success': False, 'error': 'BAD_FORMAT',
                         'message': 'xlsx 또는 csv만 지원합니다'}), 400
+    subject_code = (request.args.get('subject_code') or '').strip()
+    if not subject_code:
+        return jsonify({'success': False, 'error': 'MISSING_SUBJECT',
+                        'message': '과목을 선택하세요'}), 400
 
     # 과목 allowlist 는 업로드 파서와 동일 헬퍼(_subscribed_subjects) — scope=g.institution_id 강제.
     conn = get_db_conn()
@@ -1453,34 +1467,34 @@ def portal_roster_template():
             subjects = _subscribed_subjects(cur, inst_id)   # {code: name_ko}
     finally:
         release_db_conn(conn)
+    # ★ 화면이 보낸 과목을 그대로 믿지 않고 서버 재검증 — 비구독(또는 타 기관) 과목이면 403.
+    if subject_code not in subjects:
+        return jsonify({'success': False, 'error': 'SUBJECT_NOT_SUBSCRIBED',
+                        'message': '구독 중인 과목만 양식을 받을 수 있습니다'}), 403
+    subject_name = subjects.get(subject_code, subject_code)
 
-    # 안내 문자열(양식↔파서 단일 출처에서 파생)
+    # 안내 문자열(양식↔파서 단일 출처에서 파생). 한 양식 = 한 과목임을 명확히 안내.
     positions = list(_PORTAL_POSITIONS)                     # 파서 allowlist 그대로(학생/조교/교수)
-    subj_lines = [f'{c}({n})' for c, n in subjects.items()] # 예: "HST(조직학)"
-    example_subject = next(iter(subjects), '')              # 구독 과목 중 첫 코드(없으면 빈칸)
     guide_lines = [
-        '◆ 이용자 명단 업로드 양식 (포털 명단 관리)',
+        f'◆ 이 양식은 [{subject_name}({subject_code})] 명단입니다.',
         '',
-        '1) 첫 행(이름·지위·과목·이메일)은 머리글입니다 — 지우지 말고 그 아래부터 입력하세요.',
+        '1) 첫 행(이름·지위·이메일)은 머리글입니다 — 지우지 말고 그 아래부터 입력하세요.',
         '2) 예시 행(홍길동…)은 삭제한 뒤 실제 명단을 입력하세요.',
         '',
+        '★ 한 양식에는 한 과목만 담깁니다 — 다른 과목은 그 과목을 선택해 따로 받으세요.',
+        '★ 이름이 같아도 이메일이 다르면 별개 사용자입니다(식별자 = 이메일).',
+        '   한 사람이 여러 과목이면 과목별로 따로(각 과목 양식에) 등록하세요.',
+        '',
         '• 지위: ' + ' / '.join(positions) + '  (이 외 값은 업로드 시 거절됩니다)',
-        '   ※ 행정직원은 과목 명단이 아니라 기관 관리자(admin) 등록 대상이라 이 양식에 넣지 않습니다.',
-        '• 과목(아래 구독 과목 코드만 허용 — 비구독 과목은 업로드 거절):',
-    ]
-    if subj_lines:
-        guide_lines += ['   - ' + s for s in subj_lines]
-    else:
-        guide_lines += ['   - (현재 구독 중인 과목이 없습니다 — 구독 등록 후 명단을 업로드하세요.)']
-    guide_lines += [
+        '   ※ 행정직원은 과목 명단이 아니라 기관 관리자(admin)로 별도 등록합니다(이 양식에 넣지 않음).',
         '• 이메일: 유효한 이메일 형식(예: gildong@univ.ac.kr).',
         '• 참고: 해당 과목에 구독이 있어야 학생이 가입·접근할 수 있습니다(§6-3).',
     ]
-    example_row = ['홍길동', positions[-1] if positions else '교수', example_subject, 'gildong@univ.ac.kr']
+    example_row = ['홍길동', positions[-1] if positions else '교수', 'gildong@univ.ac.kr']
 
     import io
     from flask import send_file as _sf
-    fname_base = f'SlideAtlas_{inst_id}_roster_template'
+    fname_base = f'SlideAtlas_{inst_id}_{subject_code}_roster_template'
 
     if fmt == 'csv':
         # CSV 는 시트·코멘트가 없어 안내를 머리글 위 주석으로 넣으면 재업로드 시 데이터 행으로 오인되므로,
@@ -1516,7 +1530,7 @@ def portal_roster_template():
     for cell in ws[2]:
         cell.font = Font(color='888888', italic=True)
     ws['A2'].comment = Comment('예시 행입니다. 삭제한 뒤 실제 명단을 입력하세요.', 'SlideAtlas')
-    for col, wdt in zip('ABCD', (16, 10, 12, 30)):
+    for col, wdt in zip('ABC', (16, 10, 30)):
         ws.column_dimensions[col].width = wdt
 
     ws2 = wb.create_sheet('안내')

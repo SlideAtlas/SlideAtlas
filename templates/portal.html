@@ -99,9 +99,21 @@
     <!-- ══ 명단 관리 ══ -->
     <div class="panel on" id="panel-roster">
       <div class="card">
-        <h2>이용자 명단 추가</h2>
+        <h2>과목 선택 <span class="muted">(명단은 과목별로 관리)</span></h2>
+        <div class="muted" style="margin-bottom:8px">
+          먼저 과목을 선택하면 아래 <b>추가·업로드·양식 다운로드</b>가 그 과목에 적용됩니다.
+          한 사람이 여러 과목이면 과목을 바꿔 각각 등록하세요(식별자는 이메일).
+        </div>
+        <div class="row">
+          <select id="work-subject" onchange="onWorkSubjectChange()"><option value="">과목 선택</option></select>
+          <span class="muted" id="work-subject-hint"></span>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>이용자 명단 추가 <span class="muted" id="ctx-subject-label"></span></h2>
         <div class="muted" style="margin-bottom:10px">
-          과목은 기관이 구독 중인 과목만 등록할 수 있습니다. 이미 가입한 사용자는 추가 시 과목·지위가 자동 동기화됩니다.
+          선택한 과목으로 등록됩니다. 이미 가입한 사용자는 추가 시 과목·지위가 자동 동기화됩니다.
         </div>
         <div class="row">
           <input id="add-name" placeholder="이름" style="width:120px">
@@ -110,12 +122,11 @@
             <option value="조교">조교</option>
             <option value="교수">교수</option>
           </select>
-          <select id="add-subject"><option value="">과목 선택</option></select>
           <input id="add-email" placeholder="이메일" style="width:220px">
           <button class="act" onclick="addMember()">추가</button>
         </div>
         <div class="row" style="margin-top:14px">
-          <label class="muted">엑셀/CSV 일괄 업로드 (컬럼 순서: 이름 | 지위 | 과목 | 이메일)</label>
+          <label class="muted">엑셀/CSV 일괄 업로드 (선택 과목 1개 · 컬럼: 이름 | 지위 | 이메일)</label>
           <button class="act ghost" onclick="downloadTemplate()">양식 다운로드</button>
           <input type="file" id="upload-file" accept=".xlsx,.csv">
           <button class="act ghost" onclick="uploadMembers()">업로드</button>
@@ -256,8 +267,25 @@
 
     function fillSubjectSelects() {
       var opts = SUBJECTS.map(function(s){ return '<option value="'+esc(s.code)+'">'+esc(s.name_ko)+'</option>'; }).join('');
-      document.getElementById('add-subject').innerHTML = '<option value="">과목 선택</option>' + opts;
+      var ws = document.getElementById('work-subject');
+      var prev = ws.value;
+      ws.innerHTML = '<option value="">과목 선택</option>' + opts;
+      // 과목 1개면 자동 선택, 여러 개면 이전 선택 보존(없으면 선택 강제).
+      if (SUBJECTS.length === 1) { ws.value = SUBJECTS[0].code; }
+      else if (prev) { ws.value = prev; }
       document.getElementById('filter-subject').innerHTML = '<option value="">전체 과목</option>' + opts;
+      onWorkSubjectChange();
+    }
+
+    function currentSubject() { return document.getElementById('work-subject').value; }
+
+    function onWorkSubjectChange() {
+      var code = currentSubject();
+      var s = SUBJECTS.filter(function(x){ return x.code === code; })[0];
+      var label = s ? (esc(s.name_ko) + ' (' + esc(s.code) + ')') : '';
+      document.getElementById('ctx-subject-label').innerHTML = label ? '— ' + label : '';
+      document.getElementById('work-subject-hint').textContent =
+        code ? '' : (SUBJECTS.length ? '과목을 선택하세요.' : '구독 중인 과목이 없습니다.');
     }
 
     function renderMembers() {
@@ -291,10 +319,10 @@
       var body = {
         name: document.getElementById('add-name').value.trim(),
         position: document.getElementById('add-position').value,
-        subject_code: document.getElementById('add-subject').value,
+        subject_code: currentSubject(),   // 상단 '과목 선택' 컨텍스트를 사용(행별 선택 없음)
         email: document.getElementById('add-email').value.trim()
       };
-      if (!body.subject_code) { toast('과목을 선택하세요'); return; }
+      if (!body.subject_code) { toast('먼저 상단에서 과목을 선택하세요'); return; }
       if (!body.email) { toast('이메일을 입력하세요'); return; }
       var r = await fetch('/portal/api/roster', {
         method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
@@ -320,14 +348,18 @@
     }
 
     function downloadTemplate() {
-      // GET 다운로드 — 쿠키 인증으로 충분(상태변경 아님, CSRF 불요). P2 export 버튼과 동일 패턴.
-      window.location.href = '/portal/api/roster/template?format=xlsx';
+      var code = currentSubject();
+      if (!code) { toast('먼저 상단에서 과목을 선택하세요'); return; }
+      // GET 다운로드 — 쿠키 인증으로 충분(상태변경 아님, CSRF 불요). 선택 과목을 파라미터로 전달.
+      window.location.href = '/portal/api/roster/template?format=xlsx&subject_code=' + encodeURIComponent(code);
     }
 
     async function uploadMembers() {
+      var code = currentSubject();
+      if (!code) { toast('먼저 상단에서 과목을 선택하세요'); return; }
       var f = document.getElementById('upload-file').files[0];
       if (!f) { toast('파일을 선택하세요'); return; }
-      var fd = new FormData(); fd.append('file', f);
+      var fd = new FormData(); fd.append('file', f); fd.append('subject_code', code);
       var r = await fetch('/portal/api/roster/upload', { method:'POST', body: fd });
       var d = await r.json();
       if (!d.success) { toast(d.message || '업로드 실패'); return; }

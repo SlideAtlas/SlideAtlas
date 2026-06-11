@@ -375,21 +375,22 @@ def test_email_regex_accepts_normal(good):
 
 # ── High#4: xlsx/업로드 안전 파싱 ──
 def test_rows_from_iter_row_cap():
-    """스트리밍 중 행상한 초과 시 즉시 거부(다 읽은 뒤가 아님)."""
+    """스트리밍 중 행상한 초과 시 즉시 거부(다 읽은 뒤가 아님). 시트는 3칸(이름·지위·이메일)."""
     def gen():
-        yield ("이름", "지위", "과목", "이메일")   # 헤더 — 스킵
+        yield ("이름", "지위", "이메일")   # 헤더 — 스킵
         for i in range(10):
-            yield (f"n{i}", "학생", "HST", f"u{i}@c.ac")
+            yield (f"n{i}", "학생", f"u{i}@c.ac")
     with pytest.raises(sr._RosterParseError):
         sr._rows_from_iter(gen(), 3)
 
 
 def test_rows_from_iter_within_cap_ok():
     def gen():
-        yield ("김", "학생", "HST", "a@c.ac")
-        yield ("이", "조교", "HST", "b@c.ac")
+        yield ("김", "학생", "a@c.ac")
+        yield ("이", "조교", "b@c.ac")
     rows = sr._rows_from_iter(gen(), 2000)
     assert len(rows) == 2
+    assert rows[0] == ("김", "학생", "a@c.ac")   # 3칸 위치읽기(이름·지위·이메일)
 
 
 def test_read_capped_rejects_oversize():
