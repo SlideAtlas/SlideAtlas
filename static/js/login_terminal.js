@@ -22,12 +22,14 @@
   })();
 
   /* ── 로그인/인증 후 목적지 결정 ────────────────────────
-     순수 admin-only(role='admin' AND subject_code 없음)는 슬라이드 0개 화면 대신 /portal로.
-     겸직 admin(subject_code 보유)·일반 viewer는 next(기본 /home — 학생 홈)로. 게이트 판정은 서버 단일
-     게이트가 담당하며, 여기선 "어디로 보내나"만 결정한다(§8 무관). */
+     우선순위: ① 순수 admin-only(role='admin' AND subject_code 없음) → /portal(겸직 admin도 포털 우선).
+     ② 그 외 중 position∈{교수,조교} → /teacher/courses(수업관리 랜딩, 6번 A안). ③ 그 외(학생 등) → next(기본 /home).
+     ★ position 은 '랜딩 힌트'일 뿐 — /teacher 접근 판정은 서버 _course_position(매 요청 DB)이 별도로 하므로
+     프론트 position 위조로 권한 우회 불가. 게이트 판정은 서버 단일 게이트가 담당(§8 무관). */
   function _postLoginDest(d) {
     var noSubject = (d.subject_code === null || d.subject_code === undefined || d.subject_code === '');
     if (d.role === 'admin' && noSubject) return '/portal';
+    if (d.position === '교수' || d.position === '조교') return '/teacher/courses';
     return _nextUrl;
   }
 

@@ -834,13 +834,13 @@ def home():
     # 계통(organ) 드롭다운 옵션 — 전체 탭 클라이언트 필터용(빈 값 제외, 정렬).
     organs = sorted({s.get('system') for s in all_slides if s.get('system')})
 
-    # 표시명(roster.name)·과목명(subject_codes.name_ko) — 헤더 표시용.
-    display_name, subject_name = '', ''
+    # 표시명(roster.name)·과목명(subject_codes.name_ko)·지위(position) — 헤더 표시·탭 분기용.
+    display_name, subject_name, user_position = '', '', ''
     conn = get_db_conn()
     try:
         with conn.cursor() as cur:
             cur.execute(
-                """SELECT COALESCE(r.name, ''), COALESCE(sc.name_ko, u.subject_code, '')
+                """SELECT COALESCE(r.name, ''), COALESCE(sc.name_ko, u.subject_code, ''), u.position
                      FROM users u
                      LEFT JOIN institution_rosters r
                        ON lower(r.email) = lower(u.email)
@@ -853,11 +853,15 @@ def home():
             row = cur.fetchone()
             if row:
                 display_name, subject_name = row[0] or '', row[1] or ''
+                user_position = row[2] or ''
     finally:
         release_db_conn(conn)
 
     # 헤더 "관리자 포털" 링크 노출 여부 — 포털 게이트와 동일 기준(현재 __ADMIN__ roster 행 존재, §9).
     is_admin = _is_institution_admin(g.user_id, g.institution_id)
+    # [6번 A안] '수업 관리'(→/teacher/courses) 링크 노출 여부 — position∈{교수,조교}에게만(학생 미노출).
+    #   표시용 힌트일 뿐, /teacher 접근 판정은 그 라우트가 _course_position 으로 서버에서 별도 게이트(§21-3).
+    is_teacher = user_position in ('교수', '조교')
     return render_template('home.html',
         slides=all_slides,
         total=total,
@@ -866,6 +870,7 @@ def home():
         display_name=display_name,
         subject_name=subject_name,
         is_admin=is_admin,
+        is_teacher=is_teacher,
     )
 
 def _is_institution_admin(user_id, institution_id):

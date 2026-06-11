@@ -224,6 +224,25 @@ def _issue_token_payload(user_id, institution_id, role, is_special):
     return session_token, payload
 
 
+def _fetch_position(user_id):
+    """users.position(지위) 조회 — 인증 응답의 '랜딩 힌트·표시용'(DB 권위). 실패/미존재면 None
+    (랜딩 JS 는 None → 기본 /home 폴백). ★ 인증·검증·세션 판정에는 쓰지 않는다 — 본 transaction
+    과 분리된 부가 조회이며, /teacher 접근 게이트는 서버 _course_position(매 요청 DB 재조회)이 별도로
+    판정한다(프론트 position 신뢰로 권한 우회 불가). 누수 방지: inner try/finally 로 release 보장."""
+    get_db_conn, release_db_conn = _db()
+    try:
+        conn = get_db_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT position FROM users WHERE id = %s", (user_id,))
+                row = cur.fetchone()
+                return row[0] if row else None
+        finally:
+            release_db_conn(conn)
+    except Exception:
+        return None
+
+
 # ─────────────────────────────────────────────
 # POST /api/auth/register
 # ─────────────────────────────────────────────
@@ -538,6 +557,9 @@ def verify_email():
         "role": role,
         # 인증 직후 라우팅 분기용(login 응답과 동일 계약). 순수 admin-only는 /portal로.
         "subject_code": subject_code,
+        # [6번 A안] 랜딩 힌트(additive): position∈{교수,조교}면 프론트가 /teacher/courses 로 랜딩.
+        #   기존 필드·순서·값 불변, position 만 추가. DB 권위, 실패 시 None(→/home 폴백).
+        "position": _fetch_position(user_id),
         "csrf_token": csrf_token,
     })
     return _set_auth_cookies(resp, token, csrf_token)
@@ -776,6 +798,9 @@ def login():
             pass
         release_db_conn(conn)
 
+    # [6번 A안] 랜딩 힌트(additive): position∈{교수,조교}면 프론트가 /teacher/courses 로 랜딩.
+    #   main transaction 과 분리된 부가 조회 — 인증·세션 판정·반환 기존 필드 불변(position 만 추가).
+    user_ctx["position"] = _fetch_position(user_id)
     resp = _ok(user_ctx)
     return _set_auth_cookies(resp, token, csrf_token)
 

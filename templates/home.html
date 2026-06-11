@@ -109,6 +109,7 @@ footer{background:#0F1F3D;padding:28px 52px;display:flex;align-items:center;just
       {% if display_name %}<strong>{{ display_name }}</strong>{% endif %}
       {% if subject_name %}&nbsp;·&nbsp;{{ subject_name }}{% endif %}
     </span>
+    {% if is_teacher %}<a class="btn-nav ghost" href="/teacher/courses">수업 관리</a>{% endif %}
     {% if is_admin %}<a class="btn-nav ghost" href="/portal">관리자 포털</a>{% endif %}
     <a class="btn-nav ghost" href="/mypage">마이페이지</a>
     <button class="btn-nav" id="btn-logout" onclick="doLogout()">로그아웃</button>
