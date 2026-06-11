@@ -288,3 +288,74 @@ def test_assistants_list_returns_names(client):
     assert resp.status_code == 200
     a = resp.get_json()["assistants"][0]
     assert a["user_id"] == 7 and a["name"] == "박지훈"
+
+
+# ── [Codex Med] /api/courses/mine : position DB 권위 재검증(강등/박탈 즉시 반영, fail-closed) ──
+
+def _mine_sqls(cur):
+    return [" ".join(str(c.args[0]).split()) for c in cur.execute.call_args_list]
+
+
+def test_mine_professor_sees_only_owned(client):
+    """position '교수' → 소유 수업만(professor_user_id), course_assistants 분기 미사용."""
+    conn, cur = _mk_conn(
+        fetchone=[("교수",)],                                   # _course_position
+        fetchall=[[(1, "조직학 A반", "2026-fall", True, 3)]],   # 소유 수업
+    )
+    with _stack(conn, _fake_auth(uid="5", inst="CNU", subject="HST")):
+        resp = client.get("/api/courses/mine")
+    assert resp.status_code == 200
+    cs = resp.get_json()["courses"]
+    assert len(cs) == 1 and cs[0]["role"] == "professor"
+    listsql = [s for s in _mine_sqls(cur) if "FROM courses" in s][0]
+    assert "c.professor_user_id = %s" in listsql
+    assert "course_assistants" not in listsql       # 교수 분기엔 위임 EXISTS 없음
+
+
+def test_mine_assistant_sees_only_delegated(client):
+    """position '조교' → 위임 수업만(course_assistants EXISTS)."""
+    conn, cur = _mk_conn(
+        fetchone=[("조교",)],
+        fetchall=[[(2, "병리 실습", "2026-fall", False, 5)]],
+    )
+    with _stack(conn, _fake_auth(uid="9", inst="CNU", subject="HST")):
+        resp = client.get("/api/courses/mine")
+    assert resp.status_code == 200
+    cs = resp.get_json()["courses"]
+    assert len(cs) == 1 and cs[0]["role"] == "assistant"
+    listsql = [s for s in _mine_sqls(cur) if "FROM courses" in s][0]
+    assert "course_assistants" in listsql
+
+
+def test_mine_demoted_professor_empty_fail_closed(client):
+    """교수 강등(position→'학생', professor_user_id 잔존) → 빈 목록(stale 메타 미노출)."""
+    conn, cur = _mk_conn(fetchone=[("학생",)])      # 강등됨
+    with _stack(conn, _fake_auth(uid="5", inst="CNU", subject="HST")):
+        resp = client.get("/api/courses/mine")
+    assert resp.status_code == 200
+    assert resp.get_json()["courses"] == []          # 소유 수업 안 보임
+    assert not any("FROM courses" in s for s in _mine_sqls(cur))   # 목록 쿼리 미실행
+
+
+def test_mine_none_position_empty_fail_closed(client):
+    """지위 박탈(position None) → fail-closed 빈 목록."""
+    conn, cur = _mk_conn(fetchone=[(None,)])
+    with _stack(conn, _fake_auth(uid="9", inst="CNU", subject="HST")):
+        resp = client.get("/api/courses/mine")
+    assert resp.status_code == 200
+    assert resp.get_json()["courses"] == []
+    assert not any("FROM courses" in s for s in _mine_sqls(cur))
+
+
+def test_mine_revalidates_position_each_request(client):
+    """같은 user라도 position을 매 요청 DB 재조회 — 강등 즉시 반영(교수→학생 사이 목록 사라짐)."""
+    # 1차: 교수 → 소유 수업 보임
+    conn1, _ = _mk_conn(fetchone=[("교수",)], fetchall=[[(1, "A", "2026-fall", True, 0)]])
+    with _stack(conn1, _fake_auth(uid="5", inst="CNU", subject="HST")):
+        r1 = client.get("/api/courses/mine")
+    assert len(r1.get_json()["courses"]) == 1
+    # 2차: 같은 user 강등 → 빈 목록
+    conn2, _ = _mk_conn(fetchone=[("학생",)])
+    with _stack(conn2, _fake_auth(uid="5", inst="CNU", subject="HST")):
+        r2 = client.get("/api/courses/mine")
+    assert r2.get_json()["courses"] == []

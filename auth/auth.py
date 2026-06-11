@@ -557,10 +557,10 @@ def verify_email():
         "role": role,
         # 인증 직후 라우팅 분기용(login 응답과 동일 계약). 순수 admin-only는 /portal로.
         "subject_code": subject_code,
-        # [6번 A안] 랜딩 힌트(additive): position∈{교수,조교}면 프론트가 /teacher/courses 로 랜딩.
-        #   기존 필드·순서·값 불변, position 만 추가. DB 권위, 실패 시 None(→/home 폴백).
-        "position": _fetch_position(user_id),
         "csrf_token": csrf_token,
+        # [6번 A안] 랜딩 힌트(additive): position∈{교수,조교}면 프론트가 /teacher/courses 로 랜딩.
+        #   ★ [Codex Low] login 과 동일하게 '맨 뒤' append — 기존 필드 순서 불변(§13-2 엄격). DB 권위, 실패 시 None.
+        "position": _fetch_position(user_id),
     })
     return _set_auth_cookies(resp, token, csrf_token)
 

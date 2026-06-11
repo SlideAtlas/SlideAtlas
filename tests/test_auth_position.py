@@ -94,6 +94,38 @@ def test_verify_success_includes_position(client):
         assert k in data
 
 
+# ── [Codex Low] verify·login position 둘 다 '맨 뒤', 기존 필드 순서 동일 ──
+def test_position_is_last_field_both_login_and_verify(client):
+    # login
+    conn, cur = _conn()
+    cur.fetchone.side_effect = [
+        (1, "YU", "viewer", "HST", False, generate_password_hash("password1"),
+         "active", None, None, FUTURE),
+        ("교수",),
+    ]
+    with patch("server_render.get_db_conn", return_value=conn), \
+         patch("server_render.release_db_conn"):
+        ld = client.post("/api/auth/login",
+                         json={"email": "p@b.c", "password": "password1"}).get_json()["data"]
+    # verify
+    conn2, cur2 = _conn()
+    cur2.fetchone.side_effect = [
+        (1, "YU", "viewer", False, "HST"),
+        (1, "123456", datetime.now(timezone.utc) + timedelta(minutes=5), False, 0),
+        (100,), (5,), ("교수",),
+    ]
+    with patch("server_render.get_db_conn", return_value=conn2), \
+         patch("server_render.release_db_conn"):
+        vd = client.post("/api/auth/verify-email",
+                         json={"email": "p@b.c", "code": "123456"}).get_json()["data"]
+    # Flask 가 키를 알파벳 정렬해 직렬화하므로 wire 순서는 login·verify 가 이미 동일.
+    #   (Codex Low 의 'verify 가 position 을 중간 삽입' 은 소스 dict 한정 — 본 수정으로 소스도 통일.)
+    assert "position" in ld and "position" in vd
+    assert list(ld.keys()) == list(vd.keys())   # 두 응답 키 순서 완전 동일(직렬화 일관)
+    for k in ("user_id", "institution_id", "role", "subject_code", "csrf_token"):
+        assert k in ld and k in vd               # 기존 필드 전부 보존(additive)
+
+
 # ── 인증 실패 경로는 position 조회 전에 반환(부가조회 미발생) ──
 def test_login_failure_does_not_break(client):
     conn, cur = _conn()

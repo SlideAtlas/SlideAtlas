@@ -2197,22 +2197,42 @@ def api_course_create():
 @app.route('/api/courses/mine', methods=['GET'])
 @login_required
 def api_courses_mine():
-    """내가 개설(교수)했거나 위임받은(조교) 수업 목록 — g.institution_id·g.subject_code scope."""
+    """내가 개설(교수)했거나 위임받은(조교) 수업 목록 — g.institution_id·g.subject_code scope.
+
+    ★ [Codex Med] position 을 DB 권위로 매 요청 재검증한다(§8, 편집/페이지 게이트와 동일 _course_position).
+      강등/박탈(position 변경, 소유·위임 행 잔존) 시 stale 메타가 목록에 노출되던 누수를 차단 —
+      position 이 '교수'면 소유 수업만, '조교'면 위임 수업만, 그 외(학생·None)는 fail-closed 빈 목록.
+    """
     conn = get_db_conn()
     try:
         with conn.cursor() as cur:
-            cur.execute(
-                """SELECT c.id, c.title, c.semester,
-                          (c.professor_user_id = %s) AS is_owner,
-                          (SELECT COUNT(*) FROM course_enrollments e WHERE e.course_id = c.id)
-                     FROM courses c
-                    WHERE c.institution_id = %s AND c.subject_code = %s
-                      AND (c.professor_user_id = %s
-                           OR EXISTS (SELECT 1 FROM course_assistants a
-                                       WHERE a.course_id = c.id AND a.user_id = %s))
-                    ORDER BY c.created_at DESC""",
-                (g.user_id, g.institution_id, g.subject_code, g.user_id, g.user_id),
-            )
+            pos = _course_position(cur, g.user_id)   # 기존 헬퍼 재사용(새 조회 로직 없음)
+            if pos == '교수':
+                # 소유 수업만(professor_user_id = 본인). 위임 분기 제외 — 강등 시 즉시 사라짐.
+                cur.execute(
+                    """SELECT c.id, c.title, c.semester, TRUE AS is_owner,
+                              (SELECT COUNT(*) FROM course_enrollments e WHERE e.course_id = c.id)
+                         FROM courses c
+                        WHERE c.institution_id = %s AND c.subject_code = %s
+                          AND c.professor_user_id = %s
+                        ORDER BY c.created_at DESC""",
+                    (g.institution_id, g.subject_code, g.user_id),
+                )
+            elif pos == '조교':
+                # 위임받은 수업만(course_assistants). 박탈(위임 행 삭제) 시 즉시 사라짐.
+                cur.execute(
+                    """SELECT c.id, c.title, c.semester, FALSE AS is_owner,
+                              (SELECT COUNT(*) FROM course_enrollments e WHERE e.course_id = c.id)
+                         FROM courses c
+                        WHERE c.institution_id = %s AND c.subject_code = %s
+                          AND EXISTS (SELECT 1 FROM course_assistants a
+                                       WHERE a.course_id = c.id AND a.user_id = %s)
+                        ORDER BY c.created_at DESC""",
+                    (g.institution_id, g.subject_code, g.user_id),
+                )
+            else:
+                # fail-closed: 학생·지위 박탈(None) → 빈 목록(소유/위임 잔존 메타도 노출 금지, §8).
+                return jsonify({'success': True, 'courses': []})
             courses = [{'id': r[0], 'title': r[1] or '', 'semester': r[2] or '',
                         'role': 'professor' if r[3] else 'assistant',
                         'enrolled_count': r[4] or 0} for r in cur.fetchall()]
