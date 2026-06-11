@@ -2700,6 +2700,141 @@ def api_course_detail(cid):
         release_db_conn(conn)
 
 
+# ── 학생: 즐겨찾기·열람기록 (3단계-B 마이페이지) ──────────────────────────────
+#   ★ scope = g.user_id 강제(본인 것만). 타인 user_id 를 body/쿼리/경로로 받지 않는다(IDOR 불가).
+#     표시 목록은 deploy_status='deployed' AND 본인 과목(g.subject_code)으로 한정 —
+#     단일 게이트 표시 기준과 정합(타 과목/미배포 메타 누수 차단). 슬라이드 접근 판정은 손대지 않는다.
+
+def _uid_int():
+    """g.user_id 를 INT 로 — favorites/access_logs FK 가 INT. 실패 시 None."""
+    try:
+        return int(getattr(g, 'user_id', None))
+    except (TypeError, ValueError):
+        return None
+
+
+@app.route('/api/favorites', methods=['GET'])
+@login_required
+def api_favorites_list():
+    """내 즐겨찾기(개인 북마크, 수업 무관 §21-7). 본인·배포·본인 과목만(표시 메타·타일토큰 없음)."""
+    uid = _uid_int()
+    if uid is None:
+        return jsonify({'success': True, 'favorites': []})
+    conn = get_db_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT s.id, s.title_ko, s.organ, s.stain
+                     FROM favorites f
+                     JOIN slides s ON s.id = f.slide_id
+                    WHERE f.user_id = %s
+                      AND s.deploy_status = 'deployed'
+                      AND s.subject_code = %s
+                    ORDER BY f.created_at DESC""",
+                (uid, getattr(g, 'subject_code', None)),
+            )
+            favs = [{'slide_id': r[0], 'title_ko': r[1] or r[0],
+                     'organ': r[2] or '', 'stain': r[3] or ''} for r in cur.fetchall()]
+        return jsonify({'success': True, 'favorites': favs})
+    finally:
+        release_db_conn(conn)
+
+
+@app.route('/api/favorites/<slide_id>', methods=['POST'])
+@login_required
+def api_favorite_add(slide_id):
+    """즐겨찾기 추가 — 본인이 접근 가능한 슬라이드만(_slide_access_allowed 게이트 읽기, 새 권한 없음).
+
+    게이트를 통과하지 못하는 슬라이드는 북마크 불가(존재 probing 차단). 중복은 멱등(ON CONFLICT).
+    """
+    uid = _uid_int()
+    if uid is None:
+        return jsonify({'success': False, 'error': 'TOKEN_INVALID'}), 401
+    allowed, aerr = _slide_access_allowed(slide_id)
+    if not allowed:
+        return aerr   # 접근권 없는 슬라이드는 북마크 거부(403/404)
+    conn = get_db_conn()
+    try:
+        conn.autocommit = False
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO favorites (user_id, slide_id) VALUES (%s, %s)
+                   ON CONFLICT (user_id, slide_id) DO NOTHING""",
+                (uid, slide_id),
+            )
+        conn.commit()
+        return jsonify({'success': True})
+    except Exception:
+        conn.rollback()
+        return jsonify({'success': False, 'error': 'SERVER_ERROR', 'message': '처리 중 오류'}), 500
+    finally:
+        try:
+            conn.autocommit = True
+        except Exception:
+            pass
+        release_db_conn(conn)
+
+
+@app.route('/api/favorites/<slide_id>', methods=['DELETE'])
+@login_required
+def api_favorite_remove(slide_id):
+    """즐겨찾기 해제 — 본인 행만 삭제(멱등). 접근 게이트 무관(자기 북마크 정리)."""
+    uid = _uid_int()
+    if uid is None:
+        return jsonify({'success': False, 'error': 'TOKEN_INVALID'}), 401
+    conn = get_db_conn()
+    try:
+        conn.autocommit = False
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM favorites WHERE user_id = %s AND slide_id = %s",
+                        (uid, slide_id))
+        conn.commit()
+        return jsonify({'success': True})
+    except Exception:
+        conn.rollback()
+        return jsonify({'success': False, 'error': 'SERVER_ERROR', 'message': '처리 중 오류'}), 500
+    finally:
+        try:
+            conn.autocommit = True
+        except Exception:
+            pass
+        release_db_conn(conn)
+
+
+@app.route('/api/me/history', methods=['GET'])
+@login_required
+def api_my_history():
+    """내 최근 열람 기록(§21-8). 본인 access_logs 만(남의 활동 아님 — §15-7 위반 아님).
+
+    scope = g.user_id 강제. 표시는 배포·본인 과목 슬라이드만, 슬라이드별 최신 1건(중복 제거)·최대 15.
+    """
+    uid = _uid_int()
+    if uid is None:
+        return jsonify({'success': True, 'history': []})
+    conn = get_db_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT s.id, s.title_ko, s.organ, s.stain, MAX(al.accessed_at) AS last_at
+                     FROM access_logs al
+                     JOIN slides s ON s.id = al.slide_id
+                    WHERE al.user_id = %s
+                      AND s.deploy_status = 'deployed'
+                      AND s.subject_code = %s
+                    GROUP BY s.id, s.title_ko, s.organ, s.stain
+                    ORDER BY last_at DESC
+                    LIMIT 15""",
+                (uid, getattr(g, 'subject_code', None)),
+            )
+            hist = [{'slide_id': r[0], 'title_ko': r[1] or r[0],
+                     'organ': r[2] or '', 'stain': r[3] or '',
+                     'accessed_at': r[4].isoformat() if r[4] else None}
+                    for r in cur.fetchall()]
+        return jsonify({'success': True, 'history': hist})
+    finally:
+        release_db_conn(conn)
+
+
 # ── 교수/조교 프론트 표시용 읽기 API (3단계-A) ────────────────────────────────
 #   ★ 모두 GET·읽기 전용. 새 접근/권한 판정 로직 없음 — 기존 헬퍼(_course_owner_or_assistant·
 #     _visible_slides·POST assistants 의 대상검증식)를 그대로 재사용한다. 슬라이드 접근 판정(§8)·

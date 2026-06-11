@@ -694,3 +694,18 @@ python3 run_tests.py
 - ★ 썸네일 결정: 1차 사양서(목업)가 `/thumbnail/<id>` 실이미지가 아니라 아이콘 플레이스홀더를 렌더 + "게이트 무관 표시 필드만" 원칙(실썸네일 URL은 타일토큰=게이트 발급 필요) → 목업대로 플레이스홀더 채택(기존 home '전체' 탭과 동일 패턴). 실썸네일 필요 시 추후 게이트 통과 슬라이드 한정 토큰 발급으로 확장 가능.
 - lms.css 추가(course-hero·hero-main/meta·enroll-btn·slide-grid/card·thumb·ph-note·slide-meta/title/sub·empty-week + generic `.hidden`). 모노폰트 미사용(목업 var(--font-mono) 드롭).
 - 테스트 보정: api_course_detail 표시필드 보강으로 query 2개·컬럼 1개 추가 → test_lms.py 상세 3건 mock shape 갱신(organ 10번째 컬럼 + 교수명/과목명 fetchone). 신규 `tests/test_lms_student_pages.py`(페이지 인증/admin리다이렉트/viewer 200 + 표시필드 보강·토큰 미누출).
+
+### [B-3] 마이페이지 — ✅
+- 라우트 `GET /mypage`(@page_login_required). 프로필(이름=roster.name·이메일·소속=기관명·과목명·지위=position **전부 읽기전용**, 서버 렌더 컨텍스트) / 비밀번호 변경 / 즐겨찾기 / 최근 열람 기록. 템플릿 `templates/mypage.html`(lms.css + topbar 재사용).
+- 신규 API(전부 scope=g.user_id 강제 — 본인 것만, 타인 user_id 미참조 → IDOR 불가):
+  - `GET /api/favorites` — 내 즐겨찾기(배포·본인 과목만, 표시 메타). 
+  - `POST /api/favorites/<slide_id>` — 추가. **_slide_access_allowed 게이트 읽기**(접근권 없는 슬라이드 북마크 거부, 존재 probing 차단), ON CONFLICT 멱등.
+  - `DELETE /api/favorites/<slide_id>` — 본인 행만 삭제(멱등, 게이트 무관 — 자기 북마크 정리).
+  - `GET /api/me/history` — 본인 access_logs(슬라이드별 최신 1건·최대 15, 배포·본인 과목). **자기 기록은 §15-7 위반 아님**(남의 활동 아님).
+- 즐겨찾기 ★ = 해제 토글(DELETE, event.preventDefault로 카드 네비 차단). 열람 기록 상대시간은 클라이언트 포맷. 카드 클릭→/viewer는 단일 게이트가 최종 판정.
+- ★ 부채 D31(신설 제안): 학생 비밀번호 변경 API 부재 → mypage 비번 폼은 표시용(안내 토스트)+TODO 주석. CLAUDE.md 미수정(LMS 묶음 끝 일괄 갱신 시 §18에 D31 추가 제안).
+- lms.css 추가(prof-row/field/.ro·prof-note·pw-form·fav-grid/card/star/thumb/meta·hist-item/ico/main/title/sub/time·empty-pad). 모노폰트 미사용.
+- 테스트: `tests/test_lms_student_pages.py`에 B-3 8건 추가(mypage 인증·프로필 렌더 / favorites GET·POST 게이트·DELETE scope / history scope + 쿼리 user_id 무시 IDOR 단언).
+
+### 결과
+[2026-06-11][결과] 전수 pytest 274 passed(263→274, 회귀 0). 무수정 확인: `_slide_access_allowed`·`_visible_slides`·auth(auth/)·`_course_owner_or_assistant` git diff 변경 0. api_course_detail 은 표시필드만 보강(권한/scope·deployed 필터 무변경, B-2 사양). 단계 커밋 3개(B-1 a15f869·B-2 96eb329·B-3). push 예정.

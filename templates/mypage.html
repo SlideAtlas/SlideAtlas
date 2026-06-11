@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SlideAtlas — 마이페이지</title>
+<script src="/static/js/interceptor.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/lms.css">
+</head>
+<body class="lms-mypage">
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<div class="topbar">
+  <a class="tb-logo-wrap" href="/home"><img class="tb-logo-img" src="/static/SlideAtlas_Navy_Hor_small.png" alt="SlideAtlas"></a>
+  <a class="tb-back" href="/home"><i class="ti ti-chevron-right" aria-hidden="true" style="transform:rotate(180deg)"></i>홈</a>
+  <div class="tb-right">
+    <a class="tb-link" id="btn-logout" onclick="doLogout()"><i class="ti ti-logout" aria-hidden="true"></i>로그아웃</a>
+  </div>
+</div>
+
+<div class="page-wrap">
+  <h1 class="page-title">마이페이지</h1>
+
+  <!-- 프로필 (전부 읽기전용 — 소속·지위·이름은 기관 명단 기준 §21-8) -->
+  <div class="section-card" style="margin-bottom:18px">
+    <div class="card-header"><div class="card-title"><i class="ti ti-user" aria-hidden="true"></i>프로필</div></div>
+    <div class="prof-row">
+      <div class="prof-field"><label>이름</label><div class="ro"><i class="ti ti-shield" aria-hidden="true"></i>{{ display_name or '—' }}</div></div>
+      <div class="prof-field"><label>이메일</label><div class="ro"><i class="ti ti-shield" aria-hidden="true"></i>{{ email or '—' }}</div></div>
+    </div>
+    <div class="prof-row" style="padding-top:0">
+      <div class="prof-field"><label>소속</label><div class="ro"><i class="ti ti-shield" aria-hidden="true"></i>{{ institution_name or '—' }}{% if subject_name %} · {{ subject_name }}{% endif %}</div></div>
+      <div class="prof-field"><label>지위</label><div class="ro"><i class="ti ti-shield" aria-hidden="true"></i>{{ position or '—' }}</div></div>
+    </div>
+    <div class="prof-note">소속·지위·이름은 기관 명단 기준이라 직접 수정할 수 없습니다. 변경이 필요하면 기관 관리자에게 문의하세요.</div>
+  </div>
+
+  <!-- 비밀번호 변경 (표시용 — 변경 API 미구현, 부채 D31) -->
+  <!-- TODO(D31): 학생 비밀번호 변경 API 부재. 현재 표시용 폼 + 안내 토스트만. API 신설 시 연동. -->
+  <div class="section-card" style="margin-bottom:18px">
+    <div class="card-header"><div class="card-title"><i class="ti ti-shield" aria-hidden="true"></i>비밀번호 변경</div></div>
+    <div class="pw-form">
+      <div><label>현재 비밀번호</label><input type="password" id="pw-cur" placeholder="••••••••" autocomplete="current-password"></div>
+      <div><label>새 비밀번호</label><input type="password" id="pw-new" placeholder="8자 이상" autocomplete="new-password"></div>
+      <div><label>새 비밀번호 확인</label><input type="password" id="pw-cfm" placeholder="다시 입력" autocomplete="new-password"></div>
+      <button class="btn btn-primary" style="justify-self:start" onclick="changePassword()"><i class="ti ti-check" aria-hidden="true"></i>변경</button>
+    </div>
+  </div>
+
+  <!-- 즐겨찾기 -->
+  <div class="section-card" style="margin-bottom:18px">
+    <div class="card-header"><div class="card-title">★ 즐겨찾기</div><span class="week-count" id="fav-count"></span></div>
+    <div id="fav-wrap"><div class="empty-pad">불러오는 중…</div></div>
+  </div>
+
+  <!-- 최근 열람 기록 (본인 access_logs — 자기 기록은 §15-7 위반 아님) -->
+  <div class="section-card">
+    <div class="card-header"><div class="card-title"><i class="ti ti-eye" aria-hidden="true"></i>최근 열람 기록</div></div>
+    <div id="hist-wrap"><div class="empty-pad">불러오는 중…</div></div>
+  </div>
+</div>
+
+<script>
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+var toastTimer;
+function showToast(m){var t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(function(){t.classList.remove('show');},2600);}
+
+// 비밀번호 변경 — API 미구현(부채 D31). 표시용 안내만.
+function changePassword(){ showToast('비밀번호 변경 기능은 준비 중입니다'); }
+
+// ── 즐겨찾기 ── interceptor.js(CSRF 자동). scope=서버 g.user_id 강제(본인 것만).
+async function loadFavorites(){
+  var wrap = document.getElementById('fav-wrap');
+  try {
+    var r = await fetch('/api/favorites');
+    var d = await r.json();
+    var list = (d && d.favorites) || [];
+    document.getElementById('fav-count').textContent = list.length ? (list.length + '개') : '';
+    if (!list.length){ wrap.innerHTML = '<div class="empty-pad">즐겨찾기한 슬라이드가 없습니다.</div>'; return; }
+    wrap.innerHTML = '<div class="fav-grid">' + list.map(favCardHTML).join('') + '</div>';
+  } catch (e){ wrap.innerHTML = '<div class="empty-pad">불러오지 못했습니다.</div>'; }
+}
+function favCardHTML(s){
+  var sid = esc(s.slide_id);
+  return '<a class="fav-card" href="/viewer/' + encodeURIComponent(s.slide_id) + '">'
+    + '<button class="fav-star" title="즐겨찾기 해제" onclick="removeFavorite(event, \'' + sid + '\')">★</button>'
+    + '<div class="fav-thumb"><i class="ti ti-microscope" aria-hidden="true"></i></div>'
+    + '<div class="fav-meta"><div class="fav-title">' + esc(s.title_ko || s.slide_id) + '</div>'
+    + '<div class="fav-sub">' + sid + '</div></div></a>';
+}
+async function removeFavorite(ev, slideId){
+  ev.preventDefault(); ev.stopPropagation();
+  try {
+    var r = await fetch('/api/favorites/' + encodeURIComponent(slideId), { method: 'DELETE' });
+    var d = await r.json();
+    if (r.ok && d.success){ showToast('즐겨찾기에서 제거했습니다'); loadFavorites(); }
+    else showToast(d.message || '처리에 실패했습니다');
+  } catch (e){ showToast('네트워크 오류'); }
+}
+
+// ── 최근 열람 기록 ──
+async function loadHistory(){
+  var wrap = document.getElementById('hist-wrap');
+  try {
+    var r = await fetch('/api/me/history');
+    var d = await r.json();
+    var list = (d && d.history) || [];
+    if (!list.length){ wrap.innerHTML = '<div class="empty-pad">최근 열람 기록이 없습니다.</div>'; return; }
+    wrap.innerHTML = list.map(histHTML).join('');
+  } catch (e){ wrap.innerHTML = '<div class="empty-pad">불러오지 못했습니다.</div>'; }
+}
+function histHTML(s){
+  var sub = esc(s.slide_id) + (s.organ ? ' · ' + esc(s.organ) : '') + (s.stain ? ' · ' + esc(s.stain) : '');
+  return '<a class="hist-item" href="/viewer/' + encodeURIComponent(s.slide_id) + '">'
+    + '<div class="hist-ico"><i class="ti ti-microscope" aria-hidden="true"></i></div>'
+    + '<div class="hist-main"><div class="hist-title">' + esc(s.title_ko || s.slide_id) + '</div>'
+    + '<div class="hist-sub">' + sub + '</div></div>'
+    + '<div class="hist-time">' + esc(relTime(s.accessed_at)) + '</div></a>';
+}
+function relTime(iso){
+  if (!iso) return '';
+  var t = new Date(iso).getTime();
+  if (isNaN(t)) return '';
+  var diff = (Date.now() - t) / 1000;
+  if (diff < 60) return '방금 전';
+  if (diff < 3600) return Math.floor(diff/60) + '분 전';
+  if (diff < 86400) return Math.floor(diff/3600) + '시간 전';
+  if (diff < 172800) return '어제';
+  if (diff < 2592000) return Math.floor(diff/86400) + '일 전';
+  return new Date(iso).toLocaleDateString('ko-KR');
+}
+
+async function doLogout(){
+  var btn = document.getElementById('btn-logout');
+  if (btn) btn.style.pointerEvents = 'none';
+  try { await fetch('/api/auth/logout', { method: 'POST' }); } catch (e) {}
+  location.href = '/login';
+}
+
+loadFavorites();
+loadHistory();
+</script>
+</body>
+</html>

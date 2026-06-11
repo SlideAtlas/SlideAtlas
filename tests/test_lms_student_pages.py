@@ -116,3 +116,91 @@ def test_course_detail_has_display_fields(client):
     assert s["title_ko"] == "위 점막" and s["stain"] == "H&E"
     # 타일/토큰 필드가 새지 않는다(표시 메타만).
     assert "tile_token" not in s and "thumbnail_url" not in s
+
+
+# ── /mypage 페이지 ───────────────────────────────────────────────────────────
+
+def test_mypage_requires_auth(client):
+    from urllib.parse import urlparse
+    resp = client.get("/mypage")
+    assert resp.status_code == 302
+    assert urlparse(resp.headers["Location"]).path == "/"
+
+
+def test_mypage_renders_profile(client):
+    # 프로필 SELECT: (email, name, position, institution_name, subject_name)
+    conn, _ = _mk_conn(fetchone=[("mj@cnu.ac.kr", "김민준", "학생", "충남대 의과대학", "조직학")])
+    with _stack(conn, _fake_auth(role="viewer", subject="HST")):
+        resp = client.get("/mypage")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "마이페이지" in body
+    assert "김민준" in body and "충남대 의과대학" in body and "학생" in body
+    # 소속·지위 읽기전용 안내 존재
+    assert "직접 수정할 수 없습니다" in body
+
+
+# ── GET /api/favorites — scope=g.user_id ─────────────────────────────────────
+
+def test_favorites_list_scoped_to_user(client):
+    conn, cur = _mk_conn(fetchall=[[("SA-HST-001", "위 점막", "위", "H&E")]])
+    # 쿼리스트링으로 타인 user_id 를 넣어도 무시돼야 한다(scope=g.user_id).
+    with _stack(conn, _fake_auth(uid="5", subject="HST")):
+        resp = client.get("/api/favorites?user_id=999")
+    assert resp.status_code == 200
+    favs = resp.get_json()["favorites"]
+    assert favs[0]["slide_id"] == "SA-HST-001" and favs[0]["organ"] == "위"
+    # SELECT 파라미터[0] = g.user_id(=5, INT), [1] = g.subject_code — body/쿼리 user_id 미참조(IDOR 불가)
+    sel = [c for c in cur.execute.call_args_list if "FROM favorites" in str(c.args[0])]
+    assert sel and sel[0].args[1][0] == 5 and sel[0].args[1][1] == "HST"
+    assert 999 not in sel[0].args[1]
+
+
+# ── POST /api/favorites/<id> — 접근 게이트 통과만 ─────────────────────────────
+
+def test_favorite_add_blocked_when_no_access(client):
+    """접근권 없는 슬라이드는 _slide_access_allowed 가 막아 북마크 불가(INSERT 미실행)."""
+    conn, cur = _mk_conn()
+    extra = [patch("server_render._slide_access_allowed", return_value=(False, ("forbidden", 403)))]
+    with _stack(conn, _fake_auth(uid="5", subject="HST"), extra=extra):
+        resp = client.post("/api/favorites/SA-PATH-001")
+    assert resp.status_code == 403
+    inserts = [c for c in cur.execute.call_args_list if "INSERT INTO favorites" in str(c.args[0])]
+    assert not inserts                       # 게이트 미통과 → INSERT 안 함
+
+
+def test_favorite_add_inserts_for_accessible(client):
+    conn, cur = _mk_conn()
+    extra = [patch("server_render._slide_access_allowed", return_value=(True, None))]
+    with _stack(conn, _fake_auth(uid="5", subject="HST"), extra=extra):
+        resp = client.post("/api/favorites/SA-HST-001")
+    assert resp.status_code == 200 and resp.get_json()["success"] is True
+    ins = [c for c in cur.execute.call_args_list if "INSERT INTO favorites" in str(c.args[0])]
+    assert ins and ins[0].args[1] == (5, "SA-HST-001")   # (g.user_id, slide_id)
+
+
+# ── DELETE /api/favorites/<id> — 본인 행만 ───────────────────────────────────
+
+def test_favorite_remove_scoped_to_user(client):
+    conn, cur = _mk_conn()
+    with _stack(conn, _fake_auth(uid="5", subject="HST")):
+        resp = client.delete("/api/favorites/SA-HST-001")
+    assert resp.status_code == 200
+    dels = [c for c in cur.execute.call_args_list if "DELETE FROM favorites" in str(c.args[0])]
+    assert dels and dels[0].args[1] == (5, "SA-HST-001")  # user_id=g.user_id 강제
+
+
+# ── GET /api/me/history — scope=g.user_id ────────────────────────────────────
+
+def test_history_scoped_to_user(client):
+    import datetime
+    ts = datetime.datetime(2026, 6, 11, 9, 0, 0)
+    conn, cur = _mk_conn(fetchall=[[("SA-HST-001", "위 점막", "위", "H&E", ts)]])
+    with _stack(conn, _fake_auth(uid="5", subject="HST")):
+        resp = client.get("/api/me/history?user_id=999")
+    assert resp.status_code == 200
+    h = resp.get_json()["history"]
+    assert h[0]["slide_id"] == "SA-HST-001" and h[0]["accessed_at"] == ts.isoformat()
+    sel = [c for c in cur.execute.call_args_list if "FROM access_logs" in str(c.args[0])]
+    assert sel and sel[0].args[1][0] == 5    # al.user_id = g.user_id (남의 기록 조회 불가)
+    assert 999 not in sel[0].args[1]
