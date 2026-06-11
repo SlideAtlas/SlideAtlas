@@ -246,8 +246,10 @@ def register():
 
     get_db_conn, release_db_conn = _db()
     conn = get_db_conn()
-    conn.autocommit = False
+    # [Codex sweep 후속] release_db_conn 은 finally 단일 지점에서만 — 검증실패 early return 포함 모든
+    #   경로에서 정확히 1회(autocommit 복구 후). 판정 로직·반환 shape·에러코드는 불변, release 구조만 정리.
     try:
+        conn.autocommit = False
         with conn.cursor() as cur:
             # 1) 이미 가입된 이메일 — 이메일당 users 1계정 정책(§6-2, Codex#3·Gemini#5 확정).
             #    과목 소속은 institution_rosters 행으로 표현하며, users.email은 전역 식별자다.
@@ -356,22 +358,21 @@ def register():
         conn.commit()
     except Exception:
         conn.rollback()
-        release_db_conn(conn)
         return _err("SERVER_ERROR", "처리 중 오류가 발생했습니다", 500)
     finally:
         try:
             conn.autocommit = True
         except Exception:
             pass
+        release_db_conn(conn)
 
     # 메일 발송 실패가 가입 트랜잭션을 되돌리지는 않는다(코드 재발송 경로 존재).
+    # conn 은 위 finally 에서 이미 release 됨(메일 발송은 DB 무관).
     try:
         send_verification_email(email, code)
     except Exception:
-        release_db_conn(conn)
         return _err("EMAIL_SEND_FAILED", "인증코드 발송에 실패했습니다. 잠시 후 다시 시도하세요", 502)
 
-    release_db_conn(conn)
     return _ok({"message": "인증코드가 이메일로 발송되었습니다"})
 
 
@@ -388,9 +389,11 @@ def verify_email():
 
     get_db_conn, release_db_conn = _db()
     conn = get_db_conn()
-    conn.autocommit = False
     token = csrf_token = None
+    # [Codex sweep 후속] release_db_conn 은 finally 단일 지점에서만 — 검증실패/attempt-commit early return
+    #   포함 모든 경로에서 정확히 1회(autocommit 복구 후). 판정 로직·반환 shape·에러코드 불변, release 구조만.
     try:
+        conn.autocommit = False
         with conn.cursor() as cur:
             cur.execute(
                 """SELECT id, institution_id, role, is_special, subject_code
@@ -521,14 +524,13 @@ def verify_email():
         csrf_token = secrets.token_hex(32)
     except Exception:
         conn.rollback()
-        release_db_conn(conn)
         return _err("SERVER_ERROR", "처리 중 오류가 발생했습니다", 500)
     finally:
         try:
             conn.autocommit = True
         except Exception:
             pass
-    release_db_conn(conn)
+        release_db_conn(conn)
 
     resp = _ok({
         "user_id": user_id,
@@ -658,10 +660,12 @@ def login():
 
     get_db_conn, release_db_conn = _db()
     conn = get_db_conn()
-    conn.autocommit = False
     token = csrf_token = None
     user_ctx = None
+    # [Codex sweep 후속] release_db_conn 은 finally 단일 지점에서만 — 검증실패/잠금-commit early return
+    #   포함 모든 경로에서 정확히 1회(autocommit 복구 후). 판정 로직·반환 shape·에러코드 불변, release 구조만.
     try:
+        conn.autocommit = False
         with conn.cursor() as cur:
             # [M2] 구독 만료 검사도 subscriptions(기관×과목) 모델 사용 (decorators._authenticate와 동일 규칙).
             # 반환 shape(8컬럼, 마지막=subscription_end)는 유지 — 테스트 mock·언패킹 호환.
@@ -764,14 +768,13 @@ def login():
         }
     except Exception:
         conn.rollback()
-        release_db_conn(conn)
         return _err("SERVER_ERROR", "처리 중 오류가 발생했습니다", 500)
     finally:
         try:
             conn.autocommit = True
         except Exception:
             pass
-    release_db_conn(conn)
+        release_db_conn(conn)
 
     resp = _ok(user_ctx)
     return _set_auth_cookies(resp, token, csrf_token)
