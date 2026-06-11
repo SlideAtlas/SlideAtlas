@@ -1,61 +1,41 @@
-# COMPLETION_REPORT — LMS 3단계-A 교수/조교 프론트(4화면) + 표시용 백엔드 (2026-06-11)
+# COMPLETION_REPORT — organ 정규화 검증 반영(Codex/Gemini) (2026-06-11)
 
-작업일: 2026-06-11 | 작업자: Lead Developer(Claude) | 기준: CLAUDE.md §21·§8·§9·§15-7
-상태: **구현 완료 · 전수 pytest 258 passed(240→258, 회귀 0) · 보호 함수 무수정.**
+작업일: 2026-06-11 | 작업자: Lead Developer(Claude) | 기준: CLAUDE.md §18 D28·§12·§0
+상태: **구현 완료 · 전수 pytest 263 passed(261→263, 회귀 0) · §0·인증·게이트 무변경.**
+대상: 로컬 커밋 `a97b381`(organ 통제어휘 정규화) 위 후속 수정. **코드·verify.sql만** — 라이브 RDS·SSH·마이그레이션 실행 없음(§12). 재검증 → CEO 배포(push 없음).
 
-## 1. 범위 / 불변
-교수·조교 LMS 프론트 4화면(수업 목록·편집·조교·대시보드) + 화면 구동에 필요한 **읽기전용 표시 라우트만** 구현.
-학생 홈·수업상세·마이페이지는 범위 밖(차기 세션).
+## 변경 파일
+| 파일 | 변경 |
+|------|------|
+| `server_render.py` | 수정1(api_slide_add organ_code 필수)·수정3(admin_save_slide 410) |
+| `templates/admin/slides.html` | 수정1(필수 드롭다운)·수정2(loadOrgans fail-loud) |
+| `db/organs_taxonomy_verify.sql` | 수정4(\echo 안내) |
+| `db/organs_taxonomy_migration.sql` | 운영5(배포 순서 명시) |
+| `tests/test_auth.py` | 신규 회귀 2건 |
 
-**절대 무수정(git diff로 확인)**: `_slide_access_allowed`·`_visible_slides`·auth 인증·2단계 LMS 권한 헬퍼
-(`_course_owner_or_assistant`·`_course_position`)·기존 course API 로직. server_render.py 변경 = **2661행 단일 추가 블록(+184, 삭제 0)**. CLAUDE.md·`.sql` 미수정.
+## 수정 1 (Med#1) — organ_code 필수
+- **백엔드** `api_slide_add`: `organ_code` 누락/빈 값이면 `400 'organ_code(장기)는 필수입니다'` 거부. 기존엔 미등록 코드만 400이고 누락은 NULL INSERT 허용 → 이제 신규 INSERT 불가. organs 마스터 대조·`organ`=name_ko 병기는 유지(표시 경로 무변경).
+- **프론트** 개별추가 드롭다운: `(미지정)` 제거 → `장기 선택` 비활성 플레이스홀더 + `required`. `submitAdd()`가 미선택 시 차단(서버도 400).
+- ⚠ **기존 NULL organ_code 행(D24 잔재)은 건드리지 않음** — 신규 INSERT 경로에만 강제.
 
-## 2. 신규/변경 파일
-| 파일 | 종류 | 내용 |
-|------|------|------|
-| `static/css/lms.css` | 신규 | 목업 디자인 시스템 추출·조립(Tabler 인라인 폰트·navy/sky·Noto Sans KR/Montserrat·모노폰트 sans 매핑). 4템플릿 공유 |
-| `templates/teacher_courses.html` | 신규 | A-1 교수 수업 목록 |
-| `templates/course_edit.html` | 신규 | A-2 수업 편집(주차 구성) |
-| `templates/assistants.html` | 신규 | A-3 조교 지정 |
-| `templates/course_dashboard.html` | 신규 | A-4 수업 대시보드 |
-| `server_render.py` | 추가만 | 페이지 라우트 4 + 표시용 읽기 API 3 + 헬퍼 2 |
-| `tests/test_lms_teacher_pages.py` | 신규 | 페이지/표시API 권한 가드 18건 |
+## 수정 2 (High) — 프론트 fail-loud
+- `loadOrgans()`: organs fetch 실패(`!res.ok || !data.ok` 또는 catch) 시 등록 submit 비활성(`#a-submit`) + 에러 표시(`#a-org-err` "장기 목록 로드 실패 — 새로고침"). 실패를 삼키고 미지정 등록을 허용하던 동작 제거. `_organsOk` 플래그로 `submitAdd()`에서 이중 차단.
 
-## 3. 새 라우트 표
-| 라우트 | 메서드 | 가드(재사용 헬퍼) | 용도 |
-|--------|--------|-------------------|------|
-| `/teacher/courses` | GET(page) | `_course_position`∈{교수,조교} 아니면 /home redirect | A-1 목록 셸 |
-| `/teacher/course/<cid>` | GET(page) | `_page_course_role`(=`_course_owner_or_assistant`) None→403 | A-2 편집 셸 |
-| `/teacher/course/<cid>/assistants` | GET(page) | 위 + role=='professor' 아니면 403 | A-3 조교 셸 |
-| `/teacher/course/<cid>/dashboard` | GET(page) | `_page_course_role` None→403 | A-4 대시보드 셸 |
-| `/api/courses/<cid>/available-slides` | GET | `_course_owner_or_assistant` + `_visible_slides` | 배치 모달 후보(메타만) |
-| `/api/courses/<cid>/assistants` | GET | `_course_owner_or_assistant` | 현재 조교 목록 |
-| `/api/courses/<cid>/assistant-candidates` | GET | 위 + professor | 조교 후보 검색(scope=g.*) |
+## 수정 3 (Med#2, ★ CEO 판단) — 레거시 하드블록
+- `admin_save_slide`(`/admin/api/slide`): 인증·CSRF·세션잠금 데코레이터/라우트 **존치**(tests/test_auth.py의 401/403 게이트 검사 무영향), organ 자유텍스트 쓰기(organ_code 정규화 우회)에 도달하기 전 **410 Gone** 반환. 본문 INSERT/UPDATE 제거. 슬라이드 추가는 `/admin/api/slides/add`(통제어휘)만 사용.
+- CEO가 불요로 판단하면 이 수정만 단독 revert 가능(다른 수정과 독립).
 
-> 신규 라우트는 **새 권한/접근 판정 로직을 만들지 않는다** — 전부 기존 헬퍼 재사용. 슬라이드 배치는
-> 기존 `POST /weeks/<wid>/slides`가 `_slide_access_allowed`로 재검증(§8). available-slides는 표시 후보일 뿐
-> 접근을 부여하지 않으며 타일·토큰을 발급하지 않는다(카탈로그 메타 id·title_ko·organ·stain만).
+## 수정 4 (Gemini Low) — verify 가독성
+- `db/organs_taxonomy_verify.sql` [1]~[8] 각 쿼리 앞 `\echo '=== [n] … ==='` 안내 추가(psql 출력에서 어느 점검인지 식별).
 
-## 4. 화면별 — 호출한 기존 API
-- **A-1**: `GET /api/courses/mine`(카드), `POST /api/courses`(개설). 개설 버튼=is_professor만.
-- **A-2**: `GET /api/courses/<cid>`(주차+deployed 배치), `POST/DELETE /weeks`, `POST/DELETE /weeks/<wid>/slides`, 신규 `GET /available-slides`(모달). 빈 주차 사유=주차 추가 시 empty_reason.
-- **A-3**: 신규 `GET /assistants`·`GET /assistant-candidates?q=`, 기존 `POST /assistants`·`DELETE /assistants/<uid>`.
-- **A-4**: 기존 `GET /stats`(익명 집계 KPI), `GET /roster`(명단). `GET /api/courses/<cid>`(제목·학기).
+## 운영 5 — 배포 순서(코드 아님)
+- `db/organs_taxonomy_migration.sql` 헤더에 **"migration → verify → 코드 배포"** 순서 명시(코드가 organs 테이블·slides.organ_code 컬럼 참조).
 
-## 5. §15-7 개인정보 — 대시보드 분리(절대 원칙)
-대시보드는 **익명 집계(KPI·열람률)** 와 **등록 명단(이름·이메일·등록일)** 을 화면에서 물리적으로 분리(목업대로).
-명단 테이블에는 접속·열람 등 활동 컬럼이 없고(기존 `/roster` 응답에도 없음), 활동은 익명 집계로만 노출.
-이름과 활동을 같은 행에 절대 섞지 않음.
+## 테스트 영향 처리
+- **영향 점검**: `api_slide_add`(`/admin/api/slides/add`)를 성공 기대로 호출하는 기존 테스트 **없음**. `admin_save_slide`(`/admin/api/slide`)를 호출하는 기존 테스트 4건은 모두 게이트 단계(401/403)에서 본문 미도달 → 410 무영향.
+- **신규 2건**: `test_slide_add_requires_organ_code`(게이트 통과 후 organ_code 누락 → 400), `test_legacy_admin_save_slide_is_gone`(게이트 통과 후 → 410).
+- 전수 **263 passed(261→263, 회귀 0)**.
 
-## 6. 검증
-- 전수 pytest **258 passed**(기준 240 + 신규 18, 회귀 0).
-- 신규 가드 테스트: 학생→/teacher/courses redirect(/home), 비편집자→/teacher/course/* 403, 위임조교→조교화면 403,
-  타기관 수업 403, available-slides/candidates 비권한 403, candidates scope=g.* 단언, 응답 필드 누수 없음.
-- server_render.py diff = 단일 추가 블록, 보호 def 변경 0(grep 확인).
-
-## 7. 미해결 / 차기
-- **주차 제목·빈주차 사유 인라인 수정**: PUT weeks 엔드포인트 부재 → 읽기전용 표시(제목은 생성 시 캡처). 새 mutate API는 3단계-A 범위 밖(차기).
-- **대시보드 주차별 열람률**: 기존 `/stats`는 전체 집계만 제공 → 전체 배치 열람률 1개 바로 표시(주차별 분해 미제공, /stats 무수정 원칙).
-- **top-bar 로고**: 지시대로 `SlideAtlas_Navy_Hor_small.png` 사용 — 네이비 톱바 위 네이비 로고라 대비 확인 필요(필요 시 White 변형으로 교체, 1줄 변경).
-- **커밋 구조**: 4화면이 공유 CSS·공유 백엔드 헬퍼로 상호의존 → 단계별 4커밋은 누적(stacked)이며 최종 tip(A-4)에서 전수 258 green.
-- CLAUDE.md 미수정(묶음 끝 일괄 반영 예정).
+## 무변경 확인
+- `git diff`: `_authenticate`·`subscriptions`·`max_seats`·`_slide_access_allowed`·`_visible_slides` 변경 0, `auth/` 변경 0. §0(구독·좌석·접근·인증)·표시 별칭·게이트 무변경.
+- CLAUDE.md 미수정. 마이그레이션 SQL 로직 무변경(\echo·헤더 주석만).

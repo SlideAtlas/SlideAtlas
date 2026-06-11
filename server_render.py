@@ -3608,25 +3608,26 @@ def api_slide_add():
     if not subject_code or not title_ko:
         return jsonify({'ok': False, 'error': '과목·제목(한국어)은 필수입니다'}), 400
 
-    # organ 통제어휘(§18 D28): organ_code 만 수신·검증한다(자유텍스트 organ 단독 기록 금지).
-    organ_code = (data.get('organ_code') or '').strip().lower() or None
+    # organ 통제어휘(§18 D28): organ_code 필수(Med#1). 누락/빈 값이면 신규 INSERT 거부.
+    #   ⚠ 기존 NULL organ_code 행(D24 잔재)은 본 변경과 무관 — 신규 추가 경로에만 강제한다.
+    organ_code = (data.get('organ_code') or '').strip().lower()
+    if not organ_code:
+        return jsonify({'ok': False, 'error': 'organ_code(장기)는 필수입니다'}), 400
 
     conn = get_db_conn()
     try:
         with conn:
             with conn.cursor() as cur:
-                # organ_code 가 오면 organs 마스터에 활성 행으로 존재해야 한다(임의값 거부).
+                # organ_code 는 organs 마스터에 활성 행으로 존재해야 한다(임의값 거부).
                 # 표시 연속성을 위해 organ 컬럼엔 선택 organ_code 의 name_ko 를 함께 기록
                 # (home 계통 필터 s['system']·admin 목록 escH(s.organ) 등 기존 표시 경로 무변경).
-                organ_name = None
-                if organ_code:
-                    cur.execute(
-                        "SELECT name_ko FROM organs WHERE organ_code=%s AND is_active=TRUE",
-                        (organ_code,))
-                    row = cur.fetchone()
-                    if not row:
-                        return jsonify({'ok': False, 'error': f'유효하지 않은 organ_code: {organ_code}'}), 400
-                    organ_name = row[0]
+                cur.execute(
+                    "SELECT name_ko FROM organs WHERE organ_code=%s AND is_active=TRUE",
+                    (organ_code,))
+                row = cur.fetchone()
+                if not row:
+                    return jsonify({'ok': False, 'error': f'유효하지 않은 organ_code: {organ_code}'}), 400
+                organ_name = row[0]
 
                 # SA-{SUBJECT} 접두사로 다음 채번
                 cur.execute("""
@@ -3680,75 +3681,15 @@ def admin_save_slide():
     #   본 핸들러는 payload['system']→organ 자유텍스트 단독 기록이라 organ_code 정규화를 우회하므로
     #   신규 사용 금지. 라우트는 어드민 인증/CSRF/세션잠금 테스트(tests/test_auth.py)가 참조하므로
     #   존치하되, 슬라이드 메타 저장 용도로는 재사용하지 말 것. v1.5 정리 대상.
-    # [ROLLBACK] JSON 방식 -- RDS 전환 전 코드
-    # try:
-    #     payload = request.get_json()
-    #     data = load_slides()
-    #     slides = data.get('slides', [])
-    #     edit_id = payload.pop('edit_id', None)
-    #     if edit_id:
-    #         for i, s in enumerate(slides):
-    #             if s['id'] == edit_id:
-    #                 slides[i] = payload
-    #                 break
-    #     else:
-    #         if any(s['id'] == payload['id'] for s in slides):
-    #             return jsonify({'ok': False, 'error': '이미 존재하는 ID입니다.'})
-    #         slides.append(payload)
-    #     data['slides'] = slides
-    #     save_slides(data)
-    #     return jsonify({'ok': True})
-    # except Exception as e:
-    #     return jsonify({'ok': False, 'error': str(e)})
-    try:
-        payload = request.get_json()
-        edit_id = payload.pop('edit_id', None)
-        subject_code = payload.get('category', '').upper() or None
-        conn = get_db_conn()
-        try:
-            with conn:
-                with conn.cursor() as cur:
-                    if edit_id:
-                        cur.execute("""
-                            UPDATE slides SET
-                                title_ko = %s, title_en = %s,
-                                description = %s, stain = %s,
-                                organ = %s, s3_key = %s,
-                                is_public = %s
-                            WHERE id = %s
-                        """, (
-                            payload.get('title_ko'), payload.get('title_en'),
-                            payload.get('description'), payload.get('stain'),
-                            payload.get('system'), payload.get('s3_key'),
-                            bool(payload.get('active', False)),
-                            edit_id,
-                        ))
-                    else:
-                        cur.execute("""
-                            INSERT INTO slides (
-                                id, institution_id, subject_code,
-                                title_ko, title_en, description,
-                                s3_key, stain, organ,
-                                original_format, is_public
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        """, (
-                            payload['id'],
-                            payload.get('institution'),
-                            subject_code,
-                            payload.get('title_ko'), payload.get('title_en'),
-                            payload.get('description'),
-                            payload.get('s3_key'),
-                            payload.get('stain'), payload.get('system'),
-                            (payload.get('format') or '').upper() or None,
-                            bool(payload.get('active', False)),
-                        ))
-        finally:
-            release_db_conn(conn)
-        return jsonify({'ok': True})
-    except psycopg2.IntegrityError:
-        return jsonify({'ok': False, 'error': '이미 존재하는 ID입니다.'})
-    except Exception as e:
-        return jsonify({'ok': False, 'error': str(e)})
+    #
+    # [Med#2 레거시 하드블록 — 통제어휘 우회 차단] 인증·CSRF·세션잠금 게이트(데코레이터)는 그대로
+    #   통과시켜 어드민 게이트 테스트(tests/test_auth.py 401/403)에 영향이 없게 하되, organ 자유텍스트
+    #   저장(organ_code 정규화 우회)에 도달하기 전에 410 Gone 으로 막는다. 슬라이드 메타 추가는
+    #   /admin/api/slides/add(api_slide_add, organ_code 통제어휘 필수)만 사용한다(§18 D28).
+    return jsonify({
+        'ok': False,
+        'error': '이 경로는 더 이상 사용되지 않습니다. 슬라이드 추가는 통제어휘(organ_code) 경로를 사용하세요.',
+    }), 410
 
 @app.route('/admin/api/slide/<slide_id>', methods=['DELETE'])
 @super_admin_required

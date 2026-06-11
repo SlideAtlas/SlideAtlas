@@ -667,3 +667,15 @@ python3 run_tests.py
 
 ### 결과
 [2026-06-11][결과] 전수 pytest 261 passed(258→261, 회귀 0). server_render.py 4훅, 보호 함수·auth 무수정. (참고) organ 관리 API는 본 작업 아님 — 커밋 a97b381 "feat(slides): organ 통제어휘 정규화(D28)" 출처. push 실행.
+
+## ════════ organ 정규화 검증 반영(Codex/Gemini) — 2026-06-11 ════════
+대상: a97b381(organ 통제어휘 D28) 위 후속. 코드·verify.sql만(라이브 RDS·SSH·마이그레이션 실행 없음 §12). §0·인증·게이트 무변경(diff 확인). 기준선 261 → 263.
+
+- 수정1 (Med#1 organ_code 필수): `api_slide_add`(server_render.py:3611) — organ_code 누락/빈 값이면 400 거부(기존 '미등록 코드만 400'→'누락도 400'). organs 대조·organ=name_ko 병기 유지. ⚠ 기존 NULL organ_code 행(D24)은 무영향(신규 INSERT에만). 프론트 `templates/admin/slides.html`: 드롭다운 (미지정) 제거→`장기 선택` 비활성 플레이스홀더+required, submitAdd 미선택 차단.
+- 수정2 (High fail-loud): `loadOrgans()` 실패(`!res.ok||!data.ok`/catch) 시 등록 submit 비활성(`a-submit`)+에러표시(`a-org-err`). 실패 삼키고 미지정 등록 허용하던 동작 제거. `_organsOk` 게이트로 submit 이중 차단.
+- 수정3 (Med#2 레거시 하드블록, CEO 판단): `admin_save_slide`(:3681) — 인증·CSRF·세션잠금 데코레이터 존치(test_auth 401/403 무영향), organ 자유텍스트 쓰기 전 410 Gone. 본문 INSERT/UPDATE 제거.
+- 수정4 (Gemini Low): `db/organs_taxonomy_verify.sql` 각 점검 [1]~[8] 앞 `\echo` 안내 추가.
+- 운영5 (배포 순서): `db/organs_taxonomy_migration.sql` 헤더에 "migration→verify→코드 배포(코드가 organ_code 참조)" 명시.
+- 테스트: 신규 2(`test_slide_add_requires_organ_code` 400 / `test_legacy_admin_save_slide_is_gone` 410). 기존 admin 게이트 테스트는 본문 미도달(401/403)이라 무영향. 전수 pytest 263 passed(261→263, 회귀 0).
+
+[2026-06-11][결과] 코드·verify.sql 수정 완료, 단일 커밋. push 없음(재검증 후 CEO 배포). §0·게이트 무변경.

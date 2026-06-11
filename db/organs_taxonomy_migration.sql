@@ -6,6 +6,10 @@
 --   (RDS는 VPC 프라이빗 — 외부/로컬 접속 불가, EC2 Instance Connect만 가능. §12·§19·§20)
 -- ⚠ 코드 작업자(Claude Code 등)는 이 파일을 작성만 한다. 실행 금지(§12).
 --
+-- ★ 배포 순서(필수): migration → verify → 코드 배포.
+--   코드(api_slide_add·loadOrgans 등)가 organs 테이블·slides.organ_code 컬럼을 참조하므로,
+--   반드시 이 마이그레이션(+verify 통과) 후에 코드를 배포한다. 순서가 바뀌면 organ 등록/조회가 깨진다.
+--
 -- 실행: EC2 Instance Connect 접속 후
 --   psql -h slideatlas-db.c94iwikwox6l.ap-northeast-2.rds.amazonaws.com \
 --        -U slideatlas_admin -d slideatlas -p 5432 -f db/organs_taxonomy_migration.sql

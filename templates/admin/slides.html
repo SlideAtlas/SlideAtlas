@@ -252,8 +252,9 @@
           <input id="a-ten" placeholder="예: Esophagus">
         </div>
         <div class="frow">
-          <label>장기 (organ)</label>
-          <select id="a-org"><option value="">(미지정)</option></select>
+          <label>장기 (organ) <span style="color:#c0392b">*</span></label>
+          <select id="a-org" required><option value="" disabled selected>장기 선택</option></select>
+          <div id="a-org-err" style="display:none;color:#c0392b;font-size:12px;margin-top:4px">장기 목록 로드 실패 — 새로고침하세요</div>
         </div>
         <div class="frow">
           <label>염색 (stain)</label>
@@ -284,7 +285,7 @@
       </div>
       <div class="m-note">저장 시 <b>대기(pending)</b> 상태로 등록됩니다. 실제 파일은 파이프라인을 통해 별도 업로드합니다.</div>
     </div>
-    <div class="m-foot"><button class="btn btn-ghost" onclick="closeModal('ov-add')">취소</button><button class="btn btn-pri" onclick="submitAdd()">메타데이터 등록</button></div>
+    <div class="m-foot"><button class="btn btn-ghost" onclick="closeModal('ov-add')">취소</button><button class="btn btn-pri" id="a-submit" onclick="submitAdd()">메타데이터 등록</button></div>
   </div>
 </div>
 
@@ -317,18 +318,28 @@ const CSRF = document.getElementById('admin-csrf-token').value;
 let _allSlides = [];
 let _filter = 'all';
 let _rejectSlideId = null;
-let _organs = [];   // organ 통제어휘(§18 D28) — 개별 추가 드롭다운
+let _organs = [];        // organ 통제어휘(§18 D28) — 개별 추가 드롭다운
+let _organsOk = false;   // organs 로드 성공 여부(fail-loud 게이트)
 
 // ── organ 통제어휘 로드(개별 추가 드롭다운) ──────────────────
+//   [High 프론트 fail-loud] organs 로드 실패는 삼키지 않는다 — 등록 submit 을 비활성화하고
+//   에러를 표시한다(실패를 묵살하고 organ 미지정 등록을 허용하던 동작 제거, §18 D28).
+function _organsFail() {
+  _organsOk = false;
+  const err = document.getElementById('a-org-err');
+  if (err) err.style.display = 'block';
+  const btn = document.getElementById('a-submit');
+  if (btn) { btn.disabled = true; btn.title = '장기 목록 로드 실패 — 새로고침하세요'; }
+}
 async function loadOrgans() {
   try {
     const res = await fetch('/admin/api/organs');
     const data = await res.json();
-    if (!data.ok) return;
+    if (!res.ok || !data.ok) { _organsFail(); return; }
     _organs = data.organs || [];
     const sel = document.getElementById('a-org');
     if (!sel) return;
-    let html = '<option value="">(미지정)</option>';
+    let html = '<option value="" disabled selected>장기 선택</option>';
     let curSys = null;
     _organs.forEach(o => {
       if (o.organ_system && o.organ_system !== curSys) {
@@ -340,7 +351,12 @@ async function loadOrgans() {
     });
     if (curSys !== null) html += '</optgroup>';
     sel.innerHTML = html;
-  } catch (e) { /* 드롭다운 비어도 등록 가능(organ 미지정) */ }
+    _organsOk = true;
+    const err = document.getElementById('a-org-err');
+    if (err) err.style.display = 'none';
+    const btn = document.getElementById('a-submit');
+    if (btn) { btn.disabled = false; btn.title = ''; }
+  } catch (e) { _organsFail(); }
 }
 
 // ── 데이터 로드 ──────────────────────────────────────────────
@@ -629,7 +645,7 @@ function openAdd() {
   document.getElementById('a-src').value = '';
   document.getElementById('a-tko').value = '';
   document.getElementById('a-ten').value = '';
-  document.getElementById('a-org').value = '';   // organ 드롭다운 → (미지정)
+  document.getElementById('a-org').value = '';   // organ 드롭다운 → 플레이스홀더(장기 선택)
   document.getElementById('a-stain').value = 'H&E';
   document.getElementById('a-desc').value = '';
   document.getElementById('ov-add').classList.add('show');
@@ -638,13 +654,18 @@ async function submitAdd() {
   const title_ko = document.getElementById('a-tko').value.trim();
   const subject_code = document.getElementById('a-subj').value;
   if (!title_ko) { showToast('제목(한국어)을 입력하세요'); return; }
+  // [fail-loud] organs 로드 실패 시 등록 차단(미지정 등록 방지).
+  if (!_organsOk) { showToast('장기 목록 로드 실패 — 새로고침 후 다시 시도하세요'); return; }
+  // [Med#1] organ_code 필수 — 미선택이면 submit 차단(서버도 400으로 거부).
+  const organ_code = document.getElementById('a-org').value;
+  if (!organ_code) { showToast('장기(organ)를 선택하세요'); return; }
   const ack = document.getElementById('a-ack').value.trim();
   const res = await fetch('/admin/api/slides/add', {
     method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':CSRF},
     body: JSON.stringify({
       subject_code, title_ko,
       title_en: document.getElementById('a-ten').value.trim(),
-      organ_code: document.getElementById('a-org').value || null,
+      organ_code,
       stain: document.getElementById('a-stain').value.trim(),
       species: document.getElementById('a-species').value,
       description: document.getElementById('a-desc').value.trim(),

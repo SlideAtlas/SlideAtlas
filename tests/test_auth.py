@@ -1136,6 +1136,40 @@ def test_admin_csrf_required_no_header(client, mock_db):
         assert data.get('ok') is False or 'CSRF' in str(data)
 
 
+def test_slide_add_requires_organ_code(client, mock_db):
+    """[organ 정규화 Med#1] 개별 추가에서 organ_code 누락/빈 값이면 400(인증·CSRF 통과 후)."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+        mock_db["cursor"].fetchone.return_value = (1, "super_admin", "Admin", "active", "admin-sess-tok", None)
+        with client.session_transaction() as sess:
+            sess['admin_user_id'] = 1
+            sess['admin_csrf_token'] = 'csrf-x'
+            sess['admin_session_token'] = 'admin-sess-tok'
+        resp = client.post('/admin/api/slides/add',
+                           json={"subject_code": "HST", "title_ko": "테스트"},   # organ_code 없음
+                           headers={'X-CSRF-Token': 'csrf-x'})
+        assert resp.status_code == 400
+        assert 'organ_code' in str(resp.get_json())
+
+
+def test_legacy_admin_save_slide_is_gone(client, mock_db):
+    """[organ 정규화 Med#2] 레거시 /admin/api/slide 는 게이트 통과 후 410(통제어휘 우회 차단)."""
+    with patch("server_render.get_db_conn") as mock_get_db, \
+         patch("server_render.release_db_conn"):
+        mock_get_db.return_value = mock_db["conn"]
+        mock_db["cursor"].fetchone.return_value = (1, "super_admin", "Admin", "active", "admin-sess-tok", None)
+        with client.session_transaction() as sess:
+            sess['admin_user_id'] = 1
+            sess['admin_csrf_token'] = 'csrf-x'
+            sess['admin_session_token'] = 'admin-sess-tok'
+        resp = client.post('/admin/api/slide',
+                           json={"id": "X", "title_ko": "t", "system": "위"},
+                           headers={'X-CSRF-Token': 'csrf-x'})
+        assert resp.status_code == 410
+        assert resp.get_json().get('ok') is False
+
+
 def test_admin_csrf_required_wrong_token(client, mock_db):
     """Admin API POST: X-CSRF-Token 불일치 → 403 (현 계약: admin_users DB)"""
     with patch("server_render.get_db_conn") as mock_get_db, \
