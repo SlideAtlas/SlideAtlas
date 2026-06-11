@@ -1,41 +1,76 @@
-# COMPLETION_REPORT — organ 정규화 검증 반영(Codex/Gemini) (2026-06-11)
+# COMPLETION REPORT — LMS 3단계-B (학생 프론트)
 
-작업일: 2026-06-11 | 작업자: Lead Developer(Claude) | 기준: CLAUDE.md §18 D28·§12·§0
-상태: **구현 완료 · 전수 pytest 263 passed(261→263, 회귀 0) · §0·인증·게이트 무변경.**
-대상: 로컬 커밋 `a97b381`(organ 통제어휘 정규화) 위 후속 수정. **코드·verify.sql만** — 라이브 RDS·SSH·마이그레이션 실행 없음(§12). 재검증 → CEO 배포(push 없음).
+**일자**: 2026-06-11 · **브랜치**: main · **기준선**: pytest 263 → **274** (회귀 0) · push 완료(`24033c8`)
 
-## 변경 파일
-| 파일 | 변경 |
-|------|------|
-| `server_render.py` | 수정1(api_slide_add organ_code 필수)·수정3(admin_save_slide 410) |
-| `templates/admin/slides.html` | 수정1(필수 드롭다운)·수정2(loadOrgans fail-loud) |
-| `db/organs_taxonomy_verify.sql` | 수정4(\echo 안내) |
-| `db/organs_taxonomy_migration.sql` | 운영5(배포 순서 명시) |
-| `tests/test_auth.py` | 신규 회귀 2건 |
+학생 LMS 프론트 3종 구현: 홈 수업 탭 / 수업 상세 `/course/<id>` / 마이페이지 `/mypage`.
+교수 화면(3단계-A)·슬라이드 접근 판정은 손대지 않음.
 
-## 수정 1 (Med#1) — organ_code 필수
-- **백엔드** `api_slide_add`: `organ_code` 누락/빈 값이면 `400 'organ_code(장기)는 필수입니다'` 거부. 기존엔 미등록 코드만 400이고 누락은 NULL INSERT 허용 → 이제 신규 INSERT 불가. organs 마스터 대조·`organ`=name_ko 병기는 유지(표시 경로 무변경).
-- **프론트** 개별추가 드롭다운: `(미지정)` 제거 → `장기 선택` 비활성 플레이스홀더 + `required`. `submitAdd()`가 미선택 시 차단(서버도 400).
-- ⚠ **기존 NULL organ_code 행(D24 잔재)은 건드리지 않음** — 신규 INSERT 경로에만 강제.
+---
 
-## 수정 2 (High) — 프론트 fail-loud
-- `loadOrgans()`: organs fetch 실패(`!res.ok || !data.ok` 또는 catch) 시 등록 submit 비활성(`#a-submit`) + 에러 표시(`#a-org-err` "장기 목록 로드 실패 — 새로고침"). 실패를 삼키고 미지정 등록을 허용하던 동작 제거. `_organsOk` 플래그로 `submitAdd()`에서 이중 차단.
+## 1. 신규/변경 파일
 
-## 수정 3 (Med#2, ★ CEO 판단) — 레거시 하드블록
-- `admin_save_slide`(`/admin/api/slide`): 인증·CSRF·세션잠금 데코레이터/라우트 **존치**(tests/test_auth.py의 401/403 게이트 검사 무영향), organ 자유텍스트 쓰기(organ_code 정규화 우회)에 도달하기 전 **410 Gone** 반환. 본문 INSERT/UPDATE 제거. 슬라이드 추가는 `/admin/api/slides/add`(통제어휘)만 사용.
-- CEO가 불요로 판단하면 이 수정만 단독 revert 가능(다른 수정과 독립).
+| 파일 | 변경 | 비고 |
+|------|------|------|
+| `templates/home.html` | 수업 탭 placeholder → 실제 UI(CSS+JS) | 전체 탭 무변경, home 자체 디자인 유지 |
+| `templates/course.html` | **신규** | 수업 상세(lms.css + 3단계-A topbar 재사용) |
+| `templates/mypage.html` | **신규** | 프로필·비번폼·즐겨찾기·열람기록 |
+| `server_render.py` | +219 (기존함수 수정은 api_course_detail 1건) | 신규 라우트 6 + `api_course_detail` 표시필드 보강 |
+| `static/css/lms.css` | +54 | 수업상세·마이페이지 컴포넌트(모노폰트 미사용) |
+| `tests/test_lms.py` | 상세 3건 mock shape 갱신 | 표시필드 보강 반영(organ 컬럼+교수/과목 fetchone) |
+| `tests/test_lms_student_pages.py` | **신규** 11건 | 페이지 권한·API scope·IDOR·게이트 |
 
-## 수정 4 (Gemini Low) — verify 가독성
-- `db/organs_taxonomy_verify.sql` [1]~[8] 각 쿼리 앞 `\echo '=== [n] … ==='` 안내 추가(psql 출력에서 어느 점검인지 식별).
+---
 
-## 운영 5 — 배포 순서(코드 아님)
-- `db/organs_taxonomy_migration.sql` 헤더에 **"migration → verify → 코드 배포"** 순서 명시(코드가 organs 테이블·slides.organ_code 컬럼 참조).
+## 2. 새 라우트
 
-## 테스트 영향 처리
-- **영향 점검**: `api_slide_add`(`/admin/api/slides/add`)를 성공 기대로 호출하는 기존 테스트 **없음**. `admin_save_slide`(`/admin/api/slide`)를 호출하는 기존 테스트 4건은 모두 게이트 단계(401/403)에서 본문 미도달 → 410 무영향.
-- **신규 2건**: `test_slide_add_requires_organ_code`(게이트 통과 후 organ_code 누락 → 400), `test_legacy_admin_save_slide_is_gone`(게이트 통과 후 → 410).
-- 전수 **263 passed(261→263, 회귀 0)**.
+| 메서드·경로 | 데코레이터 | 용도 | scope/게이트 |
+|---|---|---|---|
+| `GET /course/<int:cid>` | `@page_login_required` | 수업 상세 셸 | admin-only→/portal. scope·존재는 `GET /api/courses/<cid>`가 판정 |
+| `GET /mypage` | `@page_login_required` | 마이페이지 셸+프로필 | 프로필 서버 렌더(Jinja escape) |
+| `GET /api/favorites` | `@login_required` | 내 즐겨찾기 목록 | **scope=g.user_id**, deployed+본인과목 |
+| `POST /api/favorites/<slide_id>` | `@login_required` | 즐겨찾기 추가 | g.user_id + **`_slide_access_allowed` 게이트 읽기** |
+| `DELETE /api/favorites/<slide_id>` | `@login_required` | 즐겨찾기 해제 | scope=g.user_id (본인 행만, 멱등) |
+| `GET /api/me/history` | `@login_required` | 최근 열람 기록 | **scope=g.user_id**, deployed+본인과목 |
 
-## 무변경 확인
-- `git diff`: `_authenticate`·`subscriptions`·`max_seats`·`_slide_access_allowed`·`_visible_slides` 변경 0, `auth/` 변경 0. §0(구독·좌석·접근·인증)·표시 별칭·게이트 무변경.
-- CLAUDE.md 미수정. 마이그레이션 SQL 로직 무변경(\echo·헤더 주석만).
+---
+
+## 3. 호출/신설한 API
+
+- **호출(기존, 무수정)**: `GET /api/courses/enrolled`·`/api/courses/available`(B-1), `POST/DELETE /api/courses/<cid>/enroll`(B-2).
+- **보강(표시필드만, 권한/scope·deployed 필터 무변경)**: `GET /api/courses/<cid>` → 슬라이드 `organ`(load_slides 'system' 자유텍스트 표시축 §6-1) + course `professor_name`·`subject_name`.
+- **신설**: favorites GET/POST/DELETE, me/history (위 표).
+
+---
+
+## 4. 불변식 검증 (security-reviewer 독립 검증 — FAIL 0)
+
+1. `_slide_access_allowed`·`_visible_slides`·`_course_owner_or_assistant`·`auth/` **git diff 변경 0**.
+2. `api_course_detail` scope(`_course_in_scope`)·`deploy_status='deployed'` 필터 그대로(표시필드만 보강).
+3. 신규 favorites/history **scope=g.user_id 강제** — body/쿼리/경로 user_id 미참조(IDOR 불가, 쿼리 `?user_id=999` 무시 테스트로 단언).
+4. `POST /api/favorites` 가 게이트 읽기로 접근권 없는 슬라이드 북마크 차단(존재 probing·메타 누수 차단).
+5. favorites/history 표시 deployed+본인과목 한정(타 과목/미배포 누수 없음).
+6. XSS: 클라이언트 렌더 esc() + href encodeURIComponent + 학기 칩 textContent. CSRF: 상태변경 `@login_required`(interceptor 자동 주입).
+
+---
+
+## 5. 회귀 결과
+
+`pytest tests/` → **274 passed**(263→274, +11, 회귀 0).
+
+---
+
+## 6. 단계별 커밋
+
+| 단계 | 커밋 | 내용 |
+|------|------|------|
+| B-1 | `a15f869` | 홈 수업 탭(학기 칩·내 수업·개설 수업) |
+| B-2 | `96eb329` | 수업 상세 `/course/<id>` + 표시필드 보강 |
+| B-3 | `24033c8` | 마이페이지 `/mypage` + 즐겨찾기·열람기록 API |
+
+---
+
+## 7. 설계 결정 / 보고 사항
+
+- **썸네일 = 플레이스홀더(마이크로스코프 아이콘)**: 1차 사양서(목업)가 실이미지가 아닌 아이콘 플레이스홀더를 렌더하고, "게이트 무관 표시 필드만" 원칙상 실썸네일 URL은 타일토큰(=게이트 발급)이 필요하므로 목업대로 채택(기존 home '전체' 탭과 동일 패턴). 추후 실썸네일 필요 시 게이트 통과 슬라이드 한정 토큰 발급으로 확장 가능.
+- **부채 D31(신설 제안)**: 학생 비밀번호 변경 API 부재 → mypage 비번 폼은 표시용(안내 토스트)+TODO 주석. CLAUDE.md는 본 지시대로 미수정(LMS 묶음 끝 §18 일괄 갱신 시 D31 추가 제안).
+- CLAUDE.md 미수정(지시 준수). progress.md 단계별 append 완료.
