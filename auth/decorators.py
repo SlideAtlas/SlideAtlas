@@ -213,15 +213,25 @@ def _authenticate():
         #     special_expires_at NULL(무기한)은 통과 — 비권장이나 허용. 경과 시 차단.
         if special_expires_at is not None and special_expires_at < today:
             return ("SUBSCRIPTION_EXPIRED", "특별계정 사용 기간이 만료되었습니다. 과 사무실에 문의하세요")
-    elif db_role == "admin" and subject_code is None and _has_admin_roster(user_id):
+    elif db_role == "admin" and subject_code is None:
         # [Codex 라운드2] 구독 만료 면제는 '순수 admin-only(subject_code IS NULL, 좌석 0)'에만.
         #   subject_code가 있으면(겸직, 좌석 점유) admin이어도 아래 else로 떨어져 구독 만료 검사를
         #   받는다 — register·verify·login과 4경로 일관(좌석 점유 = 콘텐츠 소비 = 만료 집행).
         # 기관 관리자(포털 전용): 과목 구독에 묶이지 않으므로 매 요청 구독 만료 게이트 면제.
         #   [Codex#2] 단, 면제는 '현재 __ADMIN__ roster 행 존재'와 결합한다 — roster 회수(권한 박탈)
-        #   시 면제도 사라져 아래 else로 떨어지고(매칭 구독 없음 → SUBSCRIPTION_EXPIRED) API 사용까지 막힌다.
+        #   시 면제도 사라져 아래 분기로 떨어지고(매칭 구독 없음 → SUBSCRIPTION_EXPIRED) API 사용까지 막힌다.
         #   콘텐츠 노출은 넓히지 않는다 — 슬라이드/타일은 발급 게이트가 과목 좌석으로 별도 판정(§8).
-        pass
+        # [perf 단계1] '__ADMIN__ 행 존재'는 같은 요청에서 _portal_guard/_is_institution_admin 가 다시
+        #   확인하는 동일 사실이다. 여기서 1회만 조회해 g 요청 스코프 캐시에 적재 → 같은 요청 내 중복
+        #   admin 조회(RDS 왕복)를 제거한다. ★ 판정 의미·DB 권위(§8 매 요청 재조회) 불변 — 캐시는 같은
+        #   요청 내부의 동일 쿼리 중복만 제거하며 요청 간 누수는 없다(g 는 요청 스코프). 캐시 키 =
+        #   (user_id, 본인 institution_id) 로 묶어 다른 기관 인자 호출에는 적용하지 않는다(폴백 조회).
+        has_admin = _has_admin_roster(user_id)
+        g._admin_roster_cache = (str(user_id), db_institution_id, has_admin)
+        if not has_admin:
+            # roster 회수 → 면제 박탈 → 일반 사용자와 동일한 구독 만료 게이트(아래 else와 같은 식).
+            if subscription_end is None or subscription_end < today:
+                return ("SUBSCRIPTION_EXPIRED", "구독이 만료되었습니다. 과 사무실에 문의하세요")
     else:
         # §8 명문: "매칭 구독이 없거나 만료면 SUBSCRIPTION_EXPIRED."
         #   매칭 구독이 없으면(subscription_end IS NULL) 라이선스 격리상 차단(fail-closed, Codex FAIL1).

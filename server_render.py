@@ -876,7 +876,19 @@ def _is_institution_admin(user_id, institution_id):
       users.role 단독으로는 통과시키지 않는다 → 관리자 권한 회수(roster 행 DELETE) 시 즉시 차단.
     같은 이메일이 과목 행('HST' 등)과 관리자 행('__ADMIN__')으로 공존할 수 있으므로 센티넬 과목코드까지
     함께 대조한다(과목 학생 행을 관리자 권한으로 오인하지 않게).
+
+    [perf 단계1] 같은 요청에서 _authenticate 가 이미 동일 사실(__ADMIN__ 행 존재)을 조회해
+      g._admin_roster_cache 에 적재했으면 재조회 없이 재사용한다(중복 admin 조회 1회 제거). 캐시는
+      '인증된 본인 user + 본인 기관(institution_id == g.institution_id)' 일 때만 적용 — 다른 기관 인자로
+      호출되면(향후 D15 다기관) 캐시 불일치로 폴백 조회한다. _authenticate 의 _has_admin_roster(=
+      r.institution_id=u.institution_id) 와 본 함수(=r.institution_id=%s)는 institution_id==본인기관일 때
+      동일 술어이므로 판정 의미가 100% 일치한다(반환 bool 불변).
     """
+    cache = getattr(g, '_admin_roster_cache', None)
+    if cache is not None:
+        c_uid, c_inst, c_val = cache
+        if c_uid == str(user_id) and c_inst == institution_id:
+            return c_val
     conn = get_db_conn()
     try:
         with conn.cursor() as cur:
