@@ -169,6 +169,37 @@ def test_favorite_add_blocked_when_no_access(client):
     assert not inserts                       # 게이트 미통과 → INSERT 안 함
 
 
+def _post_fav(client, slide_id, gate_ret):
+    """POST favorites 한 번 — 게이트 반환값을 주입하고 (status, json) 반환."""
+    conn, _cur = _mk_conn()
+    extra = [patch("server_render._slide_access_allowed", return_value=gate_ret)]
+    with _stack(conn, _fake_auth(uid="5", subject="HST"), extra=extra):
+        resp = client.post("/api/favorites/" + slide_id)
+    return resp.status_code, resp.get_json()
+
+
+def test_favorite_add_failure_response_is_uniform_no_oracle(client):
+    """[수정1·Med] 없는 ID(게이트 404)와 존재하나 접근불가(게이트 403)가 응답으로 구별 불가.
+
+    게이트가 404를 줘도, 403을 줘도 favorites 라우트는 동일 status·동일 error·동일 message 로
+    접어 반환 — 존재 여부 probing 불가.
+    """
+    # 게이트가 "없는 ID" 처럼 404 응답을 반환하는 경우(라우트는 이 aerr 을 버린다)
+    s_404, j_404 = _post_fav(
+        client, "SA-HST-999",
+        (False, ({"success": False, "error": "NOT_FOUND"}, 404)),
+    )
+    # 게이트가 "존재하지만 접근불가(미배포/타과목)" 처럼 403 응답을 반환하는 경우
+    s_403, j_403 = _post_fav(
+        client, "SA-PATH-001",
+        (False, ({"success": False, "error": "SLIDE_FORBIDDEN"}, 403)),
+    )
+    assert s_404 == s_403 == 403                        # 둘 다 403 으로 정규화
+    assert j_404 == j_403                               # 본문 완전 동일(코드·메시지)
+    assert j_404["error"] == "SLIDE_NOT_ACCESSIBLE"     # 게이트 원본 코드 노출 안 함
+    assert j_404["success"] is False
+
+
 def test_favorite_add_inserts_for_accessible(client):
     conn, cur = _mk_conn()
     extra = [patch("server_render._slide_access_allowed", return_value=(True, None))]
@@ -204,3 +235,26 @@ def test_history_scoped_to_user(client):
     sel = [c for c in cur.execute.call_args_list if "FROM access_logs" in str(c.args[0])]
     assert sel and sel[0].args[1][0] == 5    # al.user_id = g.user_id (남의 기록 조회 불가)
     assert 999 not in sel[0].args[1]
+
+
+def test_history_filters_on_access_log_snapshot_scope(client):
+    """[수정2·Med] 과목 귀속은 access_logs 스냅샷(al.institution_id·al.subject_code)으로 필터.
+
+    현재 slides.subject_code 가 아니라 열람 시점 스냅샷 기준 — 사용자/슬라이드 과목 이동 시 과거
+    로그 재분류(시간축 오염) 차단. subject_code NULL 과거 로그는 제외(과목 귀속 불명).
+    """
+    conn, cur = _mk_conn(fetchall=[[]])
+    with _stack(conn, _fake_auth(uid="5", inst="CNU", subject="HST")):
+        resp = client.get("/api/me/history")
+    assert resp.status_code == 200
+    sel = [c for c in cur.execute.call_args_list if "FROM access_logs" in str(c.args[0])]
+    assert sel
+    sql, params = str(sel[0].args[0]), sel[0].args[1]
+    # 스냅샷 컬럼 기준 필터(현재 slides.subject_code 로 거르지 않음)
+    assert "al.institution_id = %s" in sql
+    assert "al.subject_code = %s" in sql
+    assert "al.subject_code IS NOT NULL" in sql          # NULL 과거 로그 제외
+    assert "s.subject_code = %s" not in sql              # 현재 슬라이드 과목으로 재분류 안 함
+    assert "s.deploy_status = 'deployed'" in sql         # slides 조인은 deployed·표시용 유지
+    # params = (uid, institution_id, subject_code) — 스냅샷 scope 가 g 에서 옴
+    assert params == (5, "CNU", "HST")

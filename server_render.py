@@ -2750,9 +2750,12 @@ def api_favorite_add(slide_id):
     uid = _uid_int()
     if uid is None:
         return jsonify({'success': False, 'error': 'TOKEN_INVALID'}), 401
-    allowed, aerr = _slide_access_allowed(slide_id)
+    allowed, _aerr = _slide_access_allowed(slide_id)
     if not allowed:
-        return aerr   # 접근권 없는 슬라이드는 북마크 거부(403/404)
+        # ★ [외부검증 수정1·Med] 존재 oracle 차단: 게이트의 404/403(없는 ID vs 존재하나 접근불가)을
+        #   그대로 흘리지 않고 항상 동일한 단일 응답으로 접는다 — probing 불가. 게이트 자체는 무수정.
+        return jsonify({'success': False, 'error': 'SLIDE_NOT_ACCESSIBLE',
+                        'message': '접근할 수 없는 슬라이드입니다.'}), 403
     conn = get_db_conn()
     try:
         conn.autocommit = False
@@ -2806,7 +2809,10 @@ def api_favorite_remove(slide_id):
 def api_my_history():
     """내 최근 열람 기록(§21-8). 본인 access_logs 만(남의 활동 아님 — §15-7 위반 아님).
 
-    scope = g.user_id 강제. 표시는 배포·본인 과목 슬라이드만, 슬라이드별 최신 1건(중복 제거)·최대 15.
+    scope = g.user_id 강제. ★ [외부검증 수정2·Med] 과목 귀속은 access_logs 의 열람 시점 스냅샷
+    (al.institution_id·al.subject_code)으로 필터 — 현재 slides.subject_code 가 아니라(사용자/슬라이드
+    과목 이동 시 과거 로그 재분류=시간축 오염 차단, §15-7·v3.14 P3 원칙). subject_code NULL 과거 로그는
+    제외(과목 귀속 불명). slides 조인은 deployed 필터·제목 표시용. 슬라이드별 최신 1건·최대 15.
     """
     uid = _uid_int()
     if uid is None:
@@ -2819,12 +2825,14 @@ def api_my_history():
                      FROM access_logs al
                      JOIN slides s ON s.id = al.slide_id
                     WHERE al.user_id = %s
+                      AND al.institution_id = %s
+                      AND al.subject_code = %s
+                      AND al.subject_code IS NOT NULL
                       AND s.deploy_status = 'deployed'
-                      AND s.subject_code = %s
                     GROUP BY s.id, s.title_ko, s.organ, s.stain
                     ORDER BY last_at DESC
                     LIMIT 15""",
-                (uid, getattr(g, 'subject_code', None)),
+                (uid, getattr(g, 'institution_id', None), getattr(g, 'subject_code', None)),
             )
             hist = [{'slide_id': r[0], 'title_ko': r[1] or r[0],
                      'organ': r[2] or '', 'stain': r[3] or '',
