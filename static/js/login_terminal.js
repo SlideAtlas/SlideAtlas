@@ -11,6 +11,7 @@
   var _resendTimer = null;
   var _resendSecondsLeft = 0;
   var _codeExhausted = false;
+  var _verifyNotice = '';   // VERIFY 진입 시 1회 표시할 안내(발송 실패 경로 등). 표시 후 소진.
 
   /* ── next URL (오픈 리다이렉트 방어) ─────────────────── */
   var _nextUrl = (function () {
@@ -233,7 +234,11 @@
     html += '</div>';
     root.innerHTML = html;
     _attachHandlers();
-    if (_view === 'VERIFY') _startVerifyTimer();
+    if (_view === 'VERIFY') {
+      _startVerifyTimer();
+      // 발송 실패 경로 등으로 설정된 안내가 있으면 1회 표시 후 소진(정상 진입 시엔 안내 없음).
+      if (_verifyNotice) { _showErr(_verifyNotice); _verifyNotice = ''; }
+    }
   }
 
   /* ── API 호출 ─────────────────────────────────────────── */
@@ -293,6 +298,14 @@
       });
       var data = await res.json();
       if (data.success) {
+        _goView('VERIFY', email);
+        return;
+      }
+      // ★ EMAIL_SEND_FAILED 는 '가입 실패'가 아니라 '계정·코드는 생성됨 + 메일 발송만 실패'다
+      //   (백엔드 register 가 user+코드를 commit 한 뒤 발송 시도). 가입폼에 가두지 말고 VERIFY 뷰로
+      //   보내 재발송으로 코드를 받을 수 있게 한다. 계정이 실제 생성되는 유일한 '실패' 코드라 이것만 특별 취급.
+      if (data.error === 'EMAIL_SEND_FAILED') {
+        _verifyNotice = "인증 메일 발송에 실패했습니다. 잠시 후 '인증코드 재발송'을 눌러주세요.";
         _goView('VERIFY', email);
         return;
       }
