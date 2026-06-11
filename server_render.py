@@ -1406,6 +1406,122 @@ def portal_roster_upload():
     return jsonify({'success': True, 'total': len(results), 'counts': counts, 'results': results})
 
 
+# 업로드 파서(_parse_*_roster)가 기대하는 헤더 — 양식과 파서가 어긋나면 업로드가 자기 양식을
+#   거부하는 모순이 생긴다. 그래서 헤더는 '문자열 상수'로 한곳에 두고 양식·검증이 함께 쓴다.
+#   · 순서는 파서 위치읽기(cells[0..3] = 이름·지위·과목·이메일)와 동일.
+#   · 헤더 검출(_looks_like_header)은 1행에 '이름'·'이메일'이 있으면 헤더로 보고 건너뛴다 → 이 헤더는
+#     재업로드 시 자동 스킵된다.
+_PORTAL_ROSTER_HEADER = ('이름', '지위', '과목', '이메일')
+
+
+@app.route('/portal/api/roster/template', methods=['GET'])
+@login_required
+def portal_roster_template():
+    """명단 일괄 업로드용 빈 양식(xlsx/csv) 다운로드.
+
+    업로드(POST /portal/api/roster/upload)와 '정확히 같은' 컬럼·순서·검증 기준으로 생성한다:
+      · 헤더 = _PORTAL_ROSTER_HEADER(파서 기대 문자열 그대로) → 재업로드 시 자동 헤더 스킵.
+      · 지위 안내 = _PORTAL_POSITIONS(파서 allowlist 그대로). 행정직원은 과목 명단 대상이 아니라
+        admin-only(슈퍼관리자 관할, 과목행 없음 §21-1)라 양식 지위에서 제외 — 넣으면 파서가 거절.
+      · 과목 안내 = _subscribed_subjects(g.institution_id) — 그 기관 구독 과목만(타 기관 노출 0, §9 scope).
+      · 모든 셀 _xlsx_safe(§8·§18 D9 수식주입 방어).
+    """
+    inst_id, err = _portal_guard()
+    if err:
+        return err
+    fmt = (request.args.get('format') or 'xlsx').strip().lower()
+    if fmt not in ('xlsx', 'csv'):
+        return jsonify({'success': False, 'error': 'BAD_FORMAT',
+                        'message': 'xlsx 또는 csv만 지원합니다'}), 400
+
+    # 과목 allowlist 는 업로드 파서와 동일 헬퍼(_subscribed_subjects) — scope=g.institution_id 강제.
+    conn = get_db_conn()
+    try:
+        with conn.cursor() as cur:
+            subjects = _subscribed_subjects(cur, inst_id)   # {code: name_ko}
+    finally:
+        release_db_conn(conn)
+
+    # 안내 문자열(양식↔파서 단일 출처에서 파생)
+    positions = list(_PORTAL_POSITIONS)                     # 파서 allowlist 그대로(학생/조교/교수)
+    subj_lines = [f'{c}({n})' for c, n in subjects.items()] # 예: "HST(조직학)"
+    example_subject = next(iter(subjects), '')              # 구독 과목 중 첫 코드(없으면 빈칸)
+    guide_lines = [
+        '◆ 이용자 명단 업로드 양식 (포털 명단 관리)',
+        '',
+        '1) 첫 행(이름·지위·과목·이메일)은 머리글입니다 — 지우지 말고 그 아래부터 입력하세요.',
+        '2) 예시 행(홍길동…)은 삭제한 뒤 실제 명단을 입력하세요.',
+        '',
+        '• 지위: ' + ' / '.join(positions) + '  (이 외 값은 업로드 시 거절됩니다)',
+        '   ※ 행정직원은 과목 명단이 아니라 기관 관리자(admin) 등록 대상이라 이 양식에 넣지 않습니다.',
+        '• 과목(아래 구독 과목 코드만 허용 — 비구독 과목은 업로드 거절):',
+    ]
+    if subj_lines:
+        guide_lines += ['   - ' + s for s in subj_lines]
+    else:
+        guide_lines += ['   - (현재 구독 중인 과목이 없습니다 — 구독 등록 후 명단을 업로드하세요.)']
+    guide_lines += [
+        '• 이메일: 유효한 이메일 형식(예: gildong@univ.ac.kr).',
+        '• 참고: 해당 과목에 구독이 있어야 학생이 가입·접근할 수 있습니다(§6-3).',
+    ]
+    example_row = ['홍길동', positions[-1] if positions else '교수', example_subject, 'gildong@univ.ac.kr']
+
+    import io
+    from flask import send_file as _sf
+    fname_base = f'SlideAtlas_{inst_id}_roster_template'
+
+    if fmt == 'csv':
+        # CSV 는 시트·코멘트가 없어 안내를 머리글 위 주석으로 넣으면 재업로드 시 데이터 행으로 오인되므로,
+        #   round-trip 안전을 위해 헤더+예시 행만 출력한다(안내는 xlsx 양식이 제공).
+        import csv as _csv
+        buf = io.StringIO()
+        buf.write('﻿')   # BOM — Excel 한글 깨짐 방지
+        w = _csv.writer(buf)
+        w.writerow([_xlsx_safe(h) for h in _PORTAL_ROSTER_HEADER])
+        w.writerow([_xlsx_safe(v) for v in example_row])
+        data = buf.getvalue().encode('utf-8')
+        return _sf(io.BytesIO(data), as_attachment=True,
+                   download_name=f'{fname_base}.csv', mimetype='text/csv; charset=utf-8')
+
+    # xlsx — 활성 시트='명단'(헤더+예시, 재업로드 시 wb.active 가 이 시트), 별도 '안내' 시트.
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment
+        from openpyxl.comments import Comment
+    except ImportError:
+        return jsonify({'success': False, 'error': 'NO_OPENPYXL',
+                        'message': 'openpyxl 미설치'}), 500
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = '명단'
+    ws.append([_xlsx_safe(h) for h in _PORTAL_ROSTER_HEADER])   # row1 = 헤더(파서 자동 스킵)
+    HDR = Font(bold=True, color='FFFFFF')
+    FILL = PatternFill('solid', fgColor='1A2238')
+    for cell in ws[1]:
+        cell.font = HDR
+        cell.fill = FILL
+    ws.append([_xlsx_safe(v) for v in example_row])            # row2 = 예시(삭제 후 입력)
+    for cell in ws[2]:
+        cell.font = Font(color='888888', italic=True)
+    ws['A2'].comment = Comment('예시 행입니다. 삭제한 뒤 실제 명단을 입력하세요.', 'SlideAtlas')
+    for col, wdt in zip('ABCD', (16, 10, 12, 30)):
+        ws.column_dimensions[col].width = wdt
+
+    ws2 = wb.create_sheet('안내')
+    for line in guide_lines:
+        ws2.append([_xlsx_safe(line)])
+    ws2['A1'].font = Font(bold=True, size=13)
+    ws2.column_dimensions['A'].width = 70
+    for row in ws2.iter_rows():
+        row[0].alignment = Alignment(wrap_text=True, vertical='top')
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return _sf(buf, as_attachment=True, download_name=f'{fname_base}.xlsx',
+               mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 # 기관 포털 P2 — 구독 플랜 (읽기 전용, §9 멀티테넌시 / §0 단일 진실 / §16)
 #   포털 관리자가 자기 기관의 (기관×과목) 구독 카드·좌석 현황·과목별 배포 슬라이드 목록을 본다.

@@ -116,6 +116,7 @@
         </div>
         <div class="row" style="margin-top:14px">
           <label class="muted">엑셀/CSV 일괄 업로드 (컬럼 순서: 이름 | 지위 | 과목 | 이메일)</label>
+          <button class="act ghost" onclick="downloadTemplate()">양식 다운로드</button>
           <input type="file" id="upload-file" accept=".xlsx,.csv">
           <button class="act ghost" onclick="uploadMembers()">업로드</button>
         </div>
@@ -316,6 +317,11 @@
       var d = await r.json();
       toast(d.message || (d.success ? '제거됨' : '실패'));
       if (d.success) loadRoster();
+    }
+
+    function downloadTemplate() {
+      // GET 다운로드 — 쿠키 인증으로 충분(상태변경 아님, CSRF 불요). P2 export 버튼과 동일 패턴.
+      window.location.href = '/portal/api/roster/template?format=xlsx';
     }
 
     async function uploadMembers() {
