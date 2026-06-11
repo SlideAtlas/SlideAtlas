@@ -394,3 +394,26 @@ body{background:var(--beige)}
 .placed-order{font-family:var(--font-display) !important}
 /* ===== 화면별 콘텐츠 폭(목업 max-width 보존) ===== */
 .lms-teacher .page-wrap{max-width:960px}.lms-edit .page-wrap{max-width:920px}.lms-assistants .page-wrap{max-width:760px}.lms-dashboard .page-wrap{max-width:760px}
+
+/* ===== 학생 LMS — 수업 상세(3단계-B, docs/mockups/lms_course_detail 추출, 모노폰트 미사용) ===== */
+.hidden{display:none !important}
+.course-hero{background:var(--color-background-primary);border:1px solid var(--color-border-tertiary);border-radius:12px;padding:22px 24px;margin-bottom:18px;display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap}
+.hero-main{flex:1;min-width:0}
+.hero-name{font-size:21px;font-weight:800;font-family:var(--font-display);letter-spacing:-0.01em;margin-bottom:6px}
+.hero-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.enroll-btn{padding:9px 18px;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer;border:none;font-family:var(--font-sans);display:inline-flex;align-items:center;gap:6px;transition:all .15s;white-space:nowrap}
+.enroll-btn.unsub{background:var(--navy);color:#fff}.enroll-btn.unsub:hover{background:var(--navy-soft)}
+.enroll-btn.subbed{background:var(--sky-tint);color:var(--sky-deep);border:1px solid var(--sky)}
+.enroll-btn.subbed:hover{background:var(--color-background-danger);color:var(--color-text-danger);border-color:transparent}
+.enroll-btn i{font-size:16px}
+.slide-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px;padding:16px 18px}
+.slide-card{border:1px solid var(--color-border-tertiary);border-radius:10px;overflow:hidden;cursor:pointer;transition:all .15s;text-decoration:none;color:inherit;background:var(--color-background-primary);display:block}
+.slide-card:hover{border-color:var(--sky);box-shadow:0 4px 14px rgba(15,31,61,0.08);transform:translateY(-2px)}
+.thumb{aspect-ratio:4/3;background:linear-gradient(135deg,#E7ECF5,#D6DAE2);display:flex;align-items:center;justify-content:center;position:relative}
+.thumb i{font-size:30px;color:var(--sky-deep);opacity:0.55}
+.thumb .ph-note{position:absolute;bottom:6px;right:8px;font-size:9px;color:var(--color-text-tertiary);background:rgba(255,255,255,0.7);padding:1px 5px;border-radius:4px}
+.slide-meta{padding:10px 12px}
+.slide-title{font-size:13px;font-weight:700;margin-bottom:5px;line-height:1.35}
+.slide-sub{font-size:11.5px;color:var(--color-text-secondary);margin-bottom:7px}
+.empty-week{padding:16px 18px;font-size:12px;color:var(--color-text-warning);display:flex;align-items:center;gap:8px}
+.empty-week i{font-size:15px}

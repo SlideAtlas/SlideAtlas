@@ -219,8 +219,8 @@ def test_enroll_other_scope_404(client):
 # ── ⑥ 미등록 학생도 상세 조회 가능(수업=게이트 아님) ─────────────────────────
 
 def test_unenrolled_student_can_view_detail(client):
-    # course 존재 → 미등록(None) → weeks 없음([])
-    conn, cur = _mk_conn(fetchone=[(1, "조직학", "2026-fall", 5), None],
+    # course 존재 → 미등록(None) → weeks 없음([]) → 교수명·과목명 표시 조회(B-2 표시필드 보강)
+    conn, cur = _mk_conn(fetchone=[(1, "조직학", "2026-fall", 5), None, ("김교수",), ("조직학",)],
                          fetchall=[[]])
     with _stack(conn, _fake_auth(role="viewer", subject="HST")):
         resp = client.get("/api/courses/1")
@@ -428,11 +428,11 @@ def test_detail_excludes_undeployed_slides(client):
     #   DB 가 돌려준다(LEFT JOIN). 이 필터링된 결과를 mock 으로 재현하고, 최종 JSON 어디에도 미배포 ID 가
     #   없음을 raw 문자열·구조 양쪽으로 직접 부재 단언한다.
     rows = [
-        # (cw.id, week_number, title, empty_reason, cws.id, slide_id, display_order, title_ko, stain)
-        (10, 1, "1주차", None, 100, DEPLOYED_ID, 0, "위 점막", "H&E"),     # 배포 슬라이드(노출)
-        (20, 2, "2주차", None, None, None, None, None, None),              # UNDEPLOYED_ID 배치분이 필터돼 빈 주차
+        # (cw.id, week_number, title, empty_reason, cws.id, slide_id, display_order, title_ko, stain, organ)
+        (10, 1, "1주차", None, 100, DEPLOYED_ID, 0, "위 점막", "H&E", "위"),  # 배포 슬라이드(노출)
+        (20, 2, "2주차", None, None, None, None, None, None, None),          # UNDEPLOYED_ID 배치분이 필터돼 빈 주차
     ]
-    conn, cur = _mk_conn(fetchone=[(1, "조직학", "2026-fall", 5), None], fetchall=[rows])
+    conn, cur = _mk_conn(fetchone=[(1, "조직학", "2026-fall", 5), None, ("김교수",), ("조직학",)], fetchall=[rows])
     with _stack(conn, _fake_auth(role="viewer", subject="HST")):
         resp = client.get("/api/courses/1")
     assert resp.status_code == 200
@@ -468,9 +468,9 @@ def test_detail_relies_on_sql_filter_not_python(client):
     이 테스트는 그 사실을 명시적으로 문서화해, 위 (1) 기제 단언이 진짜 방어선임을 못박는다.
     """
     leaked = [
-        (10, 1, "1주차", None, 101, UNDEPLOYED_ID, 0, "미배포 본", "H&E"),  # 필터가 없었다면 새어나갈 행
+        (10, 1, "1주차", None, 101, UNDEPLOYED_ID, 0, "미배포 본", "H&E", "위"),  # 필터가 없었다면 새어나갈 행
     ]
-    conn, cur = _mk_conn(fetchone=[(1, "조직학", "2026-fall", 5), None], fetchall=[leaked])
+    conn, cur = _mk_conn(fetchone=[(1, "조직학", "2026-fall", 5), None, ("김교수",), ("조직학",)], fetchall=[leaked])
     with _stack(conn, _fake_auth(role="viewer", subject="HST")):
         resp = client.get("/api/courses/1")
     course = resp.get_json()["course"]

@@ -2646,7 +2646,7 @@ def api_course_detail(cid):
             #   (주차 행 자체는 유지). 일반 사용자 경로는 무조건 deployed 만(편집자 미배포 표시는 3단계).
             cur.execute(
                 """SELECT cw.id, cw.week_number, cw.title, cw.empty_reason,
-                          cws.id, cws.slide_id, cws.display_order, s.title_ko, s.stain
+                          cws.id, cws.slide_id, cws.display_order, s.title_ko, s.stain, s.organ
                      FROM course_weeks cw
                      LEFT JOIN course_week_slides cws
                             ON cws.course_week_id = cw.id
@@ -2668,9 +2668,32 @@ def api_course_detail(cid):
                     weeks[wkid]['slides'].append({
                         'link_id': r[4], 'slide_id': r[5], 'display_order': r[6],
                         'title_ko': r[7] or r[5], 'stain': r[8] or '',
+                        # organ(자유텍스트 = load_slides 'system' 표시축, §6-1) — 표시용 메타만(타일·토큰 없음).
+                        'organ': r[9] or '',
                     })
+            # 표시용 헤더 메타(교수명·과목명) — 게이트 무관 표시 필드. course[3]=professor_user_id.
+            professor_name = ''
+            if course[3] is not None:
+                cur.execute(
+                    """SELECT COALESCE(r.name, '')
+                         FROM users u
+                         LEFT JOIN institution_rosters r
+                           ON lower(r.email) = lower(u.email)
+                          AND r.institution_id = u.institution_id
+                          AND r.subject_code = u.subject_code
+                        WHERE u.id = %s""",
+                    (course[3],),
+                )
+                prow = cur.fetchone()
+                professor_name = (prow[0] if prow else '') or ''
+            cur.execute("SELECT COALESCE(name_ko, %s) FROM subject_codes WHERE code = %s",
+                        (g.subject_code, g.subject_code))
+            srow = cur.fetchone()
+            subject_name = (srow[0] if srow else g.subject_code) or ''
         return jsonify({'success': True, 'course': {
             'id': course[0], 'title': course[1] or '', 'semester': course[2] or '',
+            'professor_name': professor_name, 'subject_code': g.subject_code,
+            'subject_name': subject_name,
             'enrolled': enrolled, 'weeks': [weeks[w] for w in order],
         }})
     finally:
@@ -2865,6 +2888,65 @@ def teacher_course_dashboard_page(cid):
         return _lms_403_page()
     return render_template('course_dashboard.html', cid=cid, active_tab='dashboard',
                            role_in_course=role, subject_code=g.subject_code)
+
+
+# ── 학생 LMS 페이지 라우트 (3단계-B) ──────────────────────────────────────────
+#   HTML 셸만 렌더 — 데이터·권한 판정은 프론트가 기존 학생 API(GET /api/courses/<cid>,
+#   enroll POST/DELETE)를 interceptor.js(CSRF)로 호출해 받는다. 새 권한 경로 없음.
+#   수업은 게이트가 아니다(§21-6): 미등록 학생도 상세 열람 가능, 뷰어 진입은 단일 게이트가 최종 판정.
+
+@app.route('/course/<int:cid>')
+@page_login_required
+def course_detail_page(cid):
+    """학생 수업 상세 — 로그인 사용자 누구나 셸 렌더(scope·존재는 GET /api/courses/<cid>가 판정).
+
+    admin-only(콘텐츠 비소비자, 좌석 0·subject 없음)는 학생 수업 화면 대신 포털로(홈과 동일 기준 §6-4).
+    """
+    if g.role == 'admin' and g.subject_code is None:
+        return redirect('/portal')
+    return render_template('course.html', cid=cid)
+
+
+@app.route('/mypage')
+@page_login_required
+def mypage():
+    """마이페이지 — 프로필(읽기전용)·비밀번호 변경·즐겨찾기·최근 열람 기록(§21-8).
+
+    프로필은 서버 렌더 컨텍스트로 전달(읽기전용). 즐겨찾기·기록은 프론트가 GET /api/favorites·
+    /api/me/history 를 호출(둘 다 g.user_id scope 강제 — 본인 것만, IDOR 차단).
+    """
+    display_name, subject_name, institution_name, position = '', '', '', ''
+    email = ''
+    conn = get_db_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT u.email, COALESCE(r.name, ''), u.position,
+                          COALESCE(i.name_ko, u.institution_id, ''),
+                          COALESCE(sc.name_ko, u.subject_code, '')
+                     FROM users u
+                     LEFT JOIN institution_rosters r
+                       ON lower(r.email) = lower(u.email)
+                      AND r.institution_id = u.institution_id
+                      AND r.subject_code = u.subject_code
+                     LEFT JOIN institutions i ON i.id = u.institution_id
+                     LEFT JOIN subject_codes sc ON sc.code = u.subject_code
+                    WHERE u.id = %s""",
+                (g.user_id,),
+            )
+            row = cur.fetchone()
+            if row:
+                email = row[0] or ''
+                display_name = row[1] or ''
+                position = row[2] or ''
+                institution_name = row[3] or ''
+                subject_name = row[4] or ''
+    finally:
+        release_db_conn(conn)
+    return render_template('mypage.html',
+        display_name=display_name, email=email, position=position,
+        institution_name=institution_name, subject_name=subject_name,
+    )
 
 
 @app.route('/api/chat', methods=['POST'])

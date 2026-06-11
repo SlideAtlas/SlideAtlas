@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SlideAtlas — 수업</title>
+<script src="/static/js/interceptor.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/lms.css">
+</head>
+<body class="lms-course">
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<div class="topbar">
+  <a class="tb-logo-wrap" href="/home"><img class="tb-logo-img" src="/static/SlideAtlas_Navy_Hor_small.png" alt="SlideAtlas"></a>
+  <a class="tb-back" href="/home"><i class="ti ti-chevron-right" aria-hidden="true" style="transform:rotate(180deg)"></i>홈</a>
+  <div class="tb-right">
+    <a class="tb-link" href="/mypage"><i class="ti ti-user" aria-hidden="true"></i>마이페이지</a>
+    <a class="tb-link" id="btn-logout" onclick="doLogout()"><i class="ti ti-logout" aria-hidden="true"></i>로그아웃</a>
+  </div>
+</div>
+
+<div class="page-wrap">
+  <div class="course-hero">
+    <div class="hero-main">
+      <div class="hero-name" id="hero-name">불러오는 중…</div>
+      <div class="hero-meta" id="hero-meta"></div>
+    </div>
+    <button class="enroll-btn unsub hidden" id="enrollBtn" onclick="toggleEnroll()"></button>
+  </div>
+  <div id="weeks"></div>
+</div>
+
+<script>
+var CID = {{ cid|tojson }};
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+var toastTimer;
+function showToast(m){var t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(function(){t.classList.remove('show');},2600);}
+
+var courseState = { enrolled: false, busy: false };
+
+function stainClass(stain){
+  var s = (stain || '').toUpperCase();
+  if (s.indexOf('H&E') !== -1 || s === 'HE') return 'stain-he';
+  if (s.indexOf('PAS') !== -1) return 'stain-pas';
+  return 'stain-mt';
+}
+
+function renderEnroll(){
+  var btn = document.getElementById('enrollBtn');
+  btn.classList.remove('hidden');
+  if (courseState.enrolled){
+    btn.className = 'enroll-btn subbed';
+    btn.innerHTML = '<i class="ti ti-check" aria-hidden="true"></i>수강 중 · 해지';
+  } else {
+    btn.className = 'enroll-btn unsub';
+    btn.innerHTML = '<i class="ti ti-plus" aria-hidden="true"></i>등록하기';
+  }
+}
+
+function slideCardHTML(s){
+  // 썸네일은 1차 사양서(목업)대로 플레이스홀더 — 타일 토큰 발급 없이 게이트와 무관한 표시만(§8).
+  // 카드 클릭 → /viewer/<id>: 단일 게이트(_slide_access_allowed)가 최종 판정(수업≠게이트, §21-6).
+  var sub = esc(s.slide_id) + (s.organ ? ' · ' + esc(s.organ) : '');
+  var stainBadge = s.stain ? '<span class="stain-badge ' + stainClass(s.stain) + '">' + esc(s.stain) + '</span>' : '';
+  return '<a class="slide-card" href="/viewer/' + encodeURIComponent(s.slide_id) + '">'
+    + '<div class="thumb"><i class="ti ti-microscope" aria-hidden="true"></i><span class="ph-note">썸네일</span></div>'
+    + '<div class="slide-meta"><div class="slide-title">' + esc(s.title_ko || s.slide_id) + '</div>'
+    + '<div class="slide-sub">' + sub + '</div>' + stainBadge + '</div></a>';
+}
+
+function weekHTML(w){
+  var count = (w.slides || []).length;
+  var body;
+  if (count){
+    body = '<div class="slide-grid">' + w.slides.map(slideCardHTML).join('') + '</div>';
+  } else {
+    var reason = w.empty_reason ? esc(w.empty_reason) : '아직 슬라이드가 배치되지 않았습니다.';
+    body = '<div class="empty-week"><i class="ti ti-shield" aria-hidden="true"></i>' + reason + '</div>';
+  }
+  var title = (w.week_number != null ? w.week_number + '주차' : '주차') + (w.title ? ' · ' + esc(w.title) : '');
+  return '<div class="section-card week-block">'
+    + '<div class="card-header week-head" onclick="toggleWeek(this)">'
+    + '<div class="card-title"><i class="ti ti-chevron-right week-chev" aria-hidden="true"></i>' + title + '</div>'
+    + '<span class="week-count">' + count + '개 슬라이드</span></div>'
+    + '<div class="week-body">' + body + '</div></div>';
+}
+
+function toggleWeek(head){ head.parentElement.classList.toggle('open'); }
+
+function renderCourse(c){
+  document.getElementById('hero-name').textContent = c.title || '제목 없는 수업';
+  var meta = [];
+  if (c.professor_name) meta.push(esc(c.professor_name) + ' 교수');
+  if (c.semester) meta.push(esc(c.semester));
+  if (c.subject_name) meta.push(esc(c.subject_name));
+  document.getElementById('hero-meta').innerHTML = meta.join('<span class="dot"> · </span>');
+  courseState.enrolled = !!c.enrolled;
+  renderEnroll();
+  var weeks = c.weeks || [];
+  document.getElementById('weeks').innerHTML = weeks.length
+    ? weeks.map(weekHTML).join('')
+    : '<div class="section-card"><div class="empty-week" style="margin:0"><i class="ti ti-shield" aria-hidden="true"></i>아직 주차가 구성되지 않았습니다.</div></div>';
+}
+
+async function loadCourse(){
+  try {
+    var r = await fetch('/api/courses/' + encodeURIComponent(CID));
+    var d = await r.json();
+    if (r.ok && d.success){ renderCourse(d.course); return; }
+    document.getElementById('hero-name').textContent = '수업을 찾을 수 없습니다';
+    document.getElementById('hero-meta').innerHTML = '<a class="tb-back" href="/home" style="padding-left:0">← 학습 홈으로</a>';
+  } catch (e){
+    document.getElementById('hero-name').textContent = '수업을 불러오지 못했습니다';
+  }
+}
+
+async function toggleEnroll(){
+  if (courseState.busy) return;
+  courseState.busy = true;
+  var btn = document.getElementById('enrollBtn');
+  btn.disabled = true;
+  var method = courseState.enrolled ? 'DELETE' : 'POST';
+  try {
+    var r = await fetch('/api/courses/' + encodeURIComponent(CID) + '/enroll', { method: method });
+    var d = await r.json();
+    if (r.ok && d.success){
+      courseState.enrolled = !courseState.enrolled;
+      renderEnroll();
+      showToast(courseState.enrolled ? '수강 등록되었습니다' : '수강을 해지했습니다');
+    } else {
+      showToast(d.message || '처리에 실패했습니다');
+    }
+  } catch (e){ showToast('네트워크 오류'); }
+  btn.disabled = false;
+  courseState.busy = false;
+}
+
+async function doLogout(){
+  var btn = document.getElementById('btn-logout');
+  if (btn) btn.style.pointerEvents = 'none';
+  try { await fetch('/api/auth/logout', { method: 'POST' }); } catch (e) {}
+  location.href = '/login';
+}
+
+loadCourse();
+</script>
+</body>
+</html>

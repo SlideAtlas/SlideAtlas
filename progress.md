@@ -686,3 +686,11 @@ python3 run_tests.py
 ### [B-1] 홈 수업 탭 — ✅
 - `templates/home.html` 수업 탭 placeholder → 실제 UI. 3단: 학기 칩(`#sem-chips`, 등록+개설 학기 union·textContent로만 채워 XSS 방어) → 내 수업(`GET /api/courses/enrolled`) → 이번 학기 개설 수업(`GET /api/courses/available`, `enrolled` 플래그 시 '등록됨' 뱃지). 카드 클릭 → `/course/<id>`.
 - 최초 수업 탭 진입 시 1회 lazy load(`loadCourseTab`), 학기 칩 클릭 클라이언트 필터. **전체 탭 무변경**(기존 슬라이드 그리드·필터 그대로). 기존 API만 호출 — 새 라우트·권한 경로 없음. home.html 자체 디자인(SUIT/teal) 유지(이미 배포된 셸).
+
+### [B-2] 수업 상세 — ✅
+- 라우트 `GET /course/<cid>`(@page_login_required; admin-only[role=admin·subject 없음]→/portal). 템플릿 `templates/course.html`(lms.css + 3단계-A topbar 컴포넌트 재사용). 셸만 렌더 — scope·존재는 `GET /api/courses/<cid>`가 판정(수업≠게이트 §21-6, 미등록도 열람).
+- `api_course_detail` 표시필드 보강(권한/scope·deployed 필터 로직 **무수정**, 게이트 무관 표시필드만): 슬라이드 `organ`(s.organ = load_slides 'system' 자유텍스트 표시축 §6-1) + course `professor_name`(roster.name)·`subject_name`(subject_codes.name_ko). 타일·토큰 미발급.
+- 프론트: hero(수업명·교수명·학기·과목)+등록 토글(POST/DELETE `/api/courses/<cid>/enroll`), 주차 아코디언(기본 접힘, 제목+슬라이드 수), 슬라이드 카드(목업대로 마이크로스코프 플레이스홀더 썸네일 — 타일토큰 없이 게이트 무관 표시, 클릭→`/viewer/<id>`는 단일 게이트가 최종 판정). esc() XSS.
+- ★ 썸네일 결정: 1차 사양서(목업)가 `/thumbnail/<id>` 실이미지가 아니라 아이콘 플레이스홀더를 렌더 + "게이트 무관 표시 필드만" 원칙(실썸네일 URL은 타일토큰=게이트 발급 필요) → 목업대로 플레이스홀더 채택(기존 home '전체' 탭과 동일 패턴). 실썸네일 필요 시 추후 게이트 통과 슬라이드 한정 토큰 발급으로 확장 가능.
+- lms.css 추가(course-hero·hero-main/meta·enroll-btn·slide-grid/card·thumb·ph-note·slide-meta/title/sub·empty-week + generic `.hidden`). 모노폰트 미사용(목업 var(--font-mono) 드롭).
+- 테스트 보정: api_course_detail 표시필드 보강으로 query 2개·컬럼 1개 추가 → test_lms.py 상세 3건 mock shape 갱신(organ 10번째 컬럼 + 교수명/과목명 fetchone). 신규 `tests/test_lms_student_pages.py`(페이지 인증/admin리다이렉트/viewer 200 + 표시필드 보강·토큰 미누출).
