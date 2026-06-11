@@ -16,6 +16,8 @@
                         border: 1px solid rgba(255,255,255,.4); border-radius: 6px;
                         padding: 7px 14px; white-space: nowrap; }
     header .to-slides:hover { background: rgba(255,255,255,.12); }
+    header .head-actions { display: flex; align-items: center; gap: 8px; }
+    header .logout-btn { background: transparent; cursor: pointer; font-family: inherit; }
     .tabs { display: flex; gap: 4px; background: #fff; padding: 0 28px; border-bottom: 1px solid #e3e6ec; }
     .tabs button { border: none; background: none; padding: 14px 18px; font-size: 14px;
                    cursor: pointer; color: #5a6478; border-bottom: 2px solid transparent; }
@@ -88,7 +90,10 @@
       <h1>기관 관리자 포털</h1>
       <div class="inst">{{ institution_name }} ({{ institution_id }})</div>
     </div>
-    {% if has_slides %}<a class="to-slides" href="/slides">슬라이드 보기 →</a>{% endif %}
+    <div class="head-actions">
+      {% if has_slides %}<a class="to-slides" href="/slides">슬라이드 보기 →</a>{% endif %}
+      <button type="button" class="to-slides logout-btn" id="btn-logout" onclick="doLogout()">로그아웃</button>
+    </div>
   </header>
   <nav class="tabs">
     <button class="on" data-tab="roster">명단 관리</button>
@@ -603,6 +608,16 @@
         if (b.dataset.tab === 'report' && !repLoaded) { repLoaded = true; loadReport(); }
       });
     });
+
+    // ── 로그아웃 ── 학생/교수 화면과 동일: interceptor 경유(CSRF 자동) POST → /login 이동.
+    async function doLogout() {
+      var btn = document.getElementById('btn-logout');
+      if (btn) btn.disabled = true;
+      try {
+        await fetch('/api/auth/logout', { method: 'POST' });
+      } catch (e) { /* 네트워크 실패해도 로그인 페이지로 보낸다 */ }
+      location.href = '/login';
+    }
 
     loadRoster();
   </script>
