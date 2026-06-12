@@ -771,7 +771,8 @@ small {{ color:rgba(255,255,255,0.25); font-size:12px; margin-top:8px; display:b
     title_en = slide_info.get("title_en", "")
     system = slide_info.get("system", "")
     stain = slide_info.get("stain", "H&E")
-    mpp = slide_info.get("mpp") or 0.25
+    # MPP 없으면 None 유지 — 임의 기본값(0.25 등) 금지(§4-1·§4-5). 프론트가 배율 비활성+'배율 정보 없음' 처리.
+    mpp = slide_info.get("mpp")
 
     # 타일 접근 토큰 발급 (TTL 5분, §8 Presigned URL)
     from flask import g as _g

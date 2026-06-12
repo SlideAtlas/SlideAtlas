@@ -430,7 +430,7 @@ var SLIDE_STAIN     = {{ stain | tojson }};
 var SLIDE_SYSTEM    = {{ system | tojson }};
 var SLIDE_W         = {{ W }};
 var SLIDE_H         = {{ H }};
-var SLIDE_MPP       = {{ mpp }};
+var SLIDE_MPP       = {{ mpp | tojson }};  // MPP 없으면 null — 임의 기본값 금지(§4-1)
 var TILE_SOURCE_URL = {{ tile_source_url | tojson }};
 var THUMBNAIL_URL   = {{ thumbnail_url | tojson }};
 // [2-2#2] 타일 토큰(TTL 5분) — 만료 시 재발급해 끊김 없이 갱신. 초기값은 tileSource URL에서 추출.
@@ -478,6 +478,18 @@ var osd = OpenSeadragon({
 osd.addHandler('zoom', updViewer);
 osd.addHandler('open', function() { osd.viewport.goHome(true); setTimeout(updViewer, 400); });
 
+// MPP 없음(§4-1·§4-5): 절대 배율 버튼(1×~40×) 비활성. 상대 줌(+/−·전체)은 유지.
+(function applyNoMppUI() {
+  if (SLIDE_MPP) return;
+  document.querySelectorAll('#toolbar button.mb').forEach(function(b){
+    var oc = b.getAttribute('onclick') || '';
+    if (oc.indexOf('sm(') === 0) {
+      b.disabled = true; b.style.opacity = '0.4'; b.style.cursor = 'not-allowed';
+      b.title = '배율 정보 없음';
+    }
+  });
+})();
+
 // ── [2-2#2] 타일 토큰 5분 만료 대응: 끊김 없는 재발급 ──
 // 타일 URL은 매 요청 시 getTileUrl로 생성되므로, getTileUrl이 CURRENT_TILE_TOKEN(가변)을
 // 붙이도록 패치하면 토큰 갱신 시 새 타일이 자동으로 새 토큰을 사용한다(이미 로드된 타일은 캐시 유지).
@@ -523,6 +535,16 @@ osd.addHandler('tile-load-failed', function() {
 // ── 뷰어 상태 업데이트 (배율 · 스케일 · 헤더) ──
 function updViewer() {
   try {
+    // MPP 없음(§4-1·§4-5): 절대 배율·스케일 산출 불가 → 임의 기본값으로 채우지 않고 '배율 정보 없음' 표시.
+    if (!SLIDE_MPP) {
+      ['md','hdr-mag','mag-badge'].forEach(function(id){
+        var el = document.getElementById(id); if (el) el.textContent = '배율 정보 없음';
+      });
+      var ctx = document.getElementById('ctx-label');
+      if (ctx) ctx.textContent = SLIDE_TITLE + ' · 배율 정보 없음';
+      var sc0 = document.getElementById('scale'); if (sc0) sc0.textContent = '— (배율 정보 없음)';
+      return;
+    }
     var vw  = osd.viewport.getBounds().width;
     var cw  = osd.container ? osd.container.clientWidth : 1000;
     var umPerPx = vw * SLIDE_W * SLIDE_MPP / cw;
@@ -552,6 +574,7 @@ function fit() { osd.viewport.goHome(false); setTimeout(updViewer,200); }
 function zi()  { osd.viewport.zoomBy(1/1.8); setTimeout(updViewer,100); }
 function zo()  { osd.viewport.zoomBy(1.8);   setTimeout(updViewer,100); }
 function sm(m) {
+  if (!SLIDE_MPP) return;  // MPP 없으면 절대 배율 이동 불가(§4-1)
   var cw = osd.container ? osd.container.clientWidth : 1000;
   var targetVW = (0.25*40/m) * cw / (SLIDE_W * SLIDE_MPP);
   osd.viewport.zoomTo(1 / targetVW);
