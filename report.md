@@ -1,67 +1,49 @@
-# home.html 전면 정리 보고서 — 브랜드 navy/sky 전환 + 사이드바 필터 + /slides 은퇴
+# portal.html 디자인 토큰 전환 보고서 — system-ui/#1a2238 → 브랜드 navy/sky
 
-> 작성: 2026-06-13 · 작업: claude · **백엔드(server_render.py) 무수정 — templates만 수정**
-> 범위: `templates/home.html`(전면 재스킨·레이아웃), `templates/base.html`·`templates/portal.html`(링크 1줄씩)
+> 작성: 2026-06-13 · 작업: claude · **레이아웃·HTML·JS·로직 무수정 — `<head>`(색·폰트·컴포넌트 스킨)만 교체**
+> 범위: `templates/portal.html` 1파일. 라이브 상단탭 레이아웃 유지(목업 사이드바로 되돌리지 않음).
 
 ## 변경 요약 (git diff --stat)
 ```
-templates/base.html     |   2 +-
-templates/home.html     | 285 +++++++++++++++++----------------
-templates/portal.html   |   2 +-
-3 files changed, 193 insertions(+), 96 deletions(-)
+templates/portal.html | 96 +++++++++++++++++------------------
+1 file changed, 52 insertions(+), 44 deletions(-)
 ```
+- **모든 diff 헝크가 `<head>` 영역(7~89행)에 한정.** `<body>`~`</html>`(마크업+`<script>` 전체)는 **HEAD와 바이트 동일**(`diff` 검증 IDENTICAL).
 
-## 변경 1 — 디자인 토큰 통일 (초록 → navy/sky)
-- `<head>`: DM Mono `<link>` + SUIT `@import` 제거 → **Montserrat + Noto Sans KR** Google Fonts + `preconnect` 추가, `/static/css/lms.css` 링크 추가.
-- `<style>`의 모든 색을 lms.css 변수로 치환:
-  · 초록(#2A9D8F·#1D9E75·#5DCAA5·rgba(42,157,143,*)·rgba(29,158,117,*)) → `var(--sky)`/`var(--sky-deep)` (강조·링크·badge·hover 보더)
-  · 배경 #F7F4EF → `var(--beige)`, 카드 흰색 → `var(--color-background-primary)`
-  · 텍스트 #0F1F3D/#6B6560/#9B9490 → `--color-text-primary`/`secondary`/`tertiary`
-  · 경계 #E5E0D8/#D8D3CA → `--color-border-tertiary`/`--color-border-secondary`
-  · nav·footer 배경 navy 유지 = `var(--navy)`
-- 폰트: body=`var(--font-sans)`, ID/뱃지/배율=`var(--font-mono)`, 제목=`var(--font-display)`(Montserrat).
-- **검증: 초록 헥스/rgba·DM Mono·SUIT·#F7F4EF grep 0건.**
+## 변경 내용
+1. **`<head>`**: `lms.css` 링크 + Montserrat·Noto Sans KR Google Fonts(+preconnect 2줄) 추가. 인라인 `<style>`은 공통 리셋/토큰/폰트(lms.css 제공)는 재정의하지 않고 **portal 고유 컴포넌트 스타일만** 남겨 색·폰트만 토큰으로 치환.
+2. **색 치환** (초록·#1a2238·system-ui 완전 제거):
+   - `#1a2238` → `var(--navy)`, hover `#2a3656` → `var(--navy-soft)`
+   - 배경 `#f5f6f8` → `var(--beige)`, 카드 흰색 → `var(--color-background-primary)`
+   - 텍스트 `#1a2238/#5a6478/#7a8294` → `--color-text-primary/secondary/tertiary`
+   - 경계 `#e3e6ec/#cdd2dc/#eef0f4` → `--color-border-tertiary/secondary`
+   - 배지: `.ok`→sky-tint/sky-deep(active), `.wait`→`#F1EFE8/#5F5E5A`(pending), `.exp`→`--color-background-danger/--color-text-danger`, `.up`→`#E6F1FB/#0C447C`(student blue) — 모두 lms.css 기존 값
+   - 좌석바: 정상 `#1c7a4d`(초록) → `var(--sky)`, 초과 `.warn` `#c0392b` → `var(--color-text-danger)`
+   - 차트 막대 `#1a2238` → `var(--navy)`, 게이지/좌석 정상 → `var(--sky)`
+   - 탭 active 밑줄 → `var(--sky)`(글자=`var(--navy)`)
+3. **폰트**: body `system-ui`(BlinkMacSystemFont…) → `var(--font-sans)`. KPI 숫자 `.k-val` → `var(--font-display)`(Montserrat). 입력/버튼/탭/세그먼트에 `font-family:var(--font-sans)` 명시.
+4. **버튼**: `button.act`=navy/white(hover navy-soft), `button.ghost`=흰 배경+border-secondary(hover bg-secondary 추가). 클래스명·구조는 그대로 두고 색만 매핑(HTML 무수정 원칙 — lms `.btn` 클래스로 교체하면 마크업 변경이라 동일 톤 재현 방식 채택).
+5. 추가 보강(스킨 한정): `input:focus/select:focus` 보더 `var(--sky)`, `button.ghost:hover`.
 
-## 변경 2 — 전체 탭(#tab-all) 사이드바형 2단 레이아웃
-- `.all-layout`(grid 220px + 1fr) = 좌측 `.filter-sidebar`(sticky) + 우측 `.all-main`(검색 + 결과 수 + 그리드).
-- 사이드바 두 그룹:
-  · **계통(System)**: `{{ organs }}`(서버 정식 계통 목록)로 체크박스 server-render.
-  · **염색(Stain)**: 렌더된 카드 `data-stain` 고유값에서 **DOM 기반 동적 생성**(서버 무변경, `buildStainFilters()`, textContent로 XSS 방어).
-  · 각 그룹 다중 선택, 그룹 내 OR·그룹 간 AND·검색어와 AND. 빈 그룹은 전체 통과.
-- 카드 그리드 `.slides-grid` 반응형 `minmax(220px,1fr)` 유지, lms.css 톤(흰 카드 + `--color-border-tertiary` 보더 + hover 시 `--sky` 보더·상승).
-- 카드에 `data-stain="{{ s.get('stain','') }}"` 추가(`data-organ`·`data-search` 유지).
-- 모바일(<720px): 사이드바 단일 컬럼·static.
+## 충돌 회피 (중요)
+- lms.css가 **bare `table/th/td/body`** 를 스타일(`td{padding:0}` 등). 인라인 `<style>`이 lms.css `<link>` **뒤**에 오므로 동일 specificity에서 portal 규칙이 승리 → portal의 표/카드/배지 규칙을 **삭제하지 않고 recolor만** 해 레이아웃 회귀(예: td padding 0 됨)를 방지.
+- portal `#toast`(ID)는 lms `.toast`(class)와 무충돌. `select` bare는 lms가 미스타일이라 충돌 없음.
 
-## 변경 3 — 필터 JS 확장
-- 상단 계통 드롭다운(`#organ-select`) 제거. `applyFilter()`를 사이드바 체크박스 기반으로 재작성(검색어 + 계통 OR + 염색 OR, AND 결합).
-- `checkedValues(group)`·`fillOrganCounts()`(계통 개수)·`buildStainFilters()`(염색 생성) 추가. `DOMContentLoaded`에서 개수 채움 + 염색 목록 생성.
-- 표시 개수(`#visible-count`)·결과 0건 `#no-result` 안내 유지. 체크박스 onchange/검색창 oninput → applyFilter.
-
-## 변경 4 — 카드 썸네일 통일
-- stain별 분홍/파랑 그라데이션(thumb-he 등) 제거 → lms.css `.fav-thumb`/`.placed-thumb` 패턴(navy-tint→border 그라데이션 + 가운데 `<i class="ti ti-microscope">`)으로 교체(course/mypage 카드와 동일).
-- 염색 구분은 썸네일 색이 아니라 **stain 뱃지**: `stain-badge` + `stain-he`/`stain-pas`/`stain-mt`(매핑: he→he, pas→pas, masson·silver→mt). "AVAILABLE / WSI·40×" 라벨 유지, 색만 브랜드로.
-
-## 변경 5 — /slides 은퇴 (링크 정리만)
-- `base.html`: '슬라이드 열람' → `navRequireLogin(event, '/home', '/login?next=/home')`.
-- `portal.html`: 헤더 '슬라이드 보기 →' `href="/slides"` → `/home`.
-- slides.html 파일·/slides 라우트는 미수정(링크만 끊음).
-- **검증: base/portal에 `/slides` 링크 0건**(`/portal/api/plans/slides`는 별개 API라 제외).
-
-## 절대 불변 확인 (전수 grep + 렌더)
-- `showTab`/`loadCourseTab`/`buildChips`/`renderCourseLists`/`courseCardHTML`/`doLogout`/`esc()` **JS 본문 그대로**(applyFilter만 사양대로 재작성, 헬퍼 신규 추가).
-- fetch 경로(`/api/courses/enrolled`·`/api/courses/available`·`/api/auth/logout`)·interceptor.js 로드 유지.
-- 수업 탭(#tab-course) 마크업·동작 그대로(색/폰트만 스킨).
-- Jinja 변수/블록 전부 보존: `{{ display_name }}`·`{{ subject_name }}`·`{{ is_teacher }}`·`{{ is_admin }}`·`{{ total }}`·`{{ organs }}`·`{% for s in slides %}`·`/viewer/{{ s.id }}`·`stain_class`·교수/admin 버튼 분기.
-- nav(navy)·탭 토글 동작 유지.
+## 절대 불변 확인 (전수 검증)
+- `<body>`+`<script>` **HEAD와 바이트 동일** (`diff` IDENTICAL).
+- 잠금 함수 18종(loadRoster·renderMembers·renderAdmins·addMember·delMember·uploadMembers·downloadTemplate·onWorkSubjectChange·fillSubjectSelects·loadPlans·renderPlans·selectPlanSubject·renderPlanSlides·exportSlides·loadReport·renderReport·doLogout·esc) 전수 present.
+- fetch 경로 전수 present(/portal/api/roster GET·POST·DELETE·/upload·/template, /plans·/plans/slides·/export, /report·/report/export, /api/auth/logout).
+- `data-tab="roster|plan|report"`·member-tbody 위임·work-subject 컨텍스트·toast 동작 그대로.
+- Jinja `{{ institution_name }}`·`{{ institution_id }}`·`{% if has_slides %}` 보존.
 
 ## 검증 결과
 | 항목 | 결과 |
 |------|------|
-| 초록 헥스/rgba grep (home.html) | **0건** |
-| base/portal `/slides` 링크 | **0건** |
-| Jinja parse (home/base/portal) | **OK** |
-| 렌더 스모크(샘플 3~4종) | data-stain·stain-badge·organ 체크박스·microscope 정상, green leftover 0 |
-| 뱃지 매핑 | H&E→he, PAS→pas, Masson→mt, Silver→mt ✓ |
-| 잠금 함수/fetch/Jinja 변수 | 전수 present ✓ |
+| 초록·#1a2238·system-ui·옛 헥스 grep | **0건** |
+| lms.css + 폰트 링크 | present(5 매치) |
+| body/script vs HEAD | **IDENTICAL** |
+| 잠금 함수·fetch·data-tab·Jinja | 전수 present |
+| Jinja parse | OK |
+| 렌더 스모크(샘플 vars) | len 31310, navy/sky 토큰 적용, green leftover 0, has_slides 블록·탭 3개 정상 |
 
-> 남은 확인(브라우저 실측 권장): 전체 탭에서 계통·염색 체크박스가 그리드를 실제로 거르고 검색과 동시 작동·결과 수 갱신, 수업 탭 정상, /home↔/viewer 이동. (정적 렌더·grep·Jinja 파스까지 통과, 실서버 기동 미수행.)
+> 남은 확인(브라우저 실측 권장): 3개 탭 전환, 명단 추가/삭제(tbody 위임), 과목 컨텍스트(work-subject), 플랜·리포트 지연 로드. (정적 렌더·grep·Jinja 파스·바이트 diff까지 통과, 실서버 기동 미수행.)
