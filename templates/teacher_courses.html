@@ -31,6 +31,7 @@
   <a class="tb-logo-wrap" href="/home"><img class="tb-logo-img" src="/static/SlideAtlas_Navy_Hor_small.png" alt="SlideAtlas"></a>
   <a class="tb-back" href="/home"><i class="ti ti-photo"></i>슬라이드 열람</a>
   <div class="tb-right">
+    {% if is_admin %}<a class="tb-link" href="/portal"><i class="ti ti-shield"></i>관리자 포털</a>{% endif %}
     <a class="tb-link" href="/mypage"><i class="ti ti-user"></i>마이페이지</a>
     <a class="tb-link" id="btn-logout" onclick="doLogout()"><i class="ti ti-logout"></i>로그아웃</a>
   </div>

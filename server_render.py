@@ -3168,7 +3168,10 @@ def teacher_courses_page():
         release_db_conn(conn)
     if pos not in ('교수', '조교'):
         return redirect('/home')
-    return render_template('teacher_courses.html', is_professor=(pos == '교수'))
+    # [admin 겸직 진입점] 상단바 '관리자 포털' 버튼 노출 여부 — /home(L862)과 '동일한 호출'
+    #   _is_institution_admin(=__ADMIN__ roster 행 존재, §9)로 판정. 새 판정 로직·role 단독 우회 없음.
+    is_admin = _is_institution_admin(g.user_id, g.institution_id)
+    return render_template('teacher_courses.html', is_professor=(pos == '교수'), is_admin=is_admin)
 
 
 @app.route('/teacher/course/<int:cid>')
