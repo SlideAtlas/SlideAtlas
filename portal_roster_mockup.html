@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SlideAtlas · 명단 관리 재배치 시안</title>
+<style>
+/* ===== Tabler Icons 인라인 서브셋 (lms.css에서 복사 · CDN 의존 0) ===== */
+@font-face{font-family:"tabler-icons";font-style:normal;font-weight:400;src:url("data:font/woff2;base64,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") format("woff2")}
+.ti{font-family:"tabler-icons"!important;speak:none;font-style:normal;font-weight:400;font-variant:normal;text-transform:none;line-height:1;display:inline-block;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+.ti-chart-bar:before{content:"\ea59"}
+.ti-check:before{content:"\ea5e"}
+.ti-chevron-right:before{content:"\ea61"}
+.ti-credit-card:before{content:"\ea84"}
+.ti-download:before{content:"\ea96"}
+.ti-edit:before{content:"\ea98"}
+.ti-external-link:before{content:"\ea99"}
+.ti-eye:before{content:"\ea9a"}
+.ti-file-spreadsheet:before{content:"\f03e"}
+.ti-file-type-pdf:before{content:"\fb10"}
+.ti-logout:before{content:"\eba8"}
+.ti-microscope:before{content:"\ef64"}
+.ti-plus:before{content:"\eb0b"}
+.ti-plus-circle:before{content:"\ea69"}
+.ti-robot:before{content:"\f00b"}
+.ti-search:before{content:"\eb1c"}
+.ti-shield:before{content:"\eb24"}
+.ti-table-export:before{content:"\eef8"}
+.ti-trash:before{content:"\eb41"}
+.ti-trophy:before{content:"\eb45"}
+.ti-upload:before{content:"\eb47"}
+.ti-user:before{content:"\eb4d"}
+.ti-user-check:before{content:"\eb49"}
+.ti-users:before{content:"\ebf2"}
+.ti-users-group:before{content:"\fa21"}
+/* ===== 디자인 토큰 (lms.css :root 복사) ===== */
+:root{
+  /* ── 타이포 ── */
+  --font-sans:'Noto Sans KR',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --font-display:'Montserrat','Noto Sans KR',sans-serif;
+  --font-mono:ui-monospace,'SF Mono','Cascadia Code',Consolas,monospace;
+
+  /* ── 브랜드 (수퍼관리자 디자인 시스템과 동일) ── */
+  --navy:#0F1F3D;            /* 주 배경·텍스트·기본 버튼 */
+  --navy-soft:#1B2E4F;       /* 네이비 버튼 hover */
+  --navy-tint:#E7ECF5;       /* 네이비 계열 옅은 배경 */
+  --sky:#5BB8D4;             /* 강조·active·게이지·링크 */
+  --sky-deep:#2C7E99;        /* 흰 배경 위 텍스트/아이콘용 (대비 확보) */
+  --sky-tint:#EAF6FA;        /* 옅은 스카이 배경 */
+  --beige:#FAF8F5;           /* 페이지 배경 */
+
+  /* ── 표면 (아티팩트 테마 변수명 → 브랜드 값으로 자체 정의) ── */
+  --color-background-primary:#FFFFFF;
+  --color-background-secondary:#F4F1EC;
+  --color-background-tertiary:#FAF8F5;
+  /* ── 텍스트 ── */
+  --color-text-primary:#0F1F3D;
+  --color-text-secondary:#3D4A63;
+  --color-text-tertiary:#8A91A0;
+  /* ── 경계선 ── */
+  --color-border-secondary:#D6DAE2;
+  --color-border-tertiary:#EAE7E1;
+  /* ── 상태 ── */
+  --color-background-warning:#FDF4E3;
+  --color-border-warning:#F0DCB0;
+  --color-text-warning:#8A5A0B;
+  --color-background-danger:#FBEAEA;
+  --color-text-danger:#C0392B;
+}
+/* ===== 시안 전용 컴포넌트 ===== */
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font-sans);background:var(--beige);color:var(--color-text-primary)}
+.portal{display:flex;min-height:100vh}
+
+/* 사이드바 */
+.sidebar{width:150px;flex-shrink:0;background:var(--navy);padding:18px 0;display:flex;flex-direction:column}
+.sidebar-logo{padding:0 16px 14px;border-bottom:1px solid rgba(255,255,255,0.10);margin-bottom:2px}
+.logo-text{font-family:var(--font-display);font-size:19px;font-weight:800;letter-spacing:0.01em;line-height:1}
+.logo-text .s1{color:#fff}.logo-text .s2{color:var(--sky)}
+.inst-block{padding:13px 16px 14px;border-bottom:1px solid rgba(255,255,255,0.10);margin-bottom:8px}
+.inst-label{font-size:9px;letter-spacing:0.14em;text-transform:uppercase;color:var(--sky);font-weight:600;margin-bottom:5px}
+.inst-name{font-size:13px;font-weight:500;color:#fff;line-height:1.35}
+.nav-section{font-size:9px;letter-spacing:0.12em;color:rgba(255,255,255,0.40);padding:6px 16px 5px;text-transform:uppercase}
+.nav-item{display:flex;align-items:center;gap:9px;padding:9px 16px;font-size:13px;color:rgba(255,255,255,0.75);cursor:pointer;border-left:2px solid transparent;transition:all 0.15s}
+.nav-item:hover{background:rgba(255,255,255,0.06);color:#fff}
+.nav-item.active{background:rgba(91,184,212,0.14);color:#fff;border-left-color:var(--sky);font-weight:500}
+.nav-item i{font-size:16px}
+.nav-bottom{margin-top:auto;border-top:1px solid rgba(255,255,255,0.10);padding-top:8px}
+
+/* 메인 */
+.main{flex:1;padding:24px 28px;max-width:1080px;min-width:0}
+.page-title{font-size:20px;font-weight:800;font-family:var(--font-display);margin-bottom:3px;line-height:1.3}
+.page-desc{font-size:12.5px;color:var(--color-text-secondary);margin-bottom:18px}
+
+/* 카드 */
+.section-card{background:var(--color-background-primary);border:1px solid var(--color-border-tertiary);border-radius:10px;margin-bottom:14px;overflow:hidden}
+.section-card.emph{border-color:var(--color-border-secondary);box-shadow:0 1px 3px rgba(15,31,61,0.04)}
+.card-header{padding:12px 16px;border-bottom:1px solid var(--color-border-tertiary);display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.card-title{font-size:13px;font-weight:700;display:flex;align-items:center;gap:6px}
+.card-title>i{font-size:15px;color:var(--sky-deep)}
+.card-body{padding:14px 16px}
+
+/* 요약 바 */
+.summary{display:flex;align-items:center;flex-wrap:wrap;padding:11px 6px}
+.sum-cell{display:flex;align-items:center;gap:8px;padding:2px 16px}
+.sum-cell + .sum-cell{border-left:1px solid var(--color-border-tertiary)}
+.sum-k{font-size:11px;color:var(--color-text-tertiary)}
+.sum-v{font-size:13px;font-weight:600}
+.mini-bar{width:58px;height:6px;border-radius:3px;background:var(--color-background-secondary);overflow:hidden}
+.mini-bar>div{height:100%;background:var(--sky);border-radius:3px}
+.sum-right{margin-left:auto}
+
+/* 배지 */
+.badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:500;white-space:nowrap}
+.badge-student{background:#E6F1FB;color:#0C447C}
+.badge-assistant{background:#FAEEDA;color:#633806}
+.badge-professor{background:var(--navy-tint);color:var(--navy)}
+.badge-ok{background:var(--sky-tint);color:var(--sky-deep)}
+.badge-wait{background:#F1EFE8;color:#5F5E5A}
+
+/* 강조 카운트 pill (또렷하게) */
+.count-pill{display:inline-flex;align-items:center;background:var(--navy);color:#fff;font-size:11px;font-weight:700;padding:2px 9px;border-radius:20px;font-family:var(--font-display);margin-left:2px}
+
+/* 버튼 */
+.btn{display:inline-flex;align-items:center;gap:5px;padding:8px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer;border:none;font-family:var(--font-sans);white-space:nowrap;transition:all 0.15s}
+.btn i{font-size:14px}
+.btn-navy{background:var(--navy);color:#fff}.btn-navy:hover{background:var(--navy-soft)}
+.btn-ghost{background:var(--color-background-primary);color:var(--color-text-secondary);border:1px solid var(--color-border-secondary)}.btn-ghost:hover{background:var(--color-background-secondary)}
+.btn-sm{padding:6px 11px;font-size:12px}
+
+/* 입력 */
+.inp{padding:8px 11px;border:1px solid var(--color-border-secondary);border-radius:7px;font-size:13px;font-family:var(--font-sans);background:var(--color-background-primary);color:var(--color-text-primary);outline:none}
+.inp:focus{border-color:var(--sky)}
+.sel{appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238A91A0' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 9px center;padding-right:28px;cursor:pointer}
+.add-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.divider{height:1px;background:var(--color-border-tertiary);margin:14px 0}
+.bulk-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.ab-tag{font-size:10px;font-weight:700;color:var(--sky-deep);width:26px;flex-shrink:0}
+.bulk-label{font-size:12px;color:var(--color-text-secondary)}
+.bulk-actions{margin-left:auto;display:flex;gap:8px;align-items:center}
+
+/* 검색 */
+.search-wrap{position:relative}
+.search-wrap i{position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:13px;color:var(--color-text-tertiary)}
+.search-input{padding:6px 10px 6px 28px;border:1px solid var(--color-border-secondary);border-radius:7px;font-size:12px;width:150px;outline:none;font-family:var(--font-sans)}
+.search-input:focus{border-color:var(--sky)}
+.flt{padding:6px 26px 6px 10px;font-size:12px}
+
+/* 표 */
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse}
+thead tr{background:var(--color-background-secondary)}
+th{text-align:left;padding:10px 14px;font-size:11px;color:var(--color-text-tertiary);font-weight:600;letter-spacing:0.03em;border-bottom:1px solid var(--color-border-tertiary);white-space:nowrap}
+td{padding:11px 14px;font-size:13px;border-bottom:1px solid var(--color-border-tertiary);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tbody tr:hover td{background:var(--color-background-secondary)}
+.em{color:var(--color-text-secondary);font-size:12.5px}
+.del-btn{background:none;border:none;color:var(--color-text-danger);cursor:pointer;font-size:14px;display:inline-flex;align-items:center;opacity:0.6}
+.del-btn:hover{opacity:1}
+.chev{font-size:16px !important;color:var(--color-text-tertiary)}
+
+@media(max-width:720px){.sum-cell + .sum-cell{border-left:none}}
+</style>
+</head>
+<body>
+<div class="portal">
+  <!-- 사이드바 -->
+  <div class="sidebar">
+    <div class="sidebar-logo"><div class="logo-text"><span class="s1">Slide</span><span class="s2">Atlas</span></div></div>
+    <div class="inst-block">
+      <div class="inst-label">기관 포털</div>
+      <div class="inst-name">테스트대학교 의과대학</div>
+    </div>
+    <div class="nav-section">관리</div>
+    <div class="nav-item active"><i class="ti ti-users" aria-hidden="true"></i><span>명단 관리</span></div>
+    <div class="nav-item"><i class="ti ti-credit-card" aria-hidden="true"></i><span>구독 플랜</span></div>
+    <div class="nav-item"><i class="ti ti-chart-bar" aria-hidden="true"></i><span>이용 리포트</span></div>
+    <div class="nav-bottom">
+      <div class="nav-item"><i class="ti ti-logout" aria-hidden="true"></i><span>로그아웃</span></div>
+    </div>
+  </div>
+
+  <!-- 메인 -->
+  <div class="main">
+    <div class="page-title">명단 관리</div>
+    <div class="page-desc">테스트대학교 의과대학 · 명단·좌석은 과목 단위로 관리됩니다</div>
+
+    <!-- 1. 요약 바 -->
+    <div class="section-card">
+      <div class="summary">
+        <div class="sum-cell"><span class="sum-k">좌석</span><span class="sum-v">조직학 3/150</span><span class="mini-bar"><div style="width:2%"></div></span></div>
+        <div class="sum-cell"><span class="sum-k">지위</span><span class="badge badge-student">학생 1</span><span class="badge badge-assistant">조교 2</span><span class="badge badge-professor">교수 1</span></div>
+        <div class="sum-cell"><span class="sum-k">인증</span><span class="sum-v">완료 2 · 대기 2</span></div>
+        <div class="sum-cell sum-right"><span class="sum-k">만료</span><span class="sum-v">2027-02-28</span><span class="badge badge-wait">D-260</span></div>
+      </div>
+    </div>
+
+    <!-- 2. 이용자 추가 -->
+    <div class="section-card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-user-check" aria-hidden="true"></i>이용자 추가</span></div>
+      <div class="card-body">
+        <div class="add-row" style="margin-bottom:12px">
+          <select class="inp sel" style="width:170px"><option>조직학 (HST)</option></select>
+        </div>
+        <div class="add-row">
+          <input class="inp" placeholder="이름" style="width:120px">
+          <select class="inp sel" style="width:100px"><option>학생</option><option>조교</option><option>교수</option></select>
+          <input class="inp" placeholder="이메일" style="width:230px">
+          <button class="btn btn-navy"><i class="ti ti-plus" aria-hidden="true"></i>추가</button>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- A안: 둘 다 navy -->
+        <div class="bulk-row" style="margin-bottom:10px">
+          <span class="ab-tag">A안</span>
+          <span class="bulk-label">엑셀/CSV 일괄 (이름·지위·이메일)</span>
+          <span class="bulk-actions">
+            <button class="btn btn-navy btn-sm"><i class="ti ti-download" aria-hidden="true"></i>양식 다운로드</button>
+            <button class="btn btn-navy btn-sm"><i class="ti ti-upload" aria-hidden="true"></i>파일 선택 후 업로드</button>
+          </span>
+        </div>
+        <!-- B안: 양식=ghost, 업로드=navy -->
+        <div class="bulk-row">
+          <span class="ab-tag">B안</span>
+          <span class="bulk-label">엑셀/CSV 일괄 (이름·지위·이메일)</span>
+          <span class="bulk-actions">
+            <button class="btn btn-ghost btn-sm"><i class="ti ti-download" aria-hidden="true"></i>양식 다운로드</button>
+            <button class="btn btn-navy btn-sm"><i class="ti ti-upload" aria-hidden="true"></i>파일 선택 후 업로드</button>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. 이용자 명단 (주인공) -->
+    <div class="section-card emph">
+      <div class="card-header">
+        <span class="card-title"><i class="ti ti-users" aria-hidden="true"></i>이용자 명단 <span class="count-pill">4명</span></span>
+        <span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <select class="inp sel flt"><option>전체 과목</option></select>
+          <select class="inp sel flt"><option>전체 지위</option></select>
+          <span class="search-wrap"><i class="ti ti-search" aria-hidden="true"></i><input class="search-input" placeholder="이름·이메일 검색"></span>
+        </span>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>이름</th><th>지위</th><th>과목</th><th>이메일</th><th>인증</th><th style="width:40px"></th></tr></thead>
+          <tbody>
+            <tr><td>강희자</td><td>교수</td><td>조직학</td><td class="em">heeja.kang@test.ac.kr</td><td><span class="badge badge-ok">인증</span></td><td><button class="del-btn" aria-label="삭제"><i class="ti ti-trash" aria-hidden="true"></i></button></td></tr>
+            <tr><td>김보람</td><td>조교</td><td>조직학</td><td class="em">boram.kim@test.ac.kr</td><td><span class="badge badge-ok">인증</span></td><td><button class="del-btn" aria-label="삭제"><i class="ti ti-trash" aria-hidden="true"></i></button></td></tr>
+            <tr><td>김하람</td><td>학생</td><td>조직학</td><td class="em">haram.kim@test.ac.kr</td><td><span class="badge badge-wait">대기</span></td><td><button class="del-btn" aria-label="삭제"><i class="ti ti-trash" aria-hidden="true"></i></button></td></tr>
+            <tr><td>김헌석</td><td>조교</td><td>조직학</td><td class="em">heonseok.kim@test.ac.kr</td><td><span class="badge badge-wait">대기</span></td><td><button class="del-btn" aria-label="삭제"><i class="ti ti-trash" aria-hidden="true"></i></button></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 4. 기관 관리자 (접이식 · 헤더만) -->
+    <div class="section-card">
+      <div class="card-header" style="border-bottom:none">
+        <span class="card-title"><i class="ti ti-chevron-right chev" aria-hidden="true"></i><i class="ti ti-shield" aria-hidden="true"></i>기관 관리자 <span class="count-pill">2명</span></span>
+      </div>
+    </div>
+
+  </div>
+</div>
+</body>
+</html>
