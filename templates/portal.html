@@ -10,49 +10,26 @@
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/css/lms.css">
   <style>
-    /* portal 고유 스타일만 — 색·폰트는 lms.css 토큰. 공통 리셋/토큰/폰트는 lms.css 제공. */
-    body { font-family: var(--font-sans);
-           margin: 0; background: var(--beige); color: var(--color-text-primary); }
-    header { background: var(--navy); color: #fff; padding: 18px 28px;
-             display: flex; align-items: center; justify-content: space-between; }
-    header h1 { font-size: 18px; margin: 0; }
-    header .inst { font-size: 13px; opacity: .8; margin-top: 4px; }
-    header .to-slides { color: #fff; text-decoration: none; font-size: 13px;
-                        border: 1px solid rgba(255,255,255,.4); border-radius: 6px;
-                        padding: 7px 14px; white-space: nowrap; }
-    header .to-slides:hover { background: rgba(255,255,255,.12); }
-    header .head-actions { display: flex; align-items: center; gap: 8px; }
-    header .logout-btn { background: transparent; cursor: pointer; font-family: inherit; }
-    .tabs { display: flex; gap: 4px; background: var(--color-background-primary); padding: 0 28px; border-bottom: 1px solid var(--color-border-tertiary); }
-    .tabs button { border: none; background: none; padding: 14px 18px; font-size: 14px; font-family: var(--font-sans);
-                   cursor: pointer; color: var(--color-text-secondary); border-bottom: 2px solid transparent; }
-    .tabs button.on { color: var(--navy); border-bottom-color: var(--sky); font-weight: 600; }
-    main { padding: 28px; max-width: 1100px; }
-    .panel { display: none; }
-    .panel.on { display: block; }
-    .note { background: var(--color-background-primary); border: 1px solid var(--color-border-tertiary); border-radius: 8px;
-            padding: 20px; color: var(--color-text-secondary); font-size: 14px; line-height: 1.6; }
-    .card { background:var(--color-background-primary); border:1px solid var(--color-border-tertiary); border-radius:8px; padding:18px 20px; margin-bottom:18px; }
-    .card h2 { font-size:15px; margin:0 0 14px; }
+    /* 셸·컴포넌트(.portal/.sidebar/.nav-item/.section-card/.stats-row/.badge-*/.btn/.table/.role-select…)는 lms.css 사용.
+       아래는 라이브 렌더 함수가 emit 하는 클래스(badge ok/wait/exp/up·del·muted·plan-card/pc-*·seatbar·seg·kpi/k-*·barrow·rankrow·act/ghost) 전용 — lms.css에 없어 토큰으로 정의. */
     .row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
     input, select { padding:7px 10px; border:1px solid var(--color-border-secondary); border-radius:6px; font-size:13px;
                     font-family:var(--font-sans); background:var(--color-background-primary); color:var(--color-text-primary); }
     input:focus, select:focus { outline:none; border-color:var(--sky); }
-    button.act { background:var(--navy); color:#fff; border:none; border-radius:6px; padding:8px 14px;
-                 font-size:13px; font-family:var(--font-sans); cursor:pointer; }
-    button.act:hover { background:var(--navy-soft); }
-    button.ghost { background:var(--color-background-primary); color:var(--color-text-primary); border:1px solid var(--color-border-secondary); }
-    button.ghost:hover { background:var(--color-background-secondary); }
-    table { width:100%; border-collapse:collapse; margin-top:12px; font-size:13px; }
-    th, td { text-align:left; padding:9px 8px; border-bottom:1px solid var(--color-border-tertiary); }
-    th { color:var(--color-text-tertiary); font-weight:600; font-size:12px; }
-    .badge { font-size:11px; padding:2px 8px; border-radius:10px; }
-    .badge.ok { background:var(--sky-tint); color:var(--sky-deep); }
-    .badge.wait { background:#F1EFE8; color:#5F5E5A; }
-    .del { background:none; border:none; color:var(--color-text-danger); cursor:pointer; font-size:13px; }
     .muted { color:var(--color-text-tertiary); font-size:12px; }
+    .act { background:var(--navy); color:#fff; border:none; border-radius:6px; padding:8px 14px;
+           font-size:13px; font-family:var(--font-sans); cursor:pointer; display:inline-block; text-decoration:none; }
+    .act:hover { background:var(--navy-soft); }
+    .ghost { background:var(--color-background-primary); color:var(--color-text-primary); border:1px solid var(--color-border-secondary); }
+    .ghost:hover { background:var(--color-background-secondary); }
+    .badge.ok { background:var(--sky-tint); color:var(--sky-deep); border-radius:10px; }
+    .badge.wait { background:#F1EFE8; color:#5F5E5A; border-radius:10px; }
+    .badge.exp { background:var(--color-background-danger); color:var(--color-text-danger); border-radius:10px; }
+    .badge.up { background:#E6F1FB; color:#0C447C; border-radius:10px; }
+    .del { background:none; border:none; color:var(--color-text-danger); cursor:pointer; font-size:13px; }
+    /* 플랜 카드(라이브 renderPlans) */
     .plan-card { display:flex; align-items:center; gap:16px; border:1.5px solid var(--color-border-tertiary);
-                 border-radius:10px; padding:14px 18px; margin-bottom:10px; cursor:pointer; }
+                 border-radius:10px; padding:14px 18px; margin-bottom:10px; cursor:pointer; background:var(--color-background-primary); }
     .plan-card:hover, .plan-card.on { border-color:var(--sky); background:var(--sky-tint); }
     .plan-card .pc-main { flex:1; min-width:0; }
     .plan-card .pc-name { font-size:14px; font-weight:700; margin-bottom:3px; }
@@ -62,18 +39,19 @@
     .seatbar { height:6px; border-radius:3px; background:var(--color-background-secondary); margin-top:5px; overflow:hidden; }
     .seatbar > div { height:100%; background:var(--sky); }
     .seatbar.warn > div { background:var(--color-text-danger); }
-    .badge.exp { background:var(--color-background-danger); color:var(--color-text-danger); }
-    .badge.up { background:#E6F1FB; color:#0C447C; }
+    /* 리포트 기간 세그먼트(라이브) */
     .seg { display:inline-flex; border:1px solid var(--color-border-secondary); border-radius:6px; overflow:hidden; }
     .seg button { border:none; background:var(--color-background-primary); padding:7px 12px; font-size:13px; cursor:pointer;
                   font-family:var(--font-sans); color:var(--color-text-secondary); border-left:1px solid var(--color-border-tertiary); }
     .seg button:first-child { border-left:none; }
     .seg button.on { background:var(--navy); color:#fff; }
+    /* 리포트 KPI(라이브) */
     .kpi-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:18px; }
-    .kpi { background:var(--color-background-primary); border:1px solid var(--color-border-tertiary); border-radius:8px; padding:14px 16px; }
+    .kpi { background:var(--color-background-primary); border:1px solid var(--color-border-tertiary); border-radius:10px; padding:14px 16px; }
     .kpi .k-label { font-size:12px; color:var(--color-text-tertiary); margin-bottom:6px; }
     .kpi .k-val { font-size:24px; font-weight:700; font-family:var(--font-display); }
     .kpi .k-sub { margin-top:4px; }
+    /* 차트·랭킹(라이브) */
     .barrow { display:flex; align-items:center; gap:10px; margin:6px 0; font-size:13px; }
     .barrow .blabel { width:120px; flex-shrink:0; color:var(--color-text-secondary); }
     .barrow .btrack { flex:1; height:14px; background:var(--color-background-secondary); border-radius:7px; overflow:hidden; }
@@ -85,168 +63,225 @@
                  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .rankrow a:hover { text-decoration:underline; }
     .rankrow .rv { color:var(--color-text-tertiary); flex-shrink:0; }
+    /* 카드 본문 패딩(셸 .section-card 내부 라이브 콘텐츠) */
+    .card-body { padding:14px 18px; }
     @media (max-width:720px) { .kpi-grid { grid-template-columns:repeat(2,1fr); } }
-    #toast { position:fixed; bottom:20px; right:20px; background:var(--navy); color:#fff;
-             padding:11px 16px; border-radius:8px; font-size:13px; opacity:0;
-             transition:opacity .25s; pointer-events:none; max-width:360px; }
-    #toast.show { opacity:1; }
   </style>
 </head>
 <body>
-  <header>
-    <div>
-      <h1>기관 관리자 포털</h1>
-      <div class="inst">{{ institution_name }} ({{ institution_id }})</div>
-    </div>
-    <div class="head-actions">
-      {% if has_slides %}<a class="to-slides" href="/home">슬라이드 보기 →</a>{% endif %}
-      <button type="button" class="to-slides logout-btn" id="btn-logout" onclick="doLogout()">로그아웃</button>
-    </div>
-  </header>
-  <nav class="tabs">
-    <button class="on" data-tab="roster">명단 관리</button>
-    <button data-tab="plan">구독 플랜</button>
-    <button data-tab="report">이용 리포트</button>
-  </nav>
-  <main>
-    <!-- ══ 명단 관리 ══ -->
-    <div class="panel on" id="panel-roster">
-      <div class="card">
-        <h2>과목 선택 <span class="muted">(명단은 과목별로 관리)</span></h2>
-        <div class="muted" style="margin-bottom:8px">
-          먼저 과목을 선택하면 아래 <b>추가·업로드·양식 다운로드</b>가 그 과목에 적용됩니다.
-          한 사람이 여러 과목이면 과목을 바꿔 각각 등록하세요(식별자는 이메일).
-        </div>
-        <div class="row">
-          <select id="work-subject" onchange="onWorkSubjectChange()"><option value="">과목 선택</option></select>
-          <span class="muted" id="work-subject-hint"></span>
-        </div>
+  <div class="portal">
+    <!-- ══ 사이드바 ══ -->
+    <div class="sidebar">
+      <div class="sidebar-logo">
+        <img class="logo-img" src="/static/SlideAtlas_White_Hor_trans.png" alt="SlideAtlas">
+        <div class="logo-sub">기관 포털 · {{ institution_id }}</div>
       </div>
-
-      <div class="card">
-        <h2>이용자 명단 추가 <span class="muted" id="ctx-subject-label"></span></h2>
-        <div class="muted" style="margin-bottom:10px">
-          선택한 과목으로 등록됩니다. 이미 가입한 사용자는 추가 시 과목·지위가 자동 동기화됩니다.
-        </div>
-        <div class="row">
-          <input id="add-name" placeholder="이름" style="width:120px">
-          <select id="add-position">
-            <option value="학생">학생</option>
-            <option value="조교">조교</option>
-            <option value="교수">교수</option>
-          </select>
-          <input id="add-email" placeholder="이메일" style="width:220px">
-          <button class="act" onclick="addMember()">추가</button>
-        </div>
-        <div class="row" style="margin-top:14px">
-          <label class="muted">엑셀/CSV 일괄 업로드 (선택 과목 1개 · 컬럼: 이름 | 지위 | 이메일)</label>
-          <button class="act ghost" onclick="downloadTemplate()">양식 다운로드</button>
-          <input type="file" id="upload-file" accept=".xlsx,.csv">
-          <button class="act ghost" onclick="uploadMembers()">업로드</button>
-        </div>
-      </div>
-
-      <div class="card">
-        <h2>이용자 명단 <span class="muted" id="member-count"></span></h2>
-        <div class="row" style="margin-bottom:4px">
-          <select id="filter-subject" onchange="renderMembers()"><option value="">전체 과목</option></select>
-          <select id="filter-position" onchange="renderMembers()">
-            <option value="">전체 지위</option><option>학생</option><option>조교</option><option>교수</option>
-          </select>
-        </div>
-        <table>
-          <thead><tr><th>이름</th><th>지위</th><th>과목</th><th>이메일</th><th>인증</th><th></th></tr></thead>
-          <tbody id="member-tbody"></tbody>
-        </table>
-      </div>
-
-      <div class="card">
-        <h2>기관 관리자 <span class="muted">(읽기 전용 · 추가/변경은 SlideAtlas 운영팀 문의)</span></h2>
-        <table>
-          <thead><tr><th>이름</th><th>이메일</th><th>인증</th></tr></thead>
-          <tbody id="admin-tbody"></tbody>
-        </table>
+      <div class="nav-section">관리</div>
+      <div class="nav-item active" data-tab="roster" onclick="switchTab('roster')"><i class="ti ti-users" aria-hidden="true"></i><span>명단 관리</span></div>
+      <div class="nav-item" data-tab="plan" onclick="switchTab('plan')"><i class="ti ti-credit-card" aria-hidden="true"></i><span>구독 플랜</span></div>
+      <div class="nav-item" data-tab="report" onclick="switchTab('report')"><i class="ti ti-chart-bar" aria-hidden="true"></i><span>이용 리포트</span></div>
+      {% if has_slides %}<a class="nav-item" href="/home"><i class="ti ti-microscope" aria-hidden="true"></i><span>슬라이드 열람</span></a>{% endif %}
+      <div class="nav-bottom">
+        <div class="nav-item" id="btn-logout" onclick="doLogout()"><i class="ti ti-logout" aria-hidden="true"></i><span>로그아웃</span></div>
       </div>
     </div>
 
-    <!-- ══ 구독 플랜 (P2) ══ -->
-    <div class="panel" id="panel-plan">
-      <div class="card">
-        <h2>구독 플랜 <span class="muted">(기관 × 과목 단위 · 과목별 좌석·학기·만료 독립)</span></h2>
-        <div id="plan-list"></div>
-      </div>
+    <!-- ══ 메인 ══ -->
+    <div class="main">
 
-      <div class="card" id="slide-panel" style="display:none">
-        <div class="row" style="justify-content:space-between">
-          <h2 id="slide-panel-title" style="margin:0">슬라이드 목록</h2>
-          <div class="row">
-            <button class="act ghost" id="btn-xlsx">엑셀(.xlsx)</button>
-            <button class="act ghost" id="btn-csv">CSV</button>
-            <button class="act ghost" onclick="window.print()">PDF/인쇄</button>
+      <!-- ══ 명단 관리 ══ -->
+      <div class="tab-panel active" id="tab-roster">
+        <div class="page-title">명단 관리</div>
+        <div class="page-desc">{{ institution_name }} ({{ institution_id }}) · 명단은 과목별로 등록되며, 좌석(정원)도 과목 단위로 독립 관리됩니다</div>
+
+        <!-- 통계 카드(수치는 라이브 /roster·/plans 응답에서 계산) -->
+        <div class="stats-row">
+          <div class="stat-card">
+            <div class="stat-label"><span>과목별 좌석 현황</span><span style="font-size:10px">사용 / 정원</span></div>
+            <div id="seat-gauges"><div class="muted">불러오는 중…</div></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">지위별 현황</div>
+            <div style="display:flex;gap:5px;margin-top:4px;flex-wrap:wrap">
+              <span class="badge badge-student" id="cnt-s">학생 0명</span>
+              <span class="badge badge-assistant" id="cnt-a">조교 0명</span>
+              <span class="badge badge-professor" id="cnt-p">교수 0명</span>
+            </div>
+            <div class="stat-sub" style="margin-top:10px">인증 완료 <span id="cnt-ok">0명</span> · 대기 <span id="cnt-wait">0명</span></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">구독 만료일</div>
+            <div class="stat-value" style="font-size:16px" id="expire-date">—</div>
+            <div class="stat-bar"><div class="stat-fill" id="expire-bar" style="width:0%;background:var(--sky)"></div></div>
+            <div class="stat-sub" id="expire-sub">구독 정보를 불러오는 중…</div>
           </div>
         </div>
-        <div class="row" style="margin-top:10px">
-          <input id="slide-search" placeholder="슬라이드명·ID 검색" style="width:240px" oninput="renderPlanSlides()">
-          <span class="muted" id="slide-count" style="margin-left:auto"></span>
+
+        <!-- 과목 선택 컨텍스트 -->
+        <div class="section-card">
+          <div class="card-header">
+            <span class="card-title"><i class="ti ti-credit-card" aria-hidden="true"></i>과목 선택</span>
+            <span style="font-size:11px;color:var(--color-text-tertiary)">명단은 과목별로 관리</span>
+          </div>
+          <div class="card-body">
+            <div class="muted" style="margin-bottom:8px">
+              먼저 과목을 선택하면 아래 <b>추가·업로드·양식 다운로드</b>가 그 과목에 적용됩니다.
+              한 사람이 여러 과목이면 과목을 바꿔 각각 등록하세요(식별자는 이메일).
+            </div>
+            <div class="row">
+              <select id="work-subject" class="role-select" onchange="onWorkSubjectChange()"><option value="">과목 선택</option></select>
+              <span class="muted" id="work-subject-hint"></span>
+            </div>
+          </div>
         </div>
-        <table>
-          <thead><tr><th>ID</th><th>제목</th><th>과목</th><th>염색</th><th></th></tr></thead>
-          <tbody id="slide-tbody"></tbody>
-        </table>
+
+        <!-- 이용자 명단 추가 + 업로드 -->
+        <div class="section-card">
+          <div class="card-header">
+            <span class="card-title"><i class="ti ti-user-check" aria-hidden="true"></i>이용자 명단 추가 <span class="muted" id="ctx-subject-label"></span></span>
+          </div>
+          <div class="card-body">
+            <div class="muted" style="margin-bottom:10px">
+              선택한 과목으로 등록됩니다. 이미 가입한 사용자는 추가 시 과목·지위가 자동 동기화됩니다.
+            </div>
+            <div class="row">
+              <input id="add-name" placeholder="이름" style="width:120px">
+              <select id="add-position" class="role-select">
+                <option value="학생">학생</option>
+                <option value="조교">조교</option>
+                <option value="교수">교수</option>
+              </select>
+              <input id="add-email" placeholder="이메일" style="width:220px">
+              <button class="btn btn-primary btn-sm" onclick="addMember()"><i class="ti ti-plus" aria-hidden="true"></i>추가</button>
+            </div>
+            <div class="row" style="margin-top:14px">
+              <label class="muted">엑셀/CSV 일괄 업로드 (선택 과목 1개 · 컬럼: 이름 | 지위 | 이메일)</label>
+              <button class="btn btn-ghost btn-sm" onclick="downloadTemplate()"><i class="ti ti-download" aria-hidden="true"></i>양식 다운로드</button>
+              <input type="file" id="upload-file" accept=".xlsx,.csv">
+              <button class="btn btn-ghost btn-sm" onclick="uploadMembers()"><i class="ti ti-upload" aria-hidden="true"></i>업로드</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 이용자 명단 표 -->
+        <div class="section-card">
+          <div class="card-header">
+            <span class="card-title"><i class="ti ti-users" aria-hidden="true"></i>이용자 명단 <span class="muted" id="member-count"></span></span>
+          </div>
+          <div class="filter-row">
+            <select id="filter-subject" class="role-select" onchange="renderMembers()"><option value="">전체 과목</option></select>
+            <select id="filter-position" class="role-select" onchange="renderMembers()">
+              <option value="">전체 지위</option><option>학생</option><option>조교</option><option>교수</option>
+            </select>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>이름</th><th>지위</th><th>과목</th><th>이메일</th><th>인증</th><th></th></tr></thead>
+              <tbody id="member-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 기관 관리자 (읽기 전용 — 추가/삭제 없음) -->
+        <div class="section-card">
+          <div class="card-header">
+            <span class="card-title"><i class="ti ti-shield" aria-hidden="true"></i>기관 관리자</span>
+            <span style="font-size:11px;color:var(--color-text-tertiary)">읽기 전용 · 추가/변경은 SlideAtlas 운영팀에 문의</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>이름</th><th>이메일</th><th>인증</th></tr></thead>
+              <tbody id="admin-tbody"></tbody>
+            </table>
+          </div>
+        </div>
       </div>
+
+      <!-- ══ 구독 플랜 (P2) ══ -->
+      <div class="tab-panel" id="tab-plan">
+        <div class="page-title">구독 플랜</div>
+        <div class="page-desc">{{ institution_name }} · 구독은 (기관 × 과목) 단위입니다. 과목별로 좌석·학기·만료가 독립합니다</div>
+        <div id="plan-list"></div>
+
+        <div class="section-card" id="slide-panel" style="display:none">
+          <div class="card-header">
+            <span class="card-title"><i class="ti ti-microscope" aria-hidden="true"></i><span id="slide-panel-title">슬라이드 목록</span></span>
+            <div style="display:flex;gap:7px">
+              <button class="btn btn-ghost btn-sm" id="btn-xlsx"><i class="ti ti-table-export" aria-hidden="true"></i>엑셀(.xlsx)</button>
+              <button class="btn btn-ghost btn-sm" id="btn-csv"><i class="ti ti-table-export" aria-hidden="true"></i>CSV</button>
+              <button class="btn btn-ghost btn-sm" onclick="window.print()"><i class="ti ti-file-type-pdf" aria-hidden="true"></i>PDF/인쇄</button>
+            </div>
+          </div>
+          <div class="filter-row">
+            <div class="search-wrap"><i class="ti ti-search" aria-hidden="true"></i><input class="search-input" id="slide-search" placeholder="슬라이드명·ID 검색" oninput="renderPlanSlides()"></div>
+            <span class="muted" id="slide-count" style="margin-left:auto"></span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>ID</th><th>제목</th><th>과목</th><th>염색</th><th></th></tr></thead>
+              <tbody id="slide-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ 이용 리포트 (P3) ══ -->
+      <div class="tab-panel" id="tab-report">
+        <div class="page-title">이용 리포트</div>
+        <div class="page-desc">{{ institution_name }} · 집계는 과목별 산출 → 기관 합산</div>
+
+        <div class="section-card">
+          <div class="card-header">
+            <span class="card-title"><i class="ti ti-chart-bar" aria-hidden="true"></i>리포트 설정</span>
+            <button class="btn btn-ghost btn-sm" onclick="window.print()"><i class="ti ti-file-type-pdf" aria-hidden="true"></i>PDF/인쇄</button>
+          </div>
+          <div class="card-body" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <select id="rep-subject" class="role-select" onchange="loadReport()">
+              <option value="all">전체 과목 (기관 합산)</option>
+            </select>
+            <span class="seg" id="rep-period">
+              <button data-p="1m">최근 1개월</button>
+              <button data-p="3m" class="on">최근 3개월</button>
+              <button data-p="6m">최근 6개월</button>
+              <button data-p="all">전체</button>
+            </span>
+            <button class="btn btn-ghost btn-sm" id="rep-xlsx" style="margin-left:auto"><i class="ti ti-table-export" aria-hidden="true"></i>엑셀(.xlsx)</button>
+          </div>
+        </div>
+
+        <div id="rep-body" style="display:none">
+          <div class="kpi-grid">
+            <div class="kpi"><div class="k-label">등록 이용자</div><div class="k-val" id="k-reg">—</div><div class="k-sub muted" id="k-reg-sub"></div></div>
+            <div class="kpi"><div class="k-label">슬라이드 총 조회수</div><div class="k-val" id="k-views">—</div><div class="k-sub muted">좌석 소진율 <span id="k-util">—</span></div></div>
+            <div class="kpi"><div class="k-label">AI 튜터 호출수</div><div class="k-val" id="k-ai">—</div><div class="k-sub muted">기간 누적</div></div>
+            <div class="kpi"><div class="k-label">1인당 평균 조회수</div><div class="k-val" id="k-avg">—</div><div class="k-sub muted">활성 <span id="k-active">0</span>명 기준</div></div>
+          </div>
+
+          <div class="section-card">
+            <div class="card-header"><span class="card-title"><i class="ti ti-users-group" aria-hidden="true"></i>구성원 활동 현황 <span class="muted">(계정 상태 기준)</span></span></div>
+            <div class="card-body" id="member-bars"></div>
+          </div>
+
+          <div class="section-card">
+            <div class="card-header"><span class="card-title"><i class="ti ti-chart-bar" aria-hidden="true"></i>월별 슬라이드 조회수</span></div>
+            <div class="card-body" id="views-chart"></div>
+          </div>
+
+          <div class="section-card">
+            <div class="card-header"><span class="card-title"><i class="ti ti-trophy" aria-hidden="true"></i>인기 슬라이드 Top 10 <span class="muted">(클릭 시 열람)</span></span></div>
+            <div class="card-body" id="rank-list"></div>
+          </div>
+
+          <div class="section-card">
+            <div class="card-header"><span class="card-title"><i class="ti ti-robot" aria-hidden="true"></i>AI 튜터 월별 호출</span></div>
+            <div class="card-body" id="ai-chart"></div>
+          </div>
+        </div>
+      </div>
+
     </div>
-    <!-- ══ 이용 리포트 (P3) ══ -->
-    <div class="panel" id="panel-report">
-      <div class="card">
-        <div class="row" style="justify-content:space-between">
-          <h2 style="margin:0">이용 리포트 <span class="muted">(집계는 과목별 산출 → 기관 합산)</span></h2>
-          <button class="act ghost" onclick="window.print()">PDF/인쇄</button>
-        </div>
-        <div class="row" style="margin-top:12px">
-          <select id="rep-subject" onchange="loadReport()">
-            <option value="all">전체 과목 (기관 합산)</option>
-          </select>
-          <span class="seg" id="rep-period">
-            <button data-p="1m">최근 1개월</button>
-            <button data-p="3m" class="on">최근 3개월</button>
-            <button data-p="6m">최근 6개월</button>
-            <button data-p="all">전체</button>
-          </span>
-          <button class="act ghost" id="rep-xlsx" style="margin-left:auto">엑셀(.xlsx)</button>
-        </div>
-      </div>
-
-      <div id="rep-body" style="display:none">
-        <div class="kpi-grid">
-          <div class="kpi"><div class="k-label">등록 이용자</div><div class="k-val" id="k-reg">—</div><div class="k-sub muted" id="k-reg-sub"></div></div>
-          <div class="kpi"><div class="k-label">슬라이드 총 조회수</div><div class="k-val" id="k-views">—</div><div class="k-sub muted">좌석 소진율 <span id="k-util">—</span></div></div>
-          <div class="kpi"><div class="k-label">AI 튜터 호출수</div><div class="k-val" id="k-ai">—</div><div class="k-sub muted">기간 누적</div></div>
-          <div class="kpi"><div class="k-label">1인당 평균 조회수</div><div class="k-val" id="k-avg">—</div><div class="k-sub muted">활성 <span id="k-active">0</span>명 기준</div></div>
-        </div>
-
-        <div class="card">
-          <h2>구성원 활동 현황 <span class="muted">(계정 상태 기준)</span></h2>
-          <div id="member-bars"></div>
-        </div>
-
-        <div class="card">
-          <h2>월별 슬라이드 조회수</h2>
-          <div id="views-chart"></div>
-        </div>
-
-        <div class="card">
-          <h2>인기 슬라이드 Top 10 <span class="muted">(클릭 시 열람)</span></h2>
-          <div id="rank-list"></div>
-        </div>
-
-        <div class="card">
-          <h2>AI 튜터 월별 호출</h2>
-          <div id="ai-chart"></div>
-        </div>
-      </div>
-    </div>
-  </main>
-  <div id="toast"></div>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script>
     var SUBJECTS = [];
@@ -262,6 +297,20 @@
       });
     }
 
+    // 사이드바 탭 전환(목업 switchTab 패턴) — 데이터는 라이브 fetch. 플랜/리포트는 1회 지연 로드.
+    function switchTab(tab) {
+      document.querySelectorAll('.sidebar .nav-item[data-tab]').forEach(function(n){
+        n.classList.toggle('active', n.dataset.tab === tab);
+      });
+      document.querySelectorAll('.tab-panel').forEach(function(p){ p.classList.remove('active'); });
+      var panel = document.getElementById('tab-' + tab);
+      if (panel) panel.classList.add('active');
+      if (tab === 'plan' && !planLoaded) { planLoaded = true; loadPlans(); }
+      if (tab === 'report' && !repLoaded) { repLoaded = true; loadReport(); }
+    }
+
+    function setText(id, txt) { var el = document.getElementById(id); if (el) el.textContent = txt; }
+
     var MEMBERS = [], ADMINS = [];
 
     async function loadRoster() {
@@ -275,6 +324,7 @@
         fillSubjectSelects();
         renderMembers();
         renderAdmins();
+        renderRosterStats();
       } catch (e) { toast('네트워크 오류'); }
     }
 
@@ -330,6 +380,52 @@
         var badge = a.is_verified ? '<span class="badge ok">인증</span>' : '<span class="badge wait">대기</span>';
         return '<tr><td>'+esc(a.name)+'</td><td>'+esc(a.email)+'</td><td>'+badge+'</td></tr>';
       }).join('') || '<tr><td colspan="3" class="muted">등록된 관리자가 없습니다.</td></tr>';
+    }
+
+    // 명단 탭 상단 통계 카드 — 라이브 응답에서 계산(지위·인증=MEMBERS, 좌석 게이지·만료=PLANS). 데이터 없으면 graceful.
+    function renderRosterStats() {
+      var pos = { '학생':0, '조교':0, '교수':0 }, ok = 0, wait = 0;
+      MEMBERS.forEach(function(m){
+        if (pos[m.position] != null) pos[m.position]++;
+        if (m.is_verified) ok++; else wait++;
+      });
+      setText('cnt-s', '학생 ' + pos['학생'] + '명');
+      setText('cnt-a', '조교 ' + pos['조교'] + '명');
+      setText('cnt-p', '교수 ' + pos['교수'] + '명');
+      setText('cnt-ok', ok + '명'); setText('cnt-wait', wait + '명');
+
+      var sg = document.getElementById('seat-gauges');
+      if (sg) {
+        if (!PLANS.length) { sg.innerHTML = '<div class="muted">구독 정보를 불러오는 중…</div>'; }
+        else {
+          sg.innerHTML = PLANS.map(function(p){
+            var used = p.used_seats, max = p.max_seats, rate = p.seat_rate || 0;
+            var over = (max != null && used >= max);
+            var cnt = (max == null) ? (used + ' / 무제한') : (used + ' / ' + max);
+            var fill = (max == null) ? 0 : Math.min(rate, 100);
+            var color = over ? 'var(--color-text-danger)' : 'var(--sky)';
+            return '<div class="seat-row"><div class="seat-head">'
+              + '<span class="seat-name">' + esc(p.subject_name || p.subject_code) + '</span>'
+              + '<span class="seat-count">' + cnt + (max != null ? (' · ' + rate + '%') : '') + '</span></div>'
+              + '<div class="stat-bar"><div class="stat-fill" style="width:' + fill + '%;background:' + color + '"></div></div></div>';
+          }).join('');
+        }
+      }
+
+      var withEnd = PLANS.filter(function(p){ return p.subscription_end; });
+      if (withEnd.length) {
+        withEnd.sort(function(a,b){ return a.subscription_end < b.subscription_end ? -1 : 1; });
+        var p0 = withEnd[0];
+        setText('expire-date', p0.subscription_end);
+        var st = Date.parse(p0.access_open_date), en = Date.parse(p0.subscription_end), now = Date.now();
+        var pct = (isFinite(st) && isFinite(en) && en > st) ? Math.round((now - st) / (en - st) * 100) : 0;
+        pct = Math.max(0, Math.min(100, pct));
+        var bar = document.getElementById('expire-bar'); if (bar) bar.style.width = pct + '%';
+        setText('expire-sub', (p0.dday || '') + (withEnd.length > 1 ? (' · 외 ' + (withEnd.length - 1) + '개 과목') : ''));
+      } else {
+        setText('expire-date', '—'); setText('expire-sub', '구독 정보 없음');
+        var b2 = document.getElementById('expire-bar'); if (b2) b2.style.width = '0%';
+      }
     }
 
     async function addMember() {
@@ -388,15 +484,6 @@
       loadRoster();
     }
 
-    document.querySelectorAll('.tabs button').forEach(function(b){
-      b.addEventListener('click', function(){
-        document.querySelectorAll('.tabs button').forEach(function(x){ x.classList.remove('on'); });
-        b.classList.add('on');
-        document.querySelectorAll('.panel').forEach(function(p){ p.classList.remove('on'); });
-        document.getElementById('panel-' + b.dataset.tab).classList.add('on');
-      });
-    });
-
     // [v3.9 High#2 XSS] 삭제는 inline onclick 이 아니라 tbody 위임으로 처리(한 번만 바인딩).
     //   innerHTML 재렌더돼도 tbody 자체는 유지되므로 위임이 지속된다. dataset 값은 HTML/JS 로 다시 들어가지 않음.
     document.getElementById('member-tbody').addEventListener('click', function(e){
@@ -425,6 +512,7 @@
         if (!d.success) { toast(d.message || '구독 정보를 불러오지 못했습니다'); return; }
         PLANS = d.plans || [];
         renderPlans();
+        renderRosterStats();
       } catch (e) { toast('네트워크 오류'); }
     }
 
@@ -502,13 +590,6 @@
     }
     document.getElementById('btn-xlsx').addEventListener('click', function(){ exportSlides('xlsx'); });
     document.getElementById('btn-csv').addEventListener('click', function(){ exportSlides('csv'); });
-
-    // 탭 전환 시 플랜 1회 지연 로드.
-    document.querySelectorAll('.tabs button').forEach(function(b){
-      b.addEventListener('click', function(){
-        if (b.dataset.tab === 'plan' && !planLoaded) { planLoaded = true; loadPlans(); }
-      });
-    });
 
     // ══ 이용 리포트 (P3) ══
     var REP_PERIOD = '3m', repLoaded = false;
@@ -610,13 +691,6 @@
         + '&subject_code=' + encodeURIComponent(subject) + '&format=xlsx';
     });
 
-    // 탭 전환 시 리포트 1회 지연 로드(SUBJECTS 는 loadRoster 에서 채워짐).
-    document.querySelectorAll('.tabs button').forEach(function(b){
-      b.addEventListener('click', function(){
-        if (b.dataset.tab === 'report' && !repLoaded) { repLoaded = true; loadReport(); }
-      });
-    });
-
     // ── 로그아웃 ── 학생/교수 화면과 동일: interceptor 경유(CSRF 자동) POST → /login 이동.
     async function doLogout() {
       var btn = document.getElementById('btn-logout');
@@ -627,7 +701,9 @@
       location.href = '/login';
     }
 
+    // 초기 로드: 명단 + (통계용) 구독 플랜을 함께 로드. 플랜은 1회만(planLoaded) — 탭 전환 시 재요청 안 함.
     loadRoster();
+    planLoaded = true; loadPlans();
   </script>
 </body>
 </html>
