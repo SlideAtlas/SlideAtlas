@@ -74,9 +74,50 @@ def can_transition(frm: ConversionStatus, to: ConversionStatus) -> bool:
 
 
 def assert_transition(frm: ConversionStatus, to: ConversionStatus) -> None:
-    """허용 전이가 아니면 IllegalTransition. 상태 변경을 거치는 모든 코드가 호출."""
+    """허용 단일 전이가 아니면 IllegalTransition. 엔진의 단계별 진행이 호출(pending→converting 등)."""
     if not can_transition(frm, to):
         raise IllegalTransition(f"{frm.value} → {to.value} 는 허용되지 않는 전이입니다(§4-5)")
+
+
+def is_reachable(frm: ConversionStatus, to: ConversionStatus) -> bool:
+    """frm 에서 to 로 **단일 정방향 변환 실행 경로**로 도달 가능한지(BFS, 복구 역간선 제외).
+
+    ★ persist_result(⑦ update_db)용. 엔진은 pending→converting→qc_check→ready 를 메모리에서
+      진행하지만 DB 행은 변환 시작 시점 상태(pending/converting)에 머물러 있다가 종착 결과로 한 번에
+      UPDATE 된다. 따라서 'DB 현재상태 → 결과상태'는 단일 홉이 아니라 **경로 도달성**으로 검증한다.
+
+    ★ 단, 복구 역간선(failed→pending, ready_no_mpp→pending — 어드민 재처리/ MPP 재입력이 *별도의*
+      단일 DB UPDATE 로 수행하는 리셋)은 BFS 에서 **제외**한다. 그래야 §4-5 가 명시한 'failed→ready
+      오전이'가 한 번의 persist 로 통과하지 못한다(failed 는 정방향 출구가 없어 ready 에 직접 도달 불가).
+      pending/converting/qc_check 같은 in-flight 상태에서만 종착으로 도달한다.
+        - pending→ready ✓(정방향)  · converting→ready ✓  · qc_check→ready_no_mpp ✓
+        - failed→ready ✗(차단)     · ready_no_mpp→ready ✗(어드민이 먼저 pending 으로 리셋해야 함)
+        - ready→* ✗(완전 종착, 덮어쓰기 차단)
+      판별: PENDING 으로 들어가는 간선(복구 리셋)을 traversal 에서 무시한다."""
+    if frm == to:
+        return False
+    seen = {frm}
+    frontier = [frm]
+    while frontier:
+        nxt = []
+        for s in frontier:
+            for t in ALLOWED_TRANSITIONS.get(s, frozenset()):
+                if t == ConversionStatus.PENDING:
+                    continue  # 복구 역간선(리셋) — 정방향 경로 아님
+                if t == to:
+                    return True
+                if t not in seen:
+                    seen.add(t)
+                    nxt.append(t)
+        frontier = nxt
+    return False
+
+
+def assert_reachable(frm: ConversionStatus, to: ConversionStatus) -> None:
+    """경로 도달 불가면 IllegalTransition(persist_result 의 회귀/오전이 차단)."""
+    if not is_reachable(frm, to):
+        raise IllegalTransition(
+            f"{frm.value} → {to.value} 는 도달 불가한 상태 전이입니다(§4-5, 경로 없음)")
 
 
 def resolve_terminal_status(mpp: Optional[float]) -> ConversionStatus:

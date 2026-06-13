@@ -28,12 +28,42 @@ class TriggerAdapter(ABC):
 class HttpTriggerAdapter(TriggerAdapter):
     """v1.0 — 어드민 업로드 HTTP 요청을 ConversionJob 으로 파싱(골격)."""
 
+    REQUIRED = ("slide_id", "source_s3_key", "input_format", "subject_code")
+
     def parse(self, raw_event: Dict[str, Any]) -> List[ConversionJob]:
-        # TODO(2단계): request JSON/form 에서 slide_id·source_s3_key·input_format·subject_code 추출.
-        #   - input_format 은 InputFormat.coerce(파일 확장자) 로 정규화(미지원이면 ValueError).
-        #   - 단건 업로드 → [ConversionJob] 1개. (배치 적재 D30 은 별도 어댑터/엔트리)
-        #   - 환경변수·DB 참조 금지: 순수 파싱만(이식성).
-        raise NotImplementedError("HttpTriggerAdapter.parse — 2단계 구현 예정")
+        """어드민 업로드 dict(request.get_json/form) → [ConversionJob] 1개.
+
+        - 필수: slide_id·source_s3_key·input_format·subject_code. 누락/빈 값이면 ValueError.
+        - input_format 은 InputFormat.coerce 로 정규화(미지원 포맷이면 coerce 가 ValueError).
+        - 환경변수·DB 참조 금지: 순수 파싱만(이식성). 단건만(배치 적재 D30 은 별도 경로).
+        """
+        if not isinstance(raw_event, dict):
+            raise ValueError("HttpTriggerAdapter.parse: dict payload 필요")
+
+        def _req(field: str) -> str:
+            val = str(raw_event.get(field) or "").strip()
+            if not val:
+                raise ValueError(f"필수 필드 누락/빈 값: {field}")
+            return val
+
+        slide_id = _req("slide_id")
+        source_s3_key = _req("source_s3_key")
+        subject_code = _req("subject_code").upper()
+        input_format = InputFormat.coerce(_req("input_format"))  # 미지원이면 ValueError
+
+        source_bucket = (str(raw_event.get("source_bucket") or "").strip() or None)
+        original_filename = (str(raw_event.get("original_filename") or "").strip() or None)
+        requested_at = (str(raw_event.get("requested_at") or "").strip() or None)
+
+        return [ConversionJob(
+            slide_id=slide_id,
+            source_s3_key=source_s3_key,
+            input_format=input_format,
+            subject_code=subject_code,
+            source_bucket=source_bucket,
+            original_filename=original_filename,
+            requested_at=requested_at,
+        )]
 
 
 class SqsTriggerAdapter(TriggerAdapter):

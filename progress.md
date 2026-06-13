@@ -788,3 +788,14 @@ python3 run_tests.py
 - **썸네일 = 플레이스홀더(마이크로스코프 아이콘)**: 1차 사양서(목업)가 실이미지가 아닌 아이콘 플레이스홀더를 렌더하고, "게이트 무관 표시 필드만" 원칙상 실썸네일 URL은 타일토큰(=게이트 발급)이 필요하므로 목업대로 채택(기존 home '전체' 탭과 동일 패턴). 추후 실썸네일 필요 시 게이트 통과 슬라이드 한정 토큰 발급으로 확장 가능.
 - **부채 D31(신설 제안)**: 학생 비밀번호 변경 API 부재 → mypage 비번 폼은 표시용(안내 토스트)+TODO 주석. CLAUDE.md는 본 지시대로 미수정(LMS 묶음 끝 §18 일괄 갱신 시 D31 추가 제안).
 - CLAUDE.md 미수정(지시 준수). progress.md 단계별 append 완료.
+[16:28] claude 시작 - COG 변환 파이프라인 2단계: 변환 엔진 본체 구현 착수
+  - 1단계 골격 확인(models/engine/storage/trigger), 베이스라인 pytest 335 passed
+  - 실측 입력 반영: libvips(pyvips) 채택, MPP 폴백 체인(6갈래), 검증/미검증 표시
+[16:37] claude 완료 - 변환 엔진 본체 구현: MPP 폴백 체인(6갈래)·convert_cog(libvips)·minimap/thumbnail·run_qc(피라미드 무결성)·run() 오케스트레이션
+  - persist_result 본체(UPDATE-only 화이트리스트·경로도달성 전이검증·검수본 보존)·_compose_log·S3 reader/writer 구체구현·HttpTriggerAdapter.parse
+  - is_reachable(정방향 도달성, 복구역간선 제외) models 추가 — persist 종착 1-shot UPDATE 검증
+  - 신규 테스트 27개(MPP 각 갈래·범위·단위환산·상태전이·run 4종·persist 7종·trigger 4종). pytest 362 passed(335→+27)
+[16:54] claude 완료 - CLAUDE.md v3.23→v3.24 갱신(COG 파이프라인 실측 정정+2단계 엔진 반영)
+  - §3 타일엔진 정정(titiler/rasterio→openslide 동적, 목표 COG range)·§4-1 libvips 확정·가변레벨
+  - §4-4 QC '레벨수 일치'→'피라미드 무결성', 줌버그 원인 규명·§4-6 MPP 폴백체인 신설
+  - D7/D35 갱신, D36~D39 신설, 버전이력 v3.24 추가. 코드 무수정(문서만)

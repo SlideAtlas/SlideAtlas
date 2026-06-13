@@ -15,6 +15,8 @@ from .models import (
     ALLOWED_TRANSITIONS,
     can_transition,
     assert_transition,
+    is_reachable,
+    assert_reachable,
     resolve_terminal_status,
     IllegalTransition,
 )
@@ -27,6 +29,8 @@ __all__ = [
     "ALLOWED_TRANSITIONS",
     "can_transition",
     "assert_transition",
+    "is_reachable",
+    "assert_reachable",
     "resolve_terminal_status",
     "IllegalTransition",
 ]
