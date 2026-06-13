@@ -922,6 +922,7 @@ def portal():
         return redirect('/')
 
     inst_name = inst_id
+    user_position = ''
     conn = get_db_conn()
     try:
         with conn.cursor() as cur:
@@ -929,16 +930,23 @@ def portal():
             row = cur.fetchone()
             if row and row[0]:
                 inst_name = row[0]
+            # 사이드바 '수업 관리' 링크 노출용 position — /home(L865)과 동일 기준(users.position) 단일 조회.
+            cur.execute("SELECT position FROM users WHERE id = %s", (g.user_id,))
+            prow = cur.fetchone()
+            if prow:
+                user_position = prow[0] or ''
     finally:
         release_db_conn(conn)
 
-    # "슬라이드 보기" 링크 노출 여부. 겸직(subject_code 보유)만 콘텐츠 접근권이 있으므로 노출하고,
+    # "슬라이드 보기/학습 홈" 링크 노출 여부. 겸직(subject_code 보유)만 콘텐츠 접근권이 있으므로 노출하고,
     #   순수 admin-only(subject_code NULL=좌석0·콘텐츠 비소비, §6-4)는 슬라이드 0개라 숨긴다.
     has_slides = g.subject_code is not None
+    # 사이드바 '수업 관리' 링크 노출 — home(L865)과 '동일 로직' position∈{교수,조교}. role 단독·새 판정 없음(§0).
+    is_teacher = user_position in ('교수', '조교')
     # 최소 라우트(§18 D15): scope 격리·게이트만 우선 구현. 3탭(명단관리·구독플랜·이용리포트)
     #   본화면은 D15 별도 작업에서 institution_portal.html 목업(§17) 기준으로 구현.
     return render_template('portal.html', institution_id=inst_id, institution_name=inst_name,
-                           has_slides=has_slides)
+                           has_slides=has_slides, is_teacher=is_teacher)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
