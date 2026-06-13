@@ -67,6 +67,109 @@
     .card-body { padding:14px 18px; }
     @media (max-width:720px) { .kpi-grid { grid-template-columns:repeat(2,1fr); } }
   </style>
+  <style>
+    /* ── 명단 관리 탭 확정 디자인(portal_roster_design.html 기준) — #tab-roster 스코프로 격리(플랜/리포트 무영향).
+         색/폰트는 lms.css 토큰만(디자인 토큰명 → lms 값 매핑). 라이브 렌더 함수 출력 클래스(.seat-row/.stat-bar/.badge ok|wait/.del)는 CSS로만 디자인 외관 부여. */
+    #tab-roster{
+      --card:var(--color-background-primary); --ink:var(--color-text-primary);
+      --ink-soft:var(--color-text-secondary); --ink-faint:var(--color-text-tertiary);
+      --line:var(--color-border-secondary); --line-soft:var(--color-border-tertiary);
+      --sky-wash:var(--sky-tint); --rad:10px; --rad-sm:7px;
+      max-width:1120px; color:var(--ink); font-size:14px;
+    }
+    #tab-roster .num{font-family:var(--font-display);letter-spacing:-.01em}
+    #tab-roster .page-head{margin-bottom:24px}
+    #tab-roster .page-title{font-size:24px;font-weight:700;color:var(--navy);letter-spacing:-.01em}
+    /* 요약 4셀 */
+    #tab-roster .summary{background:var(--card);border:1px solid var(--line);border-radius:var(--rad);
+      display:grid;grid-template-columns:1.7fr 1.15fr 1fr 1.05fr;margin-bottom:24px}
+    #tab-roster .sum-cell{padding:17px 22px;border-left:1px solid var(--line-soft);display:flex;flex-direction:column;gap:9px;justify-content:center}
+    #tab-roster .sum-cell:first-child{border-left:none}
+    #tab-roster .sum-k{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint);font-weight:600}
+    #tab-roster #seat-gauges .seat-row{display:flex;flex-direction:column;gap:9px;margin-bottom:10px}
+    #tab-roster #seat-gauges .seat-row:last-child{margin-bottom:0}
+    #tab-roster #seat-gauges .seat-head{display:flex;align-items:center;justify-content:space-between;gap:14px}
+    #tab-roster #seat-gauges .seat-name{font-size:13.5px;font-weight:700;color:var(--ink)}
+    #tab-roster #seat-gauges .seat-count{font-size:13px;color:var(--ink-soft);font-family:var(--font-display);white-space:nowrap}
+    #tab-roster #seat-gauges .stat-bar{height:5px;border-radius:4px;background:var(--line-soft);overflow:hidden}
+    #tab-roster #seat-gauges .stat-fill{height:100%;background:var(--sky);border-radius:4px}
+    #tab-roster #seat-gauges .muted{font-size:12px}
+    #tab-roster .badges{display:flex;gap:7px;flex-wrap:wrap}
+    #tab-roster .sb{display:inline-flex;align-items:center;padding:4px 10px;border-radius:6px;background:var(--beige);border:1px solid var(--line);font-size:12px;color:var(--ink-soft);font-weight:500;font-family:var(--font-display)}
+    #tab-roster .cert{display:flex;align-items:baseline;gap:9px;font-size:13px;color:var(--ink-soft);font-family:var(--font-display)}
+    #tab-roster .cert .ok{color:var(--sky-deep);font-weight:700}
+    #tab-roster .cert .wait{font-weight:700;color:var(--ink-soft)}
+    #tab-roster .cert-sep{color:var(--line)}
+    #tab-roster .exp{font-size:20px;font-weight:700;color:var(--navy);white-space:nowrap;font-family:var(--font-display)}
+    #tab-roster .dday{font-size:12px;color:var(--ink-soft);white-space:nowrap;font-family:var(--font-display)}
+    /* 카드 */
+    #tab-roster .card,#tab-roster .tcard,#tab-roster .acc{background:var(--card);border:1px solid var(--line);border-radius:var(--rad);margin-bottom:24px}
+    #tab-roster .tcard,#tab-roster .acc{overflow:hidden}
+    #tab-roster .card-head{display:flex;align-items:center;gap:9px;padding:18px 22px;border-bottom:1px solid var(--line-soft)}
+    #tab-roster .card-head i.lead{font-size:18px;color:var(--sky-deep)}
+    #tab-roster .card-title{font-size:15px;font-weight:700;color:var(--navy)}
+    #tab-roster .card-body{padding:22px}
+    /* 이용자 추가 */
+    #tab-roster .subject-row{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+    #tab-roster .field-label{font-size:12px;font-weight:600;color:var(--ink-soft);min-width:58px}
+    #tab-roster .ctrl{height:40px;border:1px solid var(--line);border-radius:var(--rad-sm);background:#fff;color:var(--ink);padding:0 13px;font-size:13.5px;font-family:var(--font-sans)}
+    #tab-roster .ctrl::placeholder{color:var(--ink-faint)}
+    #tab-roster .ctrl:focus{outline:none;border-color:var(--sky);box-shadow:0 0 0 3px var(--sky-wash)}
+    #tab-roster select.ctrl{appearance:none;-webkit-appearance:none;padding-right:34px;cursor:pointer;
+      background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%235C6675' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+      background-repeat:no-repeat;background-position:right 11px center}
+    #tab-roster .add-row{display:flex;gap:10px;align-items:center;margin-bottom:20px}
+    #tab-roster .add-row .name{flex:0 0 190px}#tab-roster .add-row .role{flex:0 0 116px}#tab-roster .add-row .email{flex:1}
+    #tab-roster .btn{height:40px;display:inline-flex;align-items:center;gap:7px;padding:0 18px;border-radius:var(--rad-sm);font-weight:600;font-size:13.5px;border:1px solid transparent;white-space:nowrap;font-family:var(--font-sans);cursor:pointer}
+    #tab-roster .btn i{font-size:16px}
+    #tab-roster .btn-navy{background:var(--navy);color:#fff}
+    #tab-roster .btn-navy:hover{background:var(--navy-soft)}
+    #tab-roster .btn-outline{background:#fff;color:var(--navy);border-color:var(--line)}
+    #tab-roster .btn-outline:hover{background:var(--beige)}
+    #tab-roster .divider{height:1px;background:var(--line-soft);margin:0 -22px 20px}
+    #tab-roster .upload-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+    #tab-roster .upload-label{font-size:12.5px;color:var(--ink-soft);font-weight:500}
+    #tab-roster .upload-spacer{flex:1}
+    #tab-roster input[type=file]{font-size:13px;color:var(--ink-soft);max-width:240px}
+    #tab-roster input[type=file]::file-selector-button{height:38px;padding:0 14px;margin-right:10px;background:var(--beige);border:1px solid var(--line);border-radius:var(--rad-sm);font-weight:600;color:var(--ink);font-size:13px;font-family:var(--font-sans);cursor:pointer}
+    /* 명단 표 */
+    #tab-roster .count-pill{font-family:var(--font-display);font-weight:700;color:var(--sky-deep);font-size:14px;margin-left:4px}
+    #tab-roster .tools{display:flex;align-items:center;gap:10px;padding:16px 22px}
+    #tab-roster .filter{height:38px;flex:0 0 auto}
+    #tab-roster table{width:100%;border-collapse:collapse}
+    #tab-roster thead th{text-align:left;font-size:11.5px;font-weight:600;letter-spacing:.04em;color:var(--ink-faint);text-transform:uppercase;padding:12px 22px;border-bottom:1px solid var(--line)}
+    #tab-roster thead th.c{text-align:center}#tab-roster thead th.r{text-align:right}
+    #tab-roster tbody td{padding:19px 22px;border-bottom:1px solid var(--line-soft);vertical-align:middle;font-size:13.5px}
+    #tab-roster tbody tr:last-child td{border-bottom:none}
+    #tab-roster tbody td:nth-child(1){font-weight:700;color:var(--ink);font-size:14px}
+    #tab-roster tbody td:nth-child(2){font-weight:600;color:var(--navy);font-size:12.5px}
+    #tab-roster tbody td:nth-child(4){color:var(--ink-soft);font-family:var(--font-display);font-weight:500}
+    #tab-roster #member-tbody td:nth-child(5){text-align:center}
+    #tab-roster #member-tbody td:nth-child(6){text-align:right}
+    #tab-roster #admin-tbody td:nth-child(3){text-align:center}
+    #tab-roster tbody td.muted{font-weight:400;color:var(--ink-faint);font-size:13px;text-align:left}
+    /* 인증 배지(라이브 .badge ok|wait) → dot+pill */
+    #tab-roster .badge{display:inline-flex;align-items:center;gap:5px;padding:4px 11px;border-radius:20px;font-size:12px;font-weight:600}
+    #tab-roster .badge::before{content:"";width:5px;height:5px;border-radius:50%;display:inline-block}
+    #tab-roster .badge.ok{background:var(--sky-wash);color:var(--sky-deep)}
+    #tab-roster .badge.ok::before{background:var(--sky)}
+    #tab-roster .badge.wait{background:#F1EFEC;color:var(--ink-soft)}
+    #tab-roster .badge.wait::before{background:var(--ink-faint)}
+    /* 삭제(라이브 .del '삭제' 텍스트) → 트래시 아이콘 치환(텍스트 숨김, 위임 그대로) */
+    #tab-roster .del{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:var(--rad-sm);border:1px solid transparent;background:transparent;color:var(--ink-faint);cursor:pointer;font-size:0}
+    #tab-roster .del:hover{background:var(--beige);color:var(--color-text-danger)}
+    #tab-roster .del::before{font-family:"tabler-icons";content:"\eb41";font-size:17px}
+    /* 기관 관리자 접이식 */
+    #tab-roster .acc summary{list-style:none}
+    #tab-roster .acc summary::-webkit-details-marker{display:none}
+    #tab-roster .acc-head{display:flex;align-items:center;gap:9px;padding:18px 22px;cursor:pointer}
+    #tab-roster .acc-head i.lead{font-size:18px;color:var(--sky-deep)}
+    #tab-roster .acc .pill{font-size:12px;font-weight:600;color:var(--ink-soft);background:var(--beige);border:1px solid var(--line);padding:2px 9px;border-radius:20px;margin-left:auto}
+    #tab-roster .acc .pill .num{color:var(--navy);font-weight:700}
+    #tab-roster .acc .chev{font-size:18px;color:var(--ink-faint);transition:transform .18s}
+    #tab-roster .acc[open] .chev{transform:rotate(90deg)}
+    #tab-roster .acc-body{border-top:1px solid var(--line-soft)}
+  </style>
 </head>
 <body>
   <div class="portal">
@@ -89,112 +192,96 @@
     <!-- ══ 메인 ══ -->
     <div class="main">
 
-      <!-- ══ 명단 관리 ══ -->
+      <!-- ══ 명단 관리 (확정 디자인 portal_roster_design.html 기준 · 기능/fetch/JS 무수정) ══ -->
       <div class="tab-panel active" id="tab-roster">
-        <div class="page-title">명단 관리</div>
-        <div class="page-desc">{{ institution_name }} ({{ institution_id }}) · 명단은 과목별로 등록되며, 좌석(정원)도 과목 단위로 독립 관리됩니다</div>
+        <div class="page-head"><h1 class="page-title">명단 관리</h1></div>
 
-        <!-- 통계 카드(수치는 라이브 /roster·/plans 응답에서 계산) -->
-        <div class="stats-row">
-          <div class="stat-card">
-            <div class="stat-label"><span>과목별 좌석 현황</span><span style="font-size:10px">사용 / 정원</span></div>
+        <!-- 요약 4셀 (데이터=renderRosterStats 출력 그대로) -->
+        <section class="summary">
+          <div class="sum-cell">
+            <div class="sum-k">과목별 좌석</div>
             <div id="seat-gauges"><div class="muted">불러오는 중…</div></div>
           </div>
-          <div class="stat-card">
-            <div class="stat-label">지위별 현황</div>
-            <div style="display:flex;gap:5px;margin-top:4px;flex-wrap:wrap">
-              <span class="badge badge-student" id="cnt-s">학생 0명</span>
-              <span class="badge badge-assistant" id="cnt-a">조교 0명</span>
-              <span class="badge badge-professor" id="cnt-p">교수 0명</span>
+          <div class="sum-cell">
+            <div class="sum-k">지위 분포</div>
+            <div class="badges">
+              <span class="sb" id="cnt-s">학생 0명</span>
+              <span class="sb" id="cnt-a">조교 0명</span>
+              <span class="sb" id="cnt-p">교수 0명</span>
             </div>
-            <div class="stat-sub" style="margin-top:10px">인증 완료 <span id="cnt-ok">0명</span> · 대기 <span id="cnt-wait">0명</span></div>
           </div>
-          <div class="stat-card">
-            <div class="stat-label">구독 만료일</div>
-            <div class="stat-value" style="font-size:16px" id="expire-date">—</div>
-            <div class="stat-bar"><div class="stat-fill" id="expire-bar" style="width:0%;background:var(--sky)"></div></div>
-            <div class="stat-sub" id="expire-sub">구독 정보를 불러오는 중…</div>
+          <div class="sum-cell">
+            <div class="sum-k">인증 현황</div>
+            <div class="cert"><span class="ok">완료 <span id="cnt-ok">0명</span></span><span class="cert-sep">·</span><span class="wait">대기 <span id="cnt-wait">0명</span></span></div>
           </div>
-        </div>
+          <div class="sum-cell">
+            <div class="sum-k">구독 만료</div>
+            <div class="exp" id="expire-date">—</div>
+            <div class="dday" id="expire-sub">구독 정보를 불러오는 중…</div>
+          </div>
+        </section>
 
-        <!-- 과목 선택 컨텍스트 -->
-        <div class="section-card">
-          <div class="card-header">
-            <span class="card-title"><i class="ti ti-credit-card" aria-hidden="true"></i>과목 선택</span>
-            <span style="font-size:11px;color:var(--color-text-tertiary)">명단은 과목별로 관리</span>
-          </div>
+        <!-- 이용자 추가 (과목 선택 통합 · 안내문 제거) -->
+        <section class="card">
+          <div class="card-head"><i class="ti ti-user-check lead" aria-hidden="true"></i><span class="card-title">이용자 추가</span></div>
           <div class="card-body">
-            <div class="muted" style="margin-bottom:8px">
-              먼저 과목을 선택하면 아래 <b>추가·업로드·양식 다운로드</b>가 그 과목에 적용됩니다.
-              한 사람이 여러 과목이면 과목을 바꿔 각각 등록하세요(식별자는 이메일).
-            </div>
-            <div class="row">
-              <select id="work-subject" class="role-select" onchange="onWorkSubjectChange()"><option value="">과목 선택</option></select>
+            <div class="subject-row">
+              <span class="field-label">과목 선택</span>
+              <select class="ctrl" id="work-subject" onchange="onWorkSubjectChange()" style="flex:0 0 220px"><option value="">과목 선택</option></select>
               <span class="muted" id="work-subject-hint"></span>
+              <span id="ctx-subject-label" style="display:none"></span>
             </div>
-          </div>
-        </div>
-
-        <!-- 이용자 명단 추가 + 업로드 -->
-        <div class="section-card">
-          <div class="card-header">
-            <span class="card-title"><i class="ti ti-user-check" aria-hidden="true"></i>이용자 명단 추가 <span class="muted" id="ctx-subject-label"></span></span>
-          </div>
-          <div class="card-body">
-            <div class="muted" style="margin-bottom:10px">
-              선택한 과목으로 등록됩니다. 이미 가입한 사용자는 추가 시 과목·지위가 자동 동기화됩니다.
-            </div>
-            <div class="row">
-              <input id="add-name" placeholder="이름" style="width:120px">
-              <select id="add-position" class="role-select">
+            <div class="add-row">
+              <input class="ctrl name" id="add-name" placeholder="이름">
+              <select class="ctrl role" id="add-position">
                 <option value="학생">학생</option>
                 <option value="조교">조교</option>
                 <option value="교수">교수</option>
               </select>
-              <input id="add-email" placeholder="이메일" style="width:220px">
-              <button class="btn btn-primary btn-sm" onclick="addMember()"><i class="ti ti-plus" aria-hidden="true"></i>추가</button>
+              <input class="ctrl email" id="add-email" placeholder="이메일 주소">
+              <button class="btn btn-navy" onclick="addMember()"><i class="ti ti-plus" aria-hidden="true"></i>추가</button>
             </div>
-            <div class="row" style="margin-top:14px">
-              <label class="muted">엑셀/CSV 일괄 업로드 (선택 과목 1개 · 컬럼: 이름 | 지위 | 이메일)</label>
-              <button class="btn btn-ghost btn-sm" onclick="downloadTemplate()"><i class="ti ti-download" aria-hidden="true"></i>양식 다운로드</button>
+            <div class="divider"></div>
+            <div class="upload-row">
+              <span class="upload-label">엑셀·CSV 일괄 등록</span>
+              <div class="upload-spacer"></div>
+              <button class="btn btn-outline" onclick="downloadTemplate()"><i class="ti ti-download" aria-hidden="true"></i>양식 다운로드</button>
               <input type="file" id="upload-file" accept=".xlsx,.csv">
-              <button class="btn btn-ghost btn-sm" onclick="uploadMembers()"><i class="ti ti-upload" aria-hidden="true"></i>업로드</button>
+              <button class="btn btn-navy" onclick="uploadMembers()"><i class="ti ti-upload" aria-hidden="true"></i>업로드</button>
             </div>
           </div>
-        </div>
+        </section>
 
-        <!-- 이용자 명단 표 -->
-        <div class="section-card">
-          <div class="card-header">
-            <span class="card-title"><i class="ti ti-users" aria-hidden="true"></i>이용자 명단 <span class="muted" id="member-count"></span></span>
-          </div>
-          <div class="filter-row">
-            <select id="filter-subject" class="role-select" onchange="renderMembers()"><option value="">전체 과목</option></select>
-            <select id="filter-position" class="role-select" onchange="renderMembers()">
+        <!-- 이용자 명단 -->
+        <section class="tcard">
+          <div class="card-head"><i class="ti ti-users lead" aria-hidden="true"></i><span class="card-title">이용자 명단 <span class="count-pill" id="member-count"></span></span></div>
+          <div class="tools">
+            <select class="ctrl filter" id="filter-subject" onchange="renderMembers()"><option value="">전체 과목</option></select>
+            <select class="ctrl filter" id="filter-position" onchange="renderMembers()">
               <option value="">전체 지위</option><option>학생</option><option>조교</option><option>교수</option>
             </select>
           </div>
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th>이름</th><th>지위</th><th>과목</th><th>이메일</th><th>인증</th><th></th></tr></thead>
-              <tbody id="member-tbody"></tbody>
-            </table>
-          </div>
-        </div>
+          <table>
+            <thead><tr><th>이름</th><th>지위</th><th>과목</th><th>이메일</th><th class="c">인증</th><th class="r">관리</th></tr></thead>
+            <tbody id="member-tbody"></tbody>
+          </table>
+        </section>
 
-        <!-- 기관 관리자 (읽기 전용 — 추가/삭제 없음) -->
-        <div class="section-card">
-          <div class="card-header">
-            <span class="card-title"><i class="ti ti-shield" aria-hidden="true"></i>기관 관리자</span>
-            <span style="font-size:11px;color:var(--color-text-tertiary)">읽기 전용 · 추가/변경은 SlideAtlas 운영팀에 문의</span>
-          </div>
-          <div class="table-wrap">
+        <!-- 기관 관리자 (접이식 · 읽기 전용 표) -->
+        <details class="acc">
+          <summary class="acc-head">
+            <i class="ti ti-shield lead" aria-hidden="true"></i>
+            <span class="card-title">기관 관리자</span>
+            <span class="pill">총 <span class="num" id="admin-count">0</span>명</span>
+            <i class="ti ti-chevron-right chev" aria-hidden="true"></i>
+          </summary>
+          <div class="acc-body">
             <table>
-              <thead><tr><th>이름</th><th>이메일</th><th>인증</th></tr></thead>
+              <thead><tr><th>이름</th><th>이메일</th><th class="c">인증</th></tr></thead>
               <tbody id="admin-tbody"></tbody>
             </table>
           </div>
-        </div>
+        </details>
       </div>
 
       <!-- ══ 구독 플랜 (P2) ══ -->
@@ -704,6 +791,20 @@
     // 초기 로드: 명단 + (통계용) 구독 플랜을 함께 로드. 플랜은 1회만(planLoaded) — 탭 전환 시 재요청 안 함.
     loadRoster();
     planLoaded = true; loadPlans();
+
+    // (additive · 표시 전용) 기관 관리자 헤더 '총 N명' pill 갱신 — renderAdmins 가 #admin-tbody 채울 때마다 DOM에서 카운트.
+    //   데이터/렌더/ fetch 함수 무수정. 빈 상태 행(td[colspan])은 0으로 제외.
+    (function(){
+      var tb = document.getElementById('admin-tbody'), pill = document.getElementById('admin-count');
+      if (!tb || !pill) return;
+      function upd(){
+        var n = 0;
+        tb.querySelectorAll('tr').forEach(function(tr){ if (!tr.querySelector('td[colspan]')) n++; });
+        pill.textContent = n;
+      }
+      new MutationObserver(upd).observe(tb, { childList: true });
+      upd();
+    })();
   </script>
 </body>
 </html>
